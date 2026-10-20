@@ -1,0 +1,3 @@
+import {test} from 'node:test';import assert from 'node:assert/strict';import {chartProject} from './chart-fixture';import {validateProject} from '../src/validate';
+test('four owned chart types validate',()=>{for(const k of ['bar','line','proportion','matrix'])assert.deepEqual(validateProject(chartProject(k)),[],k);});
+test('unsafe data and dangling cue ownership fail',()=>{for(const value of [true,NaN,Infinity,-1,1e10,'10']){const p=chartProject();p.scenes[0].chart.data[0].values=[value];assert.ok(validateProject(p).length);}const p=chartProject();p.scenes[0].chart.data[0].element_id='missing';assert.ok(validateProject(p).length);});

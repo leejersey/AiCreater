@@ -1,0 +1,15 @@
+{
+  "scenes": [{
+    "id": "comparison",
+    "type": "comparison_panel",
+    "narration": {"text": "正确写法是循环外初始化。错误写法是循环内初始化。保留上一轮总和是正确写法。重置为零会丢掉累计结果。得到五是二和三的正确总和。得到三是错误版本的最后结果。"},
+    "elements": [
+      {"id": "e1", "content": "正确写法", "cue": {"text_start": 0, "text_end": 4}},
+      {"id": "e2", "content": "错误写法", "cue": {"text_start": 12, "text_end": 16}},
+      {"id": "e3", "content": "循环外初始化：保留累计", "cue": {"text_start": 24, "text_end": 29}},
+      {"id": "e4", "content": "循环内初始化：反复清零", "cue": {"text_start": 37, "text_end": 41}},
+      {"id": "e5", "content": "二和三：总和为五", "cue": {"text_start": 49, "text_end": 52}},
+      {"id": "e6", "content": "错误版本：最后为三", "cue": {"text_start": 62, "text_end": 65}}
+    ]
+  }]
+}

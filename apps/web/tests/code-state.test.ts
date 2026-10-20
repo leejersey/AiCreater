@@ -1,0 +1,8 @@
+import assert from 'node:assert/strict';
+import {test} from 'node:test';
+import * as editor from '../lib/editor';
+import {codeProject} from '../../../packages/video-schema/tests/fixture';
+import {codeStateProject} from '../../../packages/video-schema/tests/code-state-fixture';
+import {parseProject} from '../../../packages/video-schema/src/validate';
+test('enable code states seeds empty arrays without inventing execution or altering identity',()=>{assert.equal(typeof editor.toggleCodeStateSteps,'function');const steps=JSON.stringify(codeProject().scenes[0].elements),next=editor.formSteps(editor.toggleCodeStateSteps(steps,true));assert.deepEqual(next[0].array_items,[]);assert.deepEqual(next[0].pointers,[]);assert.equal(next[0].loop,null);assert.equal(next[0].input,'');assert.equal(next[0].output,'');assert.deepEqual(next[0].cue,JSON.parse(steps)[0].cue);assert.deepEqual(next[0].variables,JSON.parse(steps)[0].variables);});
+test('manual snapshot edits preserve current line/cue/IDs and disabling keeps variables/output',()=>{const s=parseProject(codeStateProject()).scenes[0],text=JSON.stringify(s.elements),updated=editor.updateStep(text,0,{input:'人工填入',loop:{current:1,total:2}});assert.equal(editor.formSteps(updated)[0].input,'人工填入');assert.deepEqual(editor.formSteps(updated)[0].cue,s.elements[0].cue);const old=editor.formSteps(editor.toggleCodeStateSteps(updated,false));assert.equal(old[0].array_items,undefined);assert.deepEqual(old[5].variables,s.elements[5].variables);assert.equal(old[5].output,'5');assert.throws(()=>editor.updateStep(text,0,{pointers:'wrong' as unknown as typeof s.elements[0]['pointers']}));});

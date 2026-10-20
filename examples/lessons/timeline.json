@@ -1,0 +1,22 @@
+{
+  "scenes": [
+    {"id":"serial","type":"execution_timeline",
+     "timeline":{"duration_ms":2100,"lanes":[{"id":"a","label":"任务甲"},{"id":"b","label":"任务乙"}]},
+     "narration":{"text":"串行示意，假设任务甲等待一千毫秒。然后任务甲执行五十毫秒。接着任务乙等待一千毫秒。最后任务乙执行五十毫秒。"},
+     "elements":[
+       {"id":"a_wait","content":"串行：任务甲等待","cue":{"text_start":0,"text_end":17},"event":{"lane_id":"a","start_ms":0,"end_ms":1000,"phase":"wait"}},
+       {"id":"a_run","content":"串行：任务甲执行","cue":{"text_start":17,"text_end":29},"event":{"lane_id":"a","start_ms":1000,"end_ms":1050,"phase":"execute"}},
+       {"id":"b_wait","content":"串行：任务乙等待","cue":{"text_start":29,"text_end":41},"event":{"lane_id":"b","start_ms":1050,"end_ms":2050,"phase":"wait"}},
+       {"id":"b_run","content":"串行：任务乙执行","cue":{"text_start":41,"text_end":53},"event":{"lane_id":"b","start_ms":2050,"end_ms":2100,"phase":"execute"}}
+     ]},
+    {"id":"async","type":"execution_timeline",
+     "timeline":{"duration_ms":1100,"lanes":[{"id":"a","label":"任务甲"},{"id":"b","label":"任务乙"}]},
+     "narration":{"text":"异步示意，假设任务甲开始等待一千毫秒。任务乙也开始等待一千毫秒。随后任务甲执行五十毫秒。任务乙接着执行五十毫秒，两次执行并未并行。"},
+     "elements":[
+       {"id":"a_wait","content":"异步：任务甲等待","cue":{"text_start":0,"text_end":19},"event":{"lane_id":"a","start_ms":0,"end_ms":1000,"phase":"wait"}},
+       {"id":"b_wait","content":"异步：任务乙也等待","cue":{"text_start":19,"text_end":32},"event":{"lane_id":"b","start_ms":0,"end_ms":1000,"phase":"wait"}},
+       {"id":"a_run","content":"交错：任务甲执行","cue":{"text_start":32,"text_end":44},"event":{"lane_id":"a","start_ms":1000,"end_ms":1050,"phase":"execute"}},
+       {"id":"b_run","content":"交错：任务乙执行","cue":{"text_start":44,"text_end":65},"event":{"lane_id":"b","start_ms":1050,"end_ms":1100,"phase":"execute"}}
+     ]}
+  ]
+}

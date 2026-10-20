@@ -1,0 +1,35 @@
+{
+  "scenes": [
+    {
+      "id": "array_state", "type": "state_diagram", "structure": {"kind": "array", "name": "nums"},
+      "narration": {"text": "这是一个空数组。放入二和三，索引从零开始。读取索引零，得到二。把首项改成五，第二项不变。"},
+      "elements": [
+        {"id": "e1", "content": "空数组", "cue": {"text_start": 0, "text_end": 8}, "items": [], "active_item_ids": []},
+        {"id": "e2", "content": "初始化 nums", "cue": {"text_start": 8, "text_end": 21}, "items": [{"id": "i0", "key": "0", "value": "2"}, {"id": "i1", "key": "1", "value": "3"}], "active_item_ids": ["i0", "i1"]},
+        {"id": "e3", "content": "读取 nums[0]", "cue": {"text_start": 21, "text_end": 31}, "items": [{"id": "i0", "key": "0", "value": "2"}, {"id": "i1", "key": "1", "value": "3"}], "active_item_ids": ["i0"]},
+        {"id": "e4", "content": "更新 nums[0]", "cue": {"text_start": 31, "text_end": 44}, "items": [{"id": "i0", "key": "0", "value": "5"}, {"id": "i1", "key": "1", "value": "3"}], "active_item_ids": ["i0"]}
+      ]
+    },
+    {
+      "id": "object_state", "type": "state_diagram", "structure": {"kind": "object", "name": "user"},
+      "narration": {"text": "对象用字段名查找值。姓名是小林，等级是三。把等级改成五，姓名不变。删除等级字段，只保留姓名。"},
+      "elements": [
+        {"id": "e1", "content": "空对象", "cue": {"text_start": 0, "text_end": 10}, "items": [], "active_item_ids": []},
+        {"id": "e2", "content": "创建字段", "cue": {"text_start": 10, "text_end": 21}, "items": [{"id": "name", "key": "name", "value": "小林"}, {"id": "level", "key": "level", "value": "3"}], "active_item_ids": ["name", "level"]},
+        {"id": "e3", "content": "修改 level", "cue": {"text_start": 21, "text_end": 33}, "items": [{"id": "name", "key": "name", "value": "小林"}, {"id": "level", "key": "level", "value": "5"}], "active_item_ids": ["level"]},
+        {"id": "e4", "content": "删除 level", "cue": {"text_start": 33, "text_end": 46}, "items": [{"id": "name", "key": "name", "value": "小林"}], "active_item_ids": []}
+      ]
+    },
+    {
+      "id": "stack_state", "type": "state_diagram", "structure": {"kind": "stack", "name": "后进先出"},
+      "narration": {"text": "开始时栈是空的。先压入甲，它是栈顶。再压入乙，乙成为新栈顶。出栈取出乙，甲重新成为栈顶。再取出甲，栈又变空。"},
+      "elements": [
+        {"id": "e1", "content": "空栈", "cue": {"text_start": 0, "text_end": 8}, "items": [], "active_item_ids": []},
+        {"id": "e2", "content": "压入甲", "cue": {"text_start": 8, "text_end": 18}, "items": [{"id": "a", "key": "0", "value": "甲"}], "active_item_ids": ["a"]},
+        {"id": "e3", "content": "压入乙", "cue": {"text_start": 18, "text_end": 30}, "items": [{"id": "a", "key": "0", "value": "甲"}, {"id": "b", "key": "1", "value": "乙"}], "active_item_ids": ["b"]},
+        {"id": "e4", "content": "弹出乙", "cue": {"text_start": 30, "text_end": 44}, "items": [{"id": "a", "key": "0", "value": "甲"}], "active_item_ids": ["a"]},
+        {"id": "e5", "content": "弹出甲", "cue": {"text_start": 44, "text_end": 54}, "items": [], "active_item_ids": []}
+      ]
+    }
+  ]
+}

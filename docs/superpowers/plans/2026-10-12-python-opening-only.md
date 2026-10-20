@@ -1,0 +1,9 @@
+# Python opening visual-only correction
+
+User reports opening empty during narration and nums pronunciation; follow-up explicitly defers pronunciation. No voice/model calls, pronunciation adapters/schema changes or whole-editor changes. Correct only current video using existing ready-DSL import and local render; old project/media retained.
+
+Existing title_reveal allows exactly one element; reuse card_sequence with3existing-house cards: original topic, 2 + 3, = 5. Topic animation starts6frames/duration1 (fully visible0.233s, before first caption0.467s; honest existing minimum6frames, not literal frame0). Math cues derive from exact unique 二和三 and 五 occurrences in first scene using cached original native words; result cannot appear before 五. Keep scene duration, all captions, audio assets and other10scenes byte-for-byte semantic equality. First caption/source retained; no made-up execution claims (2+3=5 arithmetic self-check).
+
+Assert original project revision1/ready, baseline DSL equality and zero active jobs before import; strict final validation, readback, snapshot equality, one render, checksums/full decode/audio AAC+PCM equality/SRT equality, actual first-second visual inspection and result timing check. No product source changes, tests/build of unchanged code need not repeat. User approval covers visual plan while pronunciation deferred; no delegation or new dependencies.
+
+Completed: output/full-python-opening-only-20261012-205231/python-full.mp4 and python-full.srt. One render succeeded, attempts40→41, original revision1 unchanged. Fresh 4783frames/1080p/30fps/159.445s full-decode and checksum pass; AAC and PCM identical, SRT bytes identical. Actual0.5/2.6/3.6s images confirm topic before first caption, operands before result, no visible clipping/overlap. User acceptance pending; nums pronunciation intentionally unchanged. No product code change or global automatic opening policy; no unchanged tests/build repeated.

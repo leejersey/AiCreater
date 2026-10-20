@@ -1,0 +1,15 @@
+{
+  "scenes": [{
+    "id": "sum", "type": "code_walkthrough",
+    "narration": {"text": "这段 Python 代码把二和三相加。首先，把总和设为零。第一次循环，取出二，加到总和里，总和变成二。第二次循环，取出三，再加到总和里，总和变成五。最后打印总和，输出五。"},
+    "code": {"language": "python", "source": "total = 0\nfor n in [2, 3]:\n    total += n\nprint(total)"},
+    "elements": [
+      {"id": "init", "content": "初始化 total = 0", "cue": {"text_start": 19, "text_end": 29}, "code_lines": [1], "variables": [{"name": "total", "value": "0"}], "output": ""},
+      {"id": "first_take", "content": "第一次循环：取出 n = 2", "cue": {"text_start": 29, "text_end": 39}, "code_lines": [2], "variables": [{"name": "n", "value": "2"}, {"name": "total", "value": "0"}], "output": ""},
+      {"id": "first_add", "content": "执行累加：0 + 2 = 2", "cue": {"text_start": 39, "text_end": 51}, "code_lines": [3], "variables": [{"name": "n", "value": "2"}, {"name": "total", "value": "2"}], "output": ""},
+      {"id": "second_take", "content": "第二次循环：取出 n = 3", "cue": {"text_start": 51, "text_end": 61}, "code_lines": [2], "variables": [{"name": "n", "value": "3"}, {"name": "total", "value": "2"}], "output": ""},
+      {"id": "second_add", "content": "执行累加：2 + 3 = 5", "cue": {"text_start": 61, "text_end": 74}, "code_lines": [3], "variables": [{"name": "n", "value": "3"}, {"name": "total", "value": "5"}], "output": ""},
+      {"id": "print", "content": "打印累加结果", "cue": {"text_start": 74, "text_end": 85}, "code_lines": [4], "variables": [{"name": "n", "value": "3"}, {"name": "total", "value": "5"}], "output": "5"}
+    ]
+  }]
+}

@@ -1,0 +1,16 @@
+services:
+  rustfs:
+    # Keep this pinned digest in sync with the real-queue checker.
+    image: rustfs/rustfs:1.0.1@sha256:1803faef57627e2d9c2e7d89d655d712ddded5389040054987163043fecb6a3c
+    command: ["/data"]
+    environment:
+      RUSTFS_ACCESS_KEY: ${MINIO_ACCESS_KEY:?Set private S3 access key locally}
+      RUSTFS_SECRET_KEY: ${MINIO_SECRET_KEY:?Set a strong private S3 secret locally}
+      RUSTFS_CONSOLE_ENABLE: "false"
+    ports:
+      - "127.0.0.1:19000:9000"
+    volumes:
+      - object_data:/data
+    restart: unless-stopped
+volumes:
+  object_data:

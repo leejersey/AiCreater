@@ -1,0 +1,36 @@
+{
+  "scenes": [
+    {
+      "id": "evaporation_concept",
+      "type": "concept",
+      "narration": {"text": "蒸发是液体表面变成气体的过程。湿衣服晾干就是蒸发的例子。温度较高通常会加快蒸发。"},
+      "elements": [
+        {"id": "e1", "content": "蒸发是液体表面变成气体的过程。", "concept_role": "definition", "cue": {"text_start": 0, "text_end": 15}},
+        {"id": "e2", "content": "湿衣服晾干就是蒸发的例子。", "concept_role": "example", "cue": {"text_start": 15, "text_end": 28}},
+        {"id": "e3", "content": "温度较高通常会加快蒸发。", "concept_role": "feature", "cue": {"text_start": 28, "text_end": 40}}
+      ]
+    },
+    {
+      "id": "water_cycle_flow",
+      "type": "flow_diagram",
+      "narration": {"text": "太阳提供能量，地表水发生蒸发。水蒸气冷却并凝结成云。水通过降水回到地面。"},
+      "elements": [
+        {"id": "e1", "content": "蒸发：水变成水蒸气", "cue": {"text_start": 0, "text_end": 15}},
+        {"id": "e2", "content": "凝结：水蒸气冷却成云", "cue": {"text_start": 15, "text_end": 26}},
+        {"id": "e3", "content": "降水：水回到地面", "cue": {"text_start": 26, "text_end": 36}}
+      ],
+      "edges": [{"from": "e1", "to": "e2"}, {"from": "e2", "to": "e3"}]
+    },
+    {
+      "id": "evaporation_vs_boiling",
+      "type": "comparison_panel",
+      "narration": {"text": "蒸发发生在液体表面。沸腾在液体内部和表面同时发生。蒸发不必达到沸点。给定外界压强时，纯净液体达到沸点才会沸腾。"},
+      "elements": [
+        {"id": "e1", "content": "蒸发：液体表面", "cue": {"text_start": 0, "text_end": 10}},
+        {"id": "e2", "content": "沸腾：内部与表面", "cue": {"text_start": 10, "text_end": 25}},
+        {"id": "e3", "content": "蒸发：不必达到沸点", "cue": {"text_start": 25, "text_end": 34}},
+        {"id": "e4", "content": "沸腾：给定压强下达到沸点", "cue": {"text_start": 34, "text_end": 55}}
+      ]
+    }
+  ]
+}

@@ -1,0 +1,15 @@
+{
+  "scenes": [{
+    "id": "rag", "type": "flow_diagram",
+    "narration": {"text": "用一个例子理解检索增强生成。用户问：退货期限是几天？系统先检索知识库，找到文档甲：未拆封商品七天内可退；另一个文档乙讲的是配送，不相关。把文档甲和问题一起交给模型。模型依据文档回答：七天内可退，来源是文档甲。这不是把模型重新训练一遍。检索不到可靠依据时，应说明无法确定，而不是编造答案。"},
+    "elements": [
+      {"id": "query", "content": "输入：退货期限是几天？", "cue": {"text_start": 14, "text_end": 26}},
+      {"id": "retrieve", "content": "检索：文档甲相关，文档乙不相关", "cue": {"text_start": 26, "text_end": 68}},
+      {"id": "context", "content": "上下文：问题 + 文档甲的七天规则", "cue": {"text_start": 68, "text_end": 82}},
+      {"id": "model", "content": "模型：根据检索内容生成答案", "cue": {"text_start": 82, "text_end": 91}},
+      {"id": "answer", "content": "输出：七天内可退［来源：文档甲］", "cue": {"text_start": 91, "text_end": 103}},
+      {"id": "boundary", "content": "边界：没有可靠依据 → 说明无法确定", "cue": {"text_start": 117, "text_end": 143}}
+    ],
+    "edges": [{"from": "query", "to": "retrieve"}, {"from": "retrieve", "to": "context"}, {"from": "context", "to": "model"}, {"from": "model", "to": "answer"}, {"from": "retrieve", "to": "boundary"}]
+  }]
+}

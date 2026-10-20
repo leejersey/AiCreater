@@ -1,0 +1,15 @@
+import assert from 'node:assert/strict';
+import {test} from 'node:test';
+import {createElement} from 'react';
+import {renderToStaticMarkup} from 'react-dom/server';
+import {codeStateProject} from '../../video-schema/tests/code-state-fixture';
+import {codeProject} from '../../video-schema/tests/fixture';
+import {parseProject} from '../../video-schema/src/validate';
+import {CodeLesson} from '../src/CodeLesson';
+const scene=()=>parseProject(codeStateProject()).scenes[0];
+const html=(frame:number,s=scene())=>renderToStaticMarkup(createElement(CodeLesson,{scene:s,frame}));
+test('rich layout waits for cue and does not leak final output',()=>{const before=html(5);assert.match(before,/data-code-state/);assert.doesNotMatch(before,/data-array-item|data-variable/);assert.match(html(15),/尚无输出/);assert.doesNotMatch(html(15),/data-output="5"/);assert.match(html(55),/data-output="5"/);});
+test('pointer is removed without removing final loop variables and seek is deterministic',()=>{assert.match(html(15),/data-pointer="i"/);const done=html(55);assert.doesNotMatch(done,/data-pointer/);assert.match(done,/data-variable="i"[^>]*>1</);assert.equal(html(15),html(15));assert.match(html(15),/第 1 \/ 2 轮/);});
+test('six cells and both pointers same cell render without losing labels',()=>{const s=scene(),e=s.elements[0];e.array_items=Array.from({length:6},(_,i)=>({id:'x'+i,key:String(i),value:'八字边界完整显示'}));e.pointers=[{name:'指针之一',item_id:'x5'},{name:'指针之二',item_id:'x5'}];const out=html(7,s);assert.equal((out.match(/data-array-item=/g)||[]).length,6);assert.match(out,/指针之一 → \[5\]/);assert.match(out,/指针之二 → \[5\]/);assert.match(out,/data-array-item="x5"[^>]*style="[^"]*height:100px/);});
+test('ASCII numeric values and short list literals never split into digit rows',()=>{const p=codeStateProject();p.scenes[0].elements[0].array_items[0].value='12345678';p.scenes[0].elements[0].variables=[{name:'number',value:'12345678'},{name:'nums',value:'[2, 3]'}];const h=html(7,parseProject(p).scenes[0]);assert.match(h,/>12345678</);assert.match(h,/>\[2, 3\]</);assert.doesNotMatch(h,/1234\n5678/);});
+test('empty array is explicit and legacy layout stays default',()=>{const s=scene();s.elements[0].array_items=[];assert.match(html(7,s),/空数组/);const old=renderToStaticMarkup(createElement(CodeLesson,{scene:parseProject(codeProject()).scenes[0],frame:6}));assert.doesNotMatch(old,/data-code-state/);assert.match(old,/代码讲解/);});

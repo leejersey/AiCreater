@@ -1,0 +1,193 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "VideoProject",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema_version", "video_config", "theme", "assets", "scenes"],
+  "properties": {
+    "schema_version": {"const": "1.0"},
+    "theme": {"enum": ["tech_explainer", "tech_multicolor", "light_teaching", "color_infographic"]},
+    "video_config": {
+      "type": "object", "additionalProperties": false,
+      "required": ["width", "height", "fps", "language"],
+      "properties": {"width": {"const": 1920}, "height": {"const": 1080}, "fps": {"const": 30}, "language": {"const": "zh-CN"}}
+    },
+    "assets": {"type": "array", "minItems": 1, "maxItems": 20, "items": {"$ref": "#/definitions/Asset"}},
+    "scenes": {"type": "array", "minItems": 1, "maxItems": 20, "items": {"$ref": "#/definitions/Scene"}}
+  },
+  "definitions": {
+    "Id": {"type": "string", "minLength": 1, "maxLength": 80, "pattern": "^[a-zA-Z0-9_-]+$"},
+    "Asset": {
+      "type": "object", "additionalProperties": false,
+      "required": ["id", "type", "storage_key", "checksum", "duration_ms"],
+      "properties": {
+        "id": {"$ref": "#/definitions/Id"},
+        "type": {"const": "audio"},
+        "storage_key": {"type": "string", "minLength": 1, "maxLength": 240, "pattern": "^[a-zA-Z0-9_-]+(?:/[a-zA-Z0-9_-]+)*\\.(?:wav|mp3|m4a)$"},
+        "checksum": {"type": "string", "pattern": "^[a-f0-9]{64}$"},
+        "duration_ms": {"type": "integer", "minimum": 1, "maximum": 300000}
+      }
+    },
+    "Chart": {
+      "type":"object", "additionalProperties":false, "required":["kind","title","unit","source_note","confirmed","data"],
+      "properties":{
+        "kind":{"enum":["bar","line","proportion","matrix"]},
+        "title":{"type":"string","minLength":1,"maxLength":24},
+        "unit":{"type":"string","minLength":1,"maxLength":8},
+        "source_note":{"type":"string","minLength":1,"maxLength":32},
+        "confirmed":{"type":"boolean","const":true},
+        "columns":{"type":"array","minItems":1,"maxItems":6,"uniqueItems":true,"items":{"type":"string","minLength":1,"maxLength":8}},
+        "data":{"type":"array","minItems":1,"maxItems":6,"items":{"type":"object","additionalProperties":false,"required":["element_id","label","values"],"properties":{
+          "element_id":{"$ref":"#/definitions/Id"},"label":{"type":"string","minLength":1,"maxLength":8},
+          "values":{"type":"array","minItems":1,"maxItems":6,"items":{"type":"number","minimum":0,"maximum":1000000000}}
+        }}}
+      },
+      "allOf":[
+        {"if":{"properties":{"kind":{"const":"matrix"}}},"then":{"required":["columns"]},"else":{"not":{"required":["columns"]},"properties":{"data":{"items":{"properties":{"values":{"maxItems":1}}}}}}},
+        {"if":{"properties":{"kind":{"const":"line"}}},"then":{"properties":{"data":{"minItems":2}}}}
+      ]
+    },
+    "StateItem": {
+      "type": "object", "additionalProperties": false, "required": ["id", "key", "value"],
+      "properties": {
+        "id": {"$ref": "#/definitions/Id"},
+        "key": {"type": "string", "minLength": 1, "maxLength": 12, "pattern": "^[^\\u0000-\\u001f\\u007f\\u0085\\u2028\\u2029]+$"},
+        "value": {"type": "string", "minLength": 1, "maxLength": 16, "pattern": "^[^\\u0000-\\u001f\\u007f\\u0085\\u2028\\u2029]+$"}
+      }
+    },
+    "Element": {
+      "type": "object", "additionalProperties": false,
+      "required": ["id", "content", "cue"],
+      "properties": {
+        "id": {"$ref": "#/definitions/Id"},
+        "content": {"type": "string", "minLength": 1, "maxLength": 40, "pattern": "^[^\\u0000-\\u001f\\u007f\\u0085\\u2028\\u2029]+$"},
+        "role": {"const": "topic"},
+        "concept_role": {"enum": ["definition", "feature", "example", "summary"]},
+        "icon": {"enum": ["document", "search", "idea", "code", "check", "warning"]},
+        "step": {"type": "integer", "minimum": 1, "maximum": 9},
+        "highlight": {"type": "object", "additionalProperties": false, "required": ["text_start", "text_end"], "properties": {"text_start": {"type": "integer", "minimum": 0}, "text_end": {"type": "integer", "minimum": 1}}},
+        "source_label": {"type": "string", "minLength": 1, "maxLength": 12, "pattern": "^[^\\u0000-\\u001f\\u007f\\u0085\\u2028\\u2029]+$"},
+        "panel_style": {"const": "conclusion"},
+        "event": {"type": "object", "additionalProperties": false, "required": ["lane_id", "start_ms", "end_ms", "phase"], "properties": {
+          "lane_id": {"$ref": "#/definitions/Id"},
+          "start_ms": {"type": "integer", "minimum": 0, "maximum": 3600000},
+          "end_ms": {"type": "integer", "minimum": 1, "maximum": 3600000},
+          "phase": {"enum": ["execute", "wait"]}
+        }},
+        "items": {"type": "array", "maxItems": 6, "items": {"$ref": "#/definitions/StateItem"}},
+        "active_item_ids": {"type": "array", "maxItems": 6, "uniqueItems": true, "items": {"$ref": "#/definitions/Id"}},
+        "code_lines": {"type": "array", "minItems": 1, "maxItems": 16, "uniqueItems": true, "items": {"type": "integer", "minimum": 1, "maximum": 16}},
+        "variables": {"type": "array", "maxItems": 3, "items": {
+          "type": "object", "additionalProperties": false, "required": ["name", "value"],
+          "properties": {
+            "name": {"type": "string", "minLength": 1, "maxLength": 16, "pattern": "^[^\\u0000-\\u001f\\u007f\\u0085\\u2028\\u2029]+$"},
+            "value": {"type": "string", "minLength": 1, "maxLength": 20, "pattern": "^[^\\u0000-\\u001f\\u007f\\u0085\\u2028\\u2029]+$"}
+          }}},
+        "array_items": {"type":"array","maxItems":6,"items":{"allOf":[{"$ref":"#/definitions/StateItem"},{"properties":{"value":{"type":"string","maxLength":8}}}]}},
+        "pointers": {"type":"array","maxItems":2,"items":{"type":"object","additionalProperties":false,"required":["name","item_id"],"properties":{"name":{"type":"string","minLength":1,"maxLength":6},"item_id":{"$ref":"#/definitions/Id"}}}},
+        "loop": {"anyOf":[{"type":"null"},{"type":"object","additionalProperties":false,"required":["current","total"],"properties":{"current":{"type":"integer","minimum":1,"maximum":1000000},"total":{"type":"integer","minimum":1,"maximum":1000000}}}]},
+        "input": {"type":"string","maxLength":44,"pattern":"^[^\\u0000-\\u001f\\u007f\\u0085\\u2028\\u2029]*$"},
+        "output": {"type": "string", "maxLength": 44, "pattern": "^[^\\u0000-\\u001f\\u007f\\u0085\\u2028\\u2029]*$"},
+        "cue": {
+          "type": "object", "additionalProperties": false,
+          "required": ["text_start", "text_end"],
+          "properties": {"text_start": {"type": "integer", "minimum": 0}, "text_end": {"type": "integer", "minimum": 1}}
+        }
+      }
+    },
+    "Scene": {
+      "type": "object", "additionalProperties": false,
+      "required": ["id", "type", "narration", "duration_frames", "elements", "animations", "captions"],
+      "properties": {
+        "id": {"$ref": "#/definitions/Id"},
+        "type": {"enum": ["title_reveal", "card_sequence", "flow_diagram", "code_walkthrough", "comparison_panel", "state_diagram", "execution_timeline", "data_chart", "concept"]},
+        "motif": {"enum": ["default", "funnel", "dialogue_split", "means_row", "schematic"]},
+        "chart": {"$ref":"#/definitions/Chart"},
+        "timeline": {"type": "object", "additionalProperties": false, "required": ["duration_ms", "lanes"], "properties": {
+          "duration_ms": {"type": "integer", "minimum": 1, "maximum": 3600000},
+          "lanes": {"type": "array", "minItems": 1, "maxItems": 3, "items": {"type": "object", "additionalProperties": false, "required": ["id", "label"], "properties": {
+            "id": {"$ref": "#/definitions/Id"}, "label": {"type": "string", "minLength": 1, "maxLength": 12, "pattern": "^[^\\u0000-\\u001f\\u007f\\u0085\\u2028\\u2029]+$"}
+          }}}
+        }},
+        "structure": {"type": "object", "additionalProperties": false, "required": ["kind", "name"], "properties": {
+          "kind": {"enum": ["array", "object", "stack"]},
+          "name": {"type": "string", "minLength": 1, "maxLength": 24, "pattern": "^[^\\u0000-\\u001f\\u007f\\u0085\\u2028\\u2029]+$"}
+        }},
+        "code": {"type": "object", "additionalProperties": false, "required": ["language", "source"], "properties": {
+          "array_name": {"type":"string","minLength":1,"maxLength":8},
+          "language": {"enum": ["python", "javascript", "typescript", "java", "cpp", "text"]},
+          "source": {"type": "string", "minLength": 1, "maxLength": 1000}
+        }},
+        "narration": {
+          "type": "object", "additionalProperties": false,
+          "required": ["text", "audio_asset_id", "audio_start_frame"],
+          "properties": {
+            "text": {"type": "string", "minLength": 1, "maxLength": 4000},
+            "audio_asset_id": {"$ref": "#/definitions/Id"},
+            "audio_start_frame": {"const": 6}
+          }
+        },
+        "duration_frames": {"type": "integer", "minimum": 13, "maximum": 9000},
+        "elements": {"type": "array", "minItems": 1, "maxItems": 6, "items": {"$ref": "#/definitions/Element"}},
+        "edges": {
+          "type": "array", "maxItems": 15,
+          "items": {
+            "type": "object", "additionalProperties": false, "required": ["from", "to"],
+            "properties": {"from": {"$ref": "#/definitions/Id"}, "to": {"$ref": "#/definitions/Id"}}
+          }
+        },
+        "animations": {
+          "type": "array", "minItems": 1, "maxItems": 6,
+          "items": {
+            "type": "object", "additionalProperties": false,
+            "required": ["target", "effect", "start_frame", "duration_frames"],
+            "properties": {
+              "target": {"$ref": "#/definitions/Id"}, "effect": {"const": "fade_slide"},
+              "start_frame": {"type": "integer", "minimum": 6}, "duration_frames": {"type": "integer", "minimum": 1, "maximum": 12}
+            }
+          }
+        },
+        "captions": {
+          "type": "array", "minItems": 1, "maxItems": 500,
+          "items": {
+            "type": "object", "additionalProperties": false,
+            "required": ["text", "start_frame", "end_frame"],
+            "properties": {"text": {"type": "string", "minLength": 1, "maxLength": 45}, "start_frame": {"type": "integer", "minimum": 6}, "end_frame": {"type": "integer", "minimum": 7}}
+          }
+        }
+      },
+      "allOf": [
+        {"if":{"properties":{"type":{"const":"concept"}}},"then":{"properties":{"elements":{"items":{"required":["concept_role"]}}}},"else":{"properties":{"elements":{"items":{"not":{"required":["concept_role"]}}}}}},
+        {"if":{"required":["code"],"properties":{"type":{"const":"code_walkthrough"},"code":{"required":["array_name"]}}},"then":{"properties":{"elements":{"items":{"required":["array_items","pointers","loop","input"],"properties":{"content":{"maxLength":20},"variables":{"items":{"properties":{"name":{"maxLength":6},"value":{"maxLength":8}}}}}}}}},"else":{"properties":{"elements":{"items":{"not":{"anyOf":[{"required":["array_items"]},{"required":["pointers"]},{"required":["loop"]},{"required":["input"]}]}}}}}},
+        {"if":{"properties":{"type":{"const":"data_chart"}}},"then":{"required":["chart"]},"else":{"not":{"required":["chart"]}}},
+        {"if": {"properties": {"type": {"enum": ["title_reveal", "card_sequence", "flow_diagram", "comparison_panel"]}}}, "else": {"properties": {"elements": {"items": {"not": {"anyOf": [{"required": ["icon"]}, {"required": ["step"]}, {"required": ["highlight"]}, {"required": ["source_label"]}, {"required": ["panel_style"]}]}}}}}},
+        {"if": {"properties": {"type": {"enum": ["title_reveal", "card_sequence"]}}},
+          "else": {"properties": {"elements": {"items": {"not": {"required": ["role"]}}}}}},
+        {"if": {"properties": {"type": {"const": "execution_timeline"}}},
+          "then": {"required": ["timeline"], "properties": {"elements": {"items": {"required": ["event"], "properties": {"content": {"maxLength": 32}}}}}},
+          "else": {"not": {"required": ["timeline"]}, "properties": {"elements": {"items": {"not": {"required": ["event"]}}}}}},
+        {"if": {"properties": {"type": {"const": "state_diagram"}}},
+          "then": {"required": ["structure"], "properties": {"elements": {"items": {"required": ["items", "active_item_ids"], "properties": {"content": {"maxLength": 32}}}}}},
+          "else": {"not": {"required": ["structure"]}, "properties": {"elements": {"items": {"not": {"anyOf": [{"required": ["items"]}, {"required": ["active_item_ids"]}]}}}}}},
+
+        {"if": {"properties": {"type": {"const": "code_walkthrough"}}},
+          "then": {"required": ["code"], "properties": {"elements": {"items": {"required": ["code_lines", "variables", "output"], "properties": {"content": {"maxLength": 32}}}}}},
+          "else": {"not": {"required": ["code"]}, "properties": {"elements": {"items": {"not": {"anyOf": [{"required": ["code_lines"]}, {"required": ["variables"]}, {"required": ["output"]}]}}}}}},
+
+        {"if": {"properties": {"type": {"const": "flow_diagram"}}}, "then": {"required": ["edges"]}, "else": {"not": {"required": ["edges"]}}},
+        {"if": {"properties": {"type": {"const": "comparison_panel"}}}, "then": {"properties": {"elements": {"anyOf": [{"minItems": 2, "maxItems": 2}, {"minItems": 4, "maxItems": 4}, {"minItems": 6, "maxItems": 6}]}}}},
+        {"if": {"properties": {"type": {"const": "title_reveal"}}}, "then": {"properties": {"elements": {"maxItems": 1, "items": {"properties": {"content": {"maxLength": 30}}}}}}},
+        {"if": {"properties": {"type": {"enum": ["code_walkthrough", "state_diagram", "execution_timeline", "data_chart"]}}},
+          "then": {"not": {"required": ["motif"]}}},
+        {"if": {"required": ["motif"], "properties": {"motif": {"const": "funnel"}}},
+          "then": {"properties": {"type": {"enum": ["card_sequence", "flow_diagram"]}, "elements": {"minItems": 2, "maxItems": 3}}}},
+        {"if": {"required": ["motif"], "properties": {"motif": {"const": "dialogue_split"}}},
+          "then": {"properties": {"type": {"enum": ["card_sequence"]}, "elements": {"minItems": 2, "maxItems": 4}}}},
+        {"if": {"required": ["motif"], "properties": {"motif": {"const": "means_row"}}},
+          "then": {"properties": {"type": {"enum": ["card_sequence"]}, "elements": {"minItems": 2, "maxItems": 3}}}},
+        {"if": {"required": ["motif"], "properties": {"motif": {"const": "schematic"}}},
+          "then": {"properties": {"type": {"enum": ["card_sequence", "concept", "flow_diagram"]}, "elements": {"minItems": 1, "maxItems": 4}}}}
+      ]
+    }
+  }
+}

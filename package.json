@@ -1,0 +1,46 @@
+{
+  "name": "aicreater",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "engines": {
+    "node": ">=22"
+  },
+  "scripts": {
+    "test": "tsx --test packages/*/tests/*.test.ts apps/renderer/tests/*.test.ts apps/web/tests/*.test.ts",
+    "test:workflow": "python3 -m unittest discover -s services/tests -v",
+    "test:queue": "python3 services/tests/run_queue_smoke.py",
+    "check:teaching": "python3 services/tests/run_teaching_acceptance.py",
+    "generate": "python3 -m services.workflow.generate",
+    "typecheck": "tsc --noEmit",
+    "schema:types": "tsx scripts/generate-types.ts",
+    "demo:create": "tsx scripts/create-demo.ts",
+    "studio": "node --require ./scripts/loopback.cjs node_modules/@remotion/cli/remotion-cli.js studio apps/renderer/src/index.tsx --public-dir=apps/renderer/public --props=examples/demo-props.json --no-open",
+    "render": "tsx apps/renderer/src/render.ts",
+    "web": "next dev apps/web --hostname 127.0.0.1 --port 3000 --webpack",
+    "web:build": "next build apps/web",
+    "web:start": "next start apps/web --hostname 127.0.0.1 --port 3000",
+    "workbench:status": "python3 -m services.workbench status",
+    "workbench": "python3 -m services.workbench run"
+  },
+  "dependencies": {
+    "@fontsource/noto-sans-sc": "5.3.0",
+    "@remotion/bundler": "4.0.534",
+    "@remotion/cli": "4.0.534",
+    "@remotion/player": "4.0.534",
+    "@remotion/renderer": "4.0.534",
+    "ajv": "8.20.0",
+    "next": "16.4.0",
+    "react": "19.2.0",
+    "react-dom": "19.2.0",
+    "remotion": "4.0.534"
+  },
+  "devDependencies": {
+    "@types/node": "24.10.0",
+    "@types/react": "19.2.2",
+    "@types/react-dom": "19.2.2",
+    "json-schema-to-typescript": "15.0.4",
+    "tsx": "4.20.6",
+    "typescript": "5.9.3"
+  }
+}
