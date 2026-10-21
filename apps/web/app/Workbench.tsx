@@ -328,13 +328,15 @@ export default function Workbench({routeProjectId}:{routeProjectId?:string}) {
               });
               if (!ok) return;
             }
-            const p = await request<Project>('/api/projects', {title, source_text: source, mode: 'script'});
+            const p = await request<Project>('/api/projects', {title, source_text: source, mode: 'script', manuscript_format:courseDraft.value.manuscript_format??'plain', teaching_style:courseDraft.value.teaching_style??'popular'});
             courseDraft.clear();setProjects(current=>[{id:p.id,title:p.title},...current.filter(item=>item.id!==p.id)]);
             session.current++;showProject(p);
           }); }}>
             <fieldset disabled={busy||courseDraft.blocked||projectsLoading} style={{border:0,padding:0,margin:0,minWidth:0}}>
             <label>课程标题<input required maxLength={80} value={title} onChange={e => courseDraft.change({title:e.target.value})}/></label>
-            <label>中文口播文稿<textarea aria-label="中文口播文稿" required maxLength={4000} rows={7} value={source} onChange={e => courseDraft.change({source:e.target.value})} placeholder="概念或问题 → 定义或原理 → 例子与过程 → 总结"/></label>
+            <label>文稿格式<select value={courseDraft.value.manuscript_format??'plain'} onChange={e=>courseDraft.change({manuscript_format:e.target.value as 'plain'|'markdown'})}><option value="plain">纯文本口播</option><option value="markdown">Markdown · 口播与素材</option></select></label>
+            <p className="hint">切换格式不转换内容；Markdown 请保留 AI 生成的段落 ID 与三类标题，只有口播参与配音。</p>
+            <label>中文口播文稿<textarea aria-label="中文口播文稿" required maxLength={courseDraft.value.manuscript_format==='markdown'?24000:4000} rows={7} value={source} onChange={e => courseDraft.change({source:e.target.value})} placeholder="概念或问题 → 定义或原理 → 例子与过程 → 总结"/></label>
             <button disabled={busy || courseDraft.blocked || !source.trim()} type="submit"><Sparkles size={14}/> 创建草稿（不计费）</button>
             </fieldset>
           </form></details>

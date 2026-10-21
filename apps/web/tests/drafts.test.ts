@@ -107,6 +107,13 @@ test('course drafts accept optional manuscript hints and keep old title/source d
   assert.ok(readDraft(JSON.stringify({version:1,revision:0,updatedAt:1,label:'course',data:{title:'a',source:'b'}}), scope));
   assert.equal(readDraft(JSON.stringify({version:1,revision:0,updatedAt:1,label:'course',data:{title:'a',source:'b',audience:1}}), scope), null);
 });
+test('course drafts retain manuscript format and reject unsupported formats', () => {
+  const scope: DraftScope = {kind:'course',projectId:'',sceneId:''};
+  const data = {title:'a',source:'## [s1] 标题',manuscript_format:'markdown' as const};
+  const raw = writeDraft(new MemoryStorage(),scope,0,data,null);
+  assert.equal((readDraft(raw,scope)?.data as typeof data).manuscript_format,'markdown');
+  assert.equal(readDraft(raw.replace('"markdown"','"html"'),scope),null);
+});
 test('course drafts accept optional teaching_style popular|technical', () => {
   const storage = new MemoryStorage();
   const scope: DraftScope = {kind: 'course', projectId: '', sceneId: ''};

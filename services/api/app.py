@@ -35,12 +35,14 @@ class GenerateManuscript(Body):
     audience: str = Field(default='', max_length=80)
     duration_hint: str = Field(default='', max_length=40)
     outline: str = Field(default='', max_length=1000)
+    manuscript_format: Literal['plain', 'markdown'] = 'plain'
     teaching_style: Literal['popular', 'technical'] = 'popular'
 
 
 class CreateProject(Body):
     title: str = Field(min_length=1, max_length=80)
-    source_text: str = Field(min_length=1, max_length=4000)
+    source_text: str = Field(min_length=1, max_length=24000)
+    manuscript_format: Literal['plain', 'markdown'] = 'plain'
     mode: Literal['script'] = 'script'
     teaching_style: Literal['popular', 'technical'] = 'popular'
 
@@ -194,7 +196,7 @@ def create_app(store=None, *, authentication=True):
                 text = generate_manuscript(body.title, settings, client, audience=body.audience,
                     duration_hint=body.duration_hint, outline=body.outline,
                     user_id=getattr(request.state, 'user', {}).get('id'),
-                    teaching_style=body.teaching_style)
+                    teaching_style=body.teaching_style, manuscript_format=body.manuscript_format)
         except ProviderError as exc:
             return JSONResponse({'code': exc.code, 'message': str(exc)},
                                 status_code=_provider_error_status(exc.code))
@@ -203,7 +205,8 @@ def create_app(store=None, *, authentication=True):
     @app.post('/api/projects', status_code=201)
     def create(body: CreateProject, request: Request):
         return request.app.state.store.create_project(body.title, body.source_text,
-            getattr(request.state, 'user', {}).get('id'), teaching_style=body.teaching_style)
+            getattr(request.state, 'user', {}).get('id'), teaching_style=body.teaching_style,
+            **({'manuscript_format': 'markdown'} if body.manuscript_format == 'markdown' else {}))
 
     @app.post('/api/projects/import', status_code=201)
     def import_ready(body: ImportProject, request: Request):

@@ -6,7 +6,22 @@ import httpx
 
 from services.workflow.providers import ProviderError, _status
 
+from services.workflow.manuscript_document import format_document
+
 log = logging.getLogger(__name__)
+
+_DOCUMENT_SYSTEM = (
+    '你是教学视频编剧。一次联合生成相互配合的口播、画面素材与画面意图，输出 JSON 对象，不要在 JSON 外添加 Markdown。'
+    '结构严格为 {"sections":[{"id":"s1","title":"段落标题","narration":"纯文本口播",'
+    '"materials":"画面素材，可含带语言的 Markdown 代码围栏","visual_intent":"对应本段口播的展示意图"}]}。'
+    '1–20段，每段ID唯一（s1、s2等），标题1–80字，所有字段非空且无首尾空白。'
+    'narration只写可直接朗读的纯文本，不写标题、列表标记、代码或舞台指示；全部口播含段落分隔共不超过4000字符。'
+    'materials补充不必朗读的命令、代码、流程标签、对比项等；无额外素材时填“无”。'
+    'visual_intent引用本段口播中的具体短句安排素材出现，不编造配音时间秒数；代码围栏只允许出现在materials。'
+    '代码围栏必须闭合，素材中的Markdown标题必须放在代码围栏内。整个JSON不超过24000字符。'
+    '命令与代码仅供展示，绝不执行；没有真实执行记录时不编造运行结果，必要时明确标注“示意输出（未经执行验证）”。'
+    '覆盖用户要点，不编造数据、来源、实验结论；技术风格讲清机制与术语，通俗风格用概念与例子。'
+)
 
 _SYSTEM_TECHNICAL = (
     '你是知识讲解视频的口播撰稿人。只输出可直接朗读的简体中文纯文本，不要 JSON、Markdown、代码块、列表符号或标题符号。'
@@ -68,15 +83,19 @@ def _user_message(title, audience, duration_hint, outline, teaching_style):
 
 
 def generate_manuscript(title, settings, client, *, audience='', duration_hint='', outline='', user_id=None,
-                      teaching_style='popular'):
+                      teaching_style='popular', manuscript_format='plain'):
+    if manuscript_format not in ('plain', 'markdown'):
+        raise ProviderError('manuscript', 'input_limit', 'Unsupported manuscript format')
     if teaching_style not in _TEACHING_STYLES:
         raise ProviderError('manuscript', 'input_limit', 'teaching_style must be popular or technical')
     title = _validate(title, audience, duration_hint, outline)
-    system = _SYSTEM_TECHNICAL if teaching_style == 'technical' else _SYSTEM_POPULAR
+    system = _DOCUMENT_SYSTEM if manuscript_format == 'markdown' else _SYSTEM_TECHNICAL if teaching_style == 'technical' else _SYSTEM_POPULAR
     body = {'model': settings.model, 'messages': [
         {'role': 'system', 'content': system},
         {'role': 'user', 'content': _user_message(title, audience, duration_hint, outline, teaching_style)}],
         'max_tokens': 8192}
+    if manuscript_format == 'markdown':
+        body['response_format'] = {'type': 'json_object'}
     if settings.model in ['deepseek-flash', 'deepseek-v4-flash']:
         body['thinking'] = {'type': 'disabled'}
     chars, ok = 0, False
@@ -97,7 +116,11 @@ def generate_manuscript(title, settings, client, *, audience='', duration_hint='
         text = choice['message']['content'].strip()
         if not text:
             raise ProviderError('manuscript', 'invalid_response', 'Expected non-empty narration text')
-        if len(text) > 4000:
+        if manuscript_format == 'markdown':
+            if len(text) > 24000:
+                raise ProviderError('manuscript', 'output_limit', 'Document exceeds 24000 code points')
+            text = format_document(json.loads(text))
+        elif len(text) > 4000:
             raise ProviderError('manuscript', 'output_limit', 'Manuscript exceeds 4000 code points')
         chars, ok = len(text), True
         return text

@@ -128,10 +128,12 @@ class Jobs:
         revision(base_revision)
         with self.store.connection() as conn:
             project = self.store._read(conn, project_id, lock=True)
+            materials = copy.deepcopy(project['config'].get('manuscript', {}).get('sections', []))
+            protocol = 'teaching-outline:7' if materials else 'teaching-outline:6'
             existing = conn.execute('''SELECT id FROM jobs WHERE project_id=%s AND kind='generate'
                 AND base_revision=%s AND input->>'model'=%s AND input->'profile'=%s
-                AND input->>'protocol_version'='teaching-outline:6'
-                ORDER BY created_at DESC LIMIT 1''', [project['id'], base_revision, self.model, Jsonb(self.store.profile)]).fetchone()
+                AND input->>'protocol_version'=%s
+                ORDER BY created_at DESC LIMIT 1''', [project['id'], base_revision, self.model, Jsonb(self.store.profile), protocol]).fetchone()
             if existing:
                 job = self._read(conn, str(existing['id']))
                 if job['state'] in ('queued', 'running', 'succeeded'):
@@ -141,8 +143,9 @@ class Jobs:
                     if project['scenes']: raise StoreError('conflict', 'Use scene regeneration for an existing outline')
                     payload = {'kind': 'generate', 'project_id': project['id'], 'base_revision': base_revision,
                                'source_text': project['source_text'], 'profile': copy.deepcopy(self.store.profile),
-                               'model': self.model, 'protocol_version': 'teaching-outline:6',
-                               'teaching_style': project['teaching_style']}
+                               'model': self.model, 'protocol_version': protocol,
+                               'teaching_style': project['teaching_style'],
+                               **({'materials': materials} if materials else {})}
                     digest = self.input_hash(payload)
                     # Reopen same row (input_hash unique); refresh source if the manuscript changed.
                     conn.execute('DELETE FROM job_attempts WHERE job_id=%s', [job['id']])
@@ -157,8 +160,9 @@ class Jobs:
             if project['scenes']: raise StoreError('conflict', 'Use scene regeneration for an existing outline')
             payload = {'kind': 'generate', 'project_id': project['id'], 'base_revision': base_revision,
                        'source_text': project['source_text'], 'profile': copy.deepcopy(self.store.profile),
-                       'model': self.model, 'protocol_version': 'teaching-outline:6',
-                       'teaching_style': project['teaching_style']}
+                       'model': self.model, 'protocol_version': protocol,
+                       'teaching_style': project['teaching_style'],
+                       **({'materials': materials} if materials else {})}
             return self._submit(conn, project['id'], None, base_revision, payload)
 
     @staticmethod
@@ -357,7 +361,7 @@ class Jobs:
         except ProviderError: raise StoreError('timing_cache', ERRORS['timing_cache']) from None
         return {'kind': 'timing', 'scene_id': row['id'], 'base_revision': row['revision'],
                 'scene': self._draft_scene(row['scene']), 'asset': copy.deepcopy(asset), 'words_checksum': checksum,
-                'config': {k: copy.deepcopy(v) for k, v in project['config'].items() if k not in ['assets','visual_style','teaching_style']},
+                'config': {k: copy.deepcopy(v) for k, v in project['config'].items() if k not in ['assets','visual_style','teaching_style','manuscript']},
                 'profile': self.store.profile_for(project), 'protocol_version': 'local-timing:1'}
 
     def submit_timing(self, scene_id, base_revision):
@@ -384,10 +388,13 @@ class Jobs:
             scene = self.store._scene(project, scene_id)
             if scene['revision'] != base_revision: raise StoreError('conflict', 'Scene revision changed')
             if scene['scene']['type'] == 'data_chart': raise StoreError('validation', 'Confirmed chart data cannot use model regeneration')
+            from services.workflow.manuscript_document import scene_materials
+            materials = scene_materials(project['config'].get('manuscript', {}), scene['scene']['narration']['text'])
             payload = {'kind': 'regenerate', 'scene_id': scene_id, 'base_revision': base_revision,
                        'scene': copy.deepcopy(scene['scene']), 'profile': copy.deepcopy(self.store.profile),
-                       'model': self.model, 'protocol_version': 'scene-candidate:6',
-                       'teaching_style': project['teaching_style']}
+                       'model': self.model, 'protocol_version': 'scene-candidate:7' if materials else 'scene-candidate:6',
+                       'teaching_style': project['teaching_style'],
+                       **({'materials': materials} if materials else {})}
             return self._submit(conn, project['id'], scene_id, base_revision, payload)
 
     @staticmethod

@@ -4,7 +4,7 @@ import {createElement} from 'react';
 import {renderToStaticMarkup} from 'react-dom/server';
 import demo from '../../../examples/demo.json';
 import type {VideoProject} from '../../../packages/video-schema/src/types';
-import {request, reviewKey, type Job, type Project} from '../lib/editor';
+import {request, reviewKey, videoDocument, draftPreviewVideo, type Job, type Project} from '../lib/editor';
 import * as course from '../lib/course';
 import {CourseOverview} from '../app/CourseOverview';
 import * as courseUI from '../app/CourseOverview';
@@ -34,6 +34,17 @@ test('saved manuscript preserves Unicode and whitespace and escapes markup',()=>
   assert.doesNotMatch(html,/<script>/);assert.match(html,/不是最初提交稿/);assert.match(html,/不含未保存输入/);
 });
 
+test('Markdown archive stays separate from spoken script and renderer metadata',()=>{
+  const p=project();p.source_text='口播原文。';
+  p.config.manuscript={markdown:'## [s1] 标题\n### 画面素材\n<script>not executable</script>'};
+  const html=renderToStaticMarkup(createElement(courseUI.SavedManuscript,{project:p}));
+  assert.match(html,/原始 Markdown/);assert.match(html,/只读存档/);assert.match(html,/不随章节口播编辑更新/);
+  assert.match(html,/&lt;script&gt;not executable&lt;\/script&gt;/);assert.doesNotMatch(html,/<script>/);
+  assert.equal('manuscript' in videoDocument(p),false);
+  p.scenes[0].state='needs_voice';
+  const preview=draftPreviewVideo(p,p.scenes[0].id);assert.ok(preview);
+  assert.equal('manuscript' in preview,false);assert.equal(p.source_text,'口播原文。');
+});
 test('empty saved manuscript never invents text from chapters',()=>{
   assert.equal(typeof courseUI.SavedManuscript,'function');
   const p=project(),html=renderToStaticMarkup(createElement(courseUI.SavedManuscript,{project:p}));

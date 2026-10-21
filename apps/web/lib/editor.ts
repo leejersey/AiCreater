@@ -13,7 +13,7 @@ export type DraftScene = Pick<Scene, 'id' | 'type' | 'elements' | 'code' | 'edge
 };
 export type SceneRow = {id: string; revision: number; state: string; scene: DraftScene};
 export type Project = {id: string; title: string; revision: number; source_text: string;
-  config: Omit<VideoProject, 'scenes'> & {visual_style?:VisualStyleSnapshot}; scenes: SceneRow[];
+  config: Omit<VideoProject, 'scenes'> & {visual_style?:VisualStyleSnapshot; manuscript?:{markdown:string}}; scenes: SceneRow[];
   visual_style?:VisualStyleSnapshot;
   voice?: {resource_id: string; speaker: string}; voice_configured?: boolean;
   teaching_style?: TeachingStyle};
@@ -124,7 +124,7 @@ export function retryMessage(kind: string): string {
 }
 
 export function videoDocument(project:Project):VideoProject{
-  const {visual_style:_,...config}=project.config;
+  const {visual_style:_,manuscript:_manuscript,...config}=project.config;
   return {...config,scenes:project.scenes.map(s=>s.scene as Scene)};
 }
 export function readyVideo(project: Project): VideoProject | null {
@@ -161,7 +161,7 @@ export function draftPreviewVideo(project:Project,sceneId:string):VideoProject|n
     previousAction=start;
     return {...a,start_frame:start,duration_frames:12};
   });
-  const {visual_style:_,...config}=project.config;
+  const {visual_style:_,manuscript:_manuscript,...config}=project.config;
   return {...config,assets:[],scenes:[{...row.scene,
     visual_actions:actions,
     narration:{text,audio_asset_id:'',audio_start_frame:6},

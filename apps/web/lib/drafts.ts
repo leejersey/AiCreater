@@ -3,7 +3,7 @@ import {conceptLabels} from '../../../packages/video-schema/src/concept';
 import {isTeachingStyle} from './teaching-style';
 export type RawCues = Record<string,{text_start:string;text_end:string}>;
 export type DraftData = {
-  course: {title: string; source: string; audience?: string; duration_hint?: string; outline?: string; teaching_style?: string};
+  course: {title: string; source: string; audience?: string; duration_hint?: string; outline?: string; teaching_style?: string; manuscript_format?: 'plain'|'markdown'};
   append: {content: string; narration: string; sceneType?:'card_sequence'|'concept'; conceptSteps?:Pick<Element,'content'|'concept_role'>[]};
   voice: {speaker: string};
   'teaching-style': {teaching_style: string};
@@ -48,8 +48,9 @@ function validData(kind: DraftKind, data: unknown): boolean {
   if (!object(data)) return false;
   const strings = kind === 'course' ? ['title','source'] : kind === 'append' ? ['content','narration'] : kind === 'voice' ? ['speaker'] : kind==='teaching-style'?['teaching_style']:kind==='visual-style'?['visual_style']:kind === 'chart' ? ['text'] : ['text','code','steps'];
   if (!strings.every(k=>typeof data[k] === 'string')) return false;
-  const allowed = kind === 'scene' ? [...strings,'arrayName','edges','rawStates','rawCues','graphics'] : kind==='append'?[...strings,'sceneType','conceptSteps']:kind==='course'?[...strings,'audience','duration_hint','outline','teaching_style']:strings;
+  const allowed = kind === 'scene' ? [...strings,'arrayName','edges','rawStates','rawCues','graphics'] : kind==='append'?[...strings,'sceneType','conceptSteps']:kind==='course'?[...strings,'audience','duration_hint','outline','teaching_style','manuscript_format']:strings;
   if (kind === 'course' && !['audience','duration_hint','outline'].every(k=>data[k]===undefined||typeof data[k]==='string')) return false;
+  if (kind === 'course' && data.manuscript_format !== undefined && !['plain','markdown'].includes(data.manuscript_format as string)) return false;
   if (kind === 'course' && data.teaching_style !== undefined && !isTeachingStyle(data.teaching_style)) return false;
   if (kind === 'teaching-style' && !isTeachingStyle(data.teaching_style)) return false;
   if (!Object.keys(data).every(k=>allowed.includes(k))) return false;

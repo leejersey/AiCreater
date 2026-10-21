@@ -156,7 +156,7 @@ class Store:
 
     @staticmethod
     def _dsl(project):
-        config={k:copy.deepcopy(v) for k,v in project['config'].items() if k not in ('visual_style', 'teaching_style')}
+        config={k:copy.deepcopy(v) for k,v in project['config'].items() if k not in ('visual_style', 'teaching_style', 'manuscript')}
         return {**config, 'scenes': [copy.deepcopy(s['scene']) for s in project['scenes']]}
 
     def list_projects(self, owner_id=None):
@@ -186,7 +186,18 @@ class Store:
             raise StoreError('assets', 'Audio asset verification failed')
         return file
 
-    def create_project(self, title, source_text, owner_id=None, teaching_style=None):
+    def create_project(self, title, source_text, owner_id=None, teaching_style=None, manuscript_format='plain'):
+        document = None
+        if manuscript_format == 'markdown':
+            from services.workflow.manuscript_document import parse_document, narration_text
+            from services.workflow.providers import ProviderError
+            try:
+                document = {'markdown': source_text, **parse_document(source_text)}
+                source_text = narration_text(document)
+            except ProviderError as exc:
+                raise StoreError('validation', str(exc)) from None
+        elif manuscript_format != 'plain':
+            raise StoreError('validation', 'Unsupported manuscript format')
         if (not isinstance(title, str) or not 1 <= len(title.strip()) <= 80 or any(ord(c) < 32 for c in title) or
                 not isinstance(source_text, str) or not source_text.strip() or len(source_text) > 4000):
             raise StoreError('validation', 'Expected title and 1–4000 code points of script')
@@ -196,6 +207,8 @@ class Store:
         config = {'schema_version': '1.0', 'theme': 'tech_explainer', 'assets': [],
                   'video_config': {'width': 1920, 'height': 1080, 'fps': 30, 'language': 'zh-CN'},
                   'teaching_style': style}
+        if document is not None:
+            config['manuscript'] = document
         with self.connection() as conn:
             conn.execute('INSERT INTO projects (id,title,source_text,config,owner_id) VALUES (%s,%s,%s,%s,%s)',
                          [project_id, title.strip(), source_text, Jsonb(config), identifier(owner_id) if owner_id else None])
@@ -464,6 +477,8 @@ class Store:
             final_valid(document)
             self._assets(document)
             profile = {**self.render_profile_for(project), 'render': copy.deepcopy(document['video_config'])}
+            if 'manuscript' in project['config']:
+                profile['manuscript'] = copy.deepcopy(project['config']['manuscript'])
             conn.execute('INSERT INTO project_versions (id,project_id,revision,dsl,profile) VALUES (%s,%s,%s,%s,%s) '
                          'ON CONFLICT (project_id,revision) DO NOTHING',
                          [str(uuid.uuid4()), project_id, expected_revision, Jsonb(document), Jsonb(profile)])

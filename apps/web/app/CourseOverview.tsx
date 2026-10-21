@@ -15,7 +15,7 @@ type Props = {project: Project; jobs: Job[]; reviews: Set<string>; dirty: boolea
 
 export function SavedManuscript({project}:{project:Project}) {
   const [copy,setCopy]=useState<{text:string;state:'pending'|'success'|'error'}|null>(null);
-  return <details><summary><FileText size={14} /> 已保存全文（只读）</summary>
+  return <><details><summary><FileText size={14} /> 已保存全文（只读）</summary>
     <p className="hint">项目 r{project.revision} · 有分镜时按当前章节顺序合并已保存口播，无分镜时显示项目保存的文稿。不是最初提交稿的历史存档，不含未保存输入；复制点击时的已保存稿会写入系统剪贴板，不会生成或配音。</p>
     <button type="button" disabled={!project.source_text||copy?.state==='pending'} onClick={async()=>{
       if(!project.source_text||copy?.state==='pending')return;
@@ -25,7 +25,11 @@ export function SavedManuscript({project}:{project:Project}) {
     }}>{copy?.state==='pending'?'正在复制…':'复制已保存全文'}</button>
     {copy?.text===project.source_text&&copy.state!=='pending'&&<p role={copy.state==='error'?'alert':'status'} className="hint">{copy.state==='success'?'已复制已保存全文。':'复制失败，请选中文本手动复制。'}</p>}
     {project.source_text?<pre tabIndex={0} role="region" aria-label="已保存全文">{project.source_text}</pre>:<p className="muted">暂无已保存全文。</p>}
-  </details>;
+  </details>
+  {project.config.manuscript?.markdown&&<details><summary>原始 Markdown · 口播与画面素材（只读存档）</summary>
+    <p className="hint">这是创建课程时保存的原稿，不随章节口播编辑更新；素材不会进入配音。修改后的口播不再匹配原稿时，不自动沿用旧素材。</p>
+    <pre tabIndex={0} role="region" aria-label="原始 Markdown">{project.config.manuscript.markdown}</pre>
+  </details>}</>;
 }
 
 export function CourseOverview({project, jobs, reviews, dirty, busy, onSelect, onReview, onSubmit, onTiming}: Props) {

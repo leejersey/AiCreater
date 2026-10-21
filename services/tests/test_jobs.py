@@ -481,6 +481,30 @@ time.sleep(20)
         self.assertEqual(self.jobs.get(job['id'])['attempts'], 1)
         self.assertFalse(self.jobs.get(job['id'])['error']['retryable'])
 
+    def test_markdown_materials_survive_jobs_but_not_narration_or_tts_config(self):
+        from services.workflow.manuscript_document import format_document
+        from services.projects.estimates import estimate_project
+        from services.tests.test_manuscript_document import SECTIONS
+        project = self.store.create_project('Markdown',format_document({'sections':SECTIONS}),manuscript_format='markdown')
+        self.project = project
+        job = self.jobs.submit_generate(project['id'],1)
+        self.assertEqual(job['input']['materials'],SECTIONS)
+        self.assertEqual(job['input']['source_text'],SECTIONS[0]['narration'])
+        self.assertEqual(job['input']['protocol_version'],'teaching-outline:7')
+        self.assertEqual(self.jobs.submit_generate(project['id'],1)['id'],job['id'])
+        self.assertEqual(estimate_project(self.store,self.jobs.model,project['id'],1,'generate',[])['status'],'no_new_call')
+        attempt = self.jobs.claim()
+        draft = {'scenes':[{'id':'s1','type':'card_sequence','narration':{'text':SECTIONS[0]['narration']},
+                 'elements':[{'id':'e1','content':'uv add requests','cue':{'text_start':0,'text_end':5}}]}]}
+        self.assertEqual(self.jobs.publish_outline(job['id'],attempt['attempt_id'],draft)['state'],'succeeded')
+        saved = self.store.get_project(project['id']);row = saved['scenes'][0]
+        candidate = self.jobs.submit_regenerate(row['id'],row['revision'])
+        self.assertEqual(candidate['input']['materials'],SECTIONS)
+        self.assertEqual(candidate['input']['protocol_version'],'scene-candidate:7')
+        voice = self.jobs.submit_voice(row['id'],row['revision'])
+        self.assertNotIn('manuscript',voice['input'])
+        self.assertNotIn('uv add',voice['input']['scene']['narration']['text'])
+
     def test_v5_compiled_provider_publishes_source_bound_graphics(self):
         import io,json,httpx
         from contextlib import redirect_stdout

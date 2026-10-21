@@ -38,6 +38,29 @@ class ProjectFixture:
 
 @unittest.skipUnless(os.environ.get('TEST_DATABASE_URL'), 'Use run_project_tests.py for real PostgreSQL')
 class ProjectTests(ProjectFixture, unittest.TestCase):
+    def test_markdown_creation_isolates_narration_and_snapshots_materials(self):
+        from services.workflow.manuscript_document import format_document
+        from services.projects.store import StoreError
+        section = {'id':'s1','title':'展示命令','narration':self.project['scenes'][0]['scene']['narration']['text'],
+                   'materials':'```bash\nuv add requests\n```','visual_intent':'说到第一步时展示命令。'}
+        markdown = format_document({'sections':[section]})
+        project = self.store.create_project('Markdown',markdown,manuscript_format='markdown')
+        self.assertEqual(project['source_text'],section['narration'])
+        self.assertEqual(project['config']['manuscript']['markdown'],markdown)
+        self.assertEqual(project['config']['manuscript']['sections'],[section])
+        with self.assertRaises(StoreError):
+            self.store.create_project('坏稿',markdown.replace('### 口播','### 旁白'),manuscript_format='markdown')
+        with self.assertRaises(StoreError):
+            self.store.create_project('纯文本上限','x'*4001)
+        # Ready project snapshots preserve manuscript metadata outside the render DSL.
+        with self.store.connection() as conn:
+            conn.execute("UPDATE projects SET config=config || %s::jsonb WHERE id=%s",
+                         [json.dumps({'manuscript':project['config']['manuscript']}),self.project['id']])
+        version = self.store.create_version(self.project['id'],1)
+        self.assertEqual(version['profile']['manuscript']['markdown'],markdown)
+        self.assertNotIn('manuscript',version['dsl'])
+        self.assertNotIn('manuscript',self.store._dsl(self.store.get_project(self.project['id'])))
+
     def clean_scene_jobs(self, project_id):
         with self.store.connection() as conn:
             conn.execute("UPDATE jobs SET state='cancelled' WHERE project_id=%s AND state IN ('queued','running')", [project_id])

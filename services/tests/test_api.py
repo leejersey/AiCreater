@@ -24,6 +24,25 @@ class ApiTests(ProjectFixture, unittest.TestCase):
         self.addCleanup(stack.close)
         self.client = stack.enter_context(TestClient(create_app(self.store, authentication=False), base_url='http://127.0.0.1:8000', client=('127.0.0.1', 50000)))
 
+    def test_markdown_routes_validate_and_separate_spoken_text(self):
+        from unittest.mock import patch
+        from services.workflow.manuscript_document import format_document
+        from services.tests.test_manuscript_document import SECTIONS
+        markdown = format_document({'sections':SECTIONS})
+        body = {'title':'uv','source_text':markdown,'manuscript_format':'markdown'}
+        response = self.client.post('/api/projects',json=body)
+        self.assertEqual(response.status_code,201)
+        self.assertEqual(response.json()['source_text'],SECTIONS[0]['narration'])
+        self.assertEqual(response.json()['config']['manuscript']['markdown'],markdown)
+        self.assertEqual(self.client.post('/api/projects',json={**body,'source_text':'plain text'}).status_code,422)
+        self.assertEqual(self.client.post('/api/projects',json={**body,'manuscript_format':'html'}).status_code,422)
+        with patch('services.api.app.Settings.from_env',return_value=None), \
+             patch('services.api.app.generate_manuscript',return_value=markdown) as generate:
+            generated = self.client.post('/api/manuscripts/generate',json={'title':'uv','manuscript_format':'markdown'})
+        self.assertEqual(generated.status_code,200)
+        self.assertEqual(generated.json()['text'],markdown)
+        self.assertEqual(generate.call_args.kwargs['manuscript_format'],'markdown')
+
     def test_batch_timing_route_is_strict_atomic_and_public(self):
         from services.tests.test_jobs import JobTests
         project,selected=JobTests.pending_timing(self)
