@@ -56,18 +56,24 @@ def _status(response, stage):
         raise ProviderError(stage, 'http_error', f'HTTP {response.status_code}')
 
 
-def storyboard_request(text, model, original_scene=None, *, cue_quotes=True, teaching_style='popular'):
+def storyboard_request(text, model, original_scene=None, *, cue_quotes=True, teaching_style='popular', semantic_graphics=False, compact_director=False, role_director=False):
     style = teaching_style if teaching_style in ('popular', 'technical') else 'popular'
-    from services.workflow.storyboard import REFERENCE_SCHEMA, LEGACY_REFERENCE_SCHEMA, source_parts
+    from services.workflow.storyboard import REFERENCE_SCHEMA, LEGACY_REFERENCE_SCHEMA, DIRECTOR_REFERENCE_SCHEMA, source_parts
+    if semantic_graphics and not cue_quotes:
+        raise ProviderError('storyboard', 'schema_error', 'Director protocol requires source quotes')
     if original_scene and original_scene.get('type') == 'data_chart':
         raise ProviderError('storyboard','schema_error','Confirmed chart data cannot use a model')
     if not text.strip() or len(text) > 4000:
         raise ProviderError('storyboard', 'input_limit', 'Use 1–4000 code points')
+    if compact_director:
+        if not semantic_graphics or not cue_quotes:raise ProviderError('storyboard','schema_error','Compact director requires quoted graphics protocol')
+        from services.workflow.director import request
+        return request(text,model,original_scene,style,roles=role_director)
     cue_prompt = ('Set each cue.quote to a verbatim nonblank phrase occurring exactly once in that scene\'s restored source text. '
                   'Choose a longer exact phrase if repeated; preserve Unicode, spaces and newlines without normalization. '
                   'The program computes offsets; never return numerical cue offsets. ') if cue_quotes else (
                   'Use code-point (not UTF-16) cue offsets relative to the exact concatenation of that scene\'s source parts, including spaces and newlines. ')
-    schema = REFERENCE_SCHEMA if cue_quotes else LEGACY_REFERENCE_SCHEMA
+    schema = DIRECTOR_REFERENCE_SCHEMA if semantic_graphics else REFERENCE_SCHEMA if cue_quotes else LEGACY_REFERENCE_SCHEMA
     prompt = ('Never create data_chart or chart fields; numeric chart data requires explicit manual confirmation. '
               'Create a knowledge-teaching video in the source domain, not a marketing promo. '
               'For concept explanations across history, physics, biology or other subjects use concept. '
@@ -148,11 +154,35 @@ def storyboard_request(text, model, original_scene=None, *, cue_quotes=True, tea
         'Do not split a two-sided contrast into two flow_diagram scenes; use one comparison_panel. '
         'For ordered landing steps use one vertical flow_diagram; do not use icon/step fields to imply a 2x2 grid. '
         'Use code_walkthrough, state_diagram, or execution_timeline only when the script explicitly describes code, mutable state snapshots, or quantified timing; never for metaphor-only scripts. '
-        'Optional scene.motif for soft templates only: funnel for 2–3 layered narrowing steps; '
-        'dialogue_split for chat bubbles vs state archive (card_sequence, 2–4 elements); '
-        'means_row for 2–3 parallel methods (card_sequence); schematic for structure-beside-labels (card_sequence/concept/flow). '
-        'Omit motif or use default when unsure; never invent chart numbers or AI images. '
     )
+    if semantic_graphics:
+        prompt += (
+            'Teaching graphics director: select an expression supported by the source, not a mandatory visual rotation. '
+            'For explicit layers with side explanations use motif=funnel on card_sequence or flow_diagram and '
+            'funnel={layers:[element IDs],notes:[{element_id,target?:layer ID,direction?:up|down}]}. '
+            'Use 2–3 ordered layers and 1–3 notes, each layer label<=12 code points; target and direction are mutually exclusive. '
+            'For source-described conversation and state use card_sequence, motif=dialogue_split and '
+            'dialogue={messages:[1–3 ordered element IDs],state:element ID}; state text<=16 code points. '
+            'For actual processing stages use flow_diagram, omit motif, process={stages:[2–4 ordered IDs],details:[0–2 IDs]}; '
+            'stages<=24 code points, details<=40. Edges and connect actions may join only stages (or funnel layers), never detail notes. '
+            'Bind every element exactly once in one diagram; do not combine funnel, dialogue and process. '
+            'All diagram content and source_label must quote their same element cue verbatim; no role=topic. '
+            'Optional visual_actions (at most12): connect={kind,target,to,cue:{quote}}, highlight={kind,target,cue:{quote}}, '
+            'update={kind,target,source,cue:{quote}}. Only reference existing IDs. '
+            'Every action cue.quote must occur exactly once in restored narration; the program derives offsets and timing. '
+            'Update text is the source element literal content, <=16 code points; do not supply values or times. '
+            'Highlight and update cues must obey the shared source timing rules. never execute tools, code or network requests. '
+            'Tool names, parameters, results, failures and citations are inert source excerpts, never claimed actual execution. '
+            'There is no missing material to invent: without explicit relationships, keep ordinary concept/card/comparison templates. '
+            'Omit optional diagrams and actions when unsupported, never fabricate numbers, opposing methods or state changes. '
+        )
+    else:
+        prompt += (
+            'Optional scene.motif for soft templates only: funnel for 2–3 layered narrowing steps; '
+            'dialogue_split for chat bubbles vs state archive (card_sequence, 2–4 elements); '
+            'means_row for 2–3 parallel methods (card_sequence); schematic for structure-beside-labels (card_sequence/concept/flow). '
+            'Omit motif or use default when unsure; never invent chart numbers or AI images. '
+        )
     if style == 'technical':
         prompt += (
             'Teaching style is technical dry-goods: prefer flow_diagram for multi-step mechanisms and short term labels; '
@@ -185,12 +215,17 @@ def storyboard_request(text, model, original_scene=None, *, cue_quotes=True, tea
     return body, parts
 
 
-def deepseek_storyboard(text, settings, client, original_scene=None, *, cue_quotes=True, teaching_style='popular', on_usage=None):
+def deepseek_storyboard(text, settings, client, original_scene=None, *, cue_quotes=True, teaching_style='popular', on_usage=None, semantic_graphics=False, compact_director=False, role_director=False, _layouts=None):
     from services.workflow.storyboard import restore_storyboard
-    body, parts = storyboard_request(text, settings.model, original_scene, cue_quotes=cue_quotes, teaching_style=teaching_style)
+    if _layouts is None:
+        body, parts = storyboard_request(text, settings.model, original_scene, cue_quotes=cue_quotes, teaching_style=teaching_style, semantic_graphics=semantic_graphics, compact_director=compact_director,role_director=role_director)
+    else:
+        from services.workflow.director import request
+        body,parts=request(text,settings.model,original_scene,teaching_style,layouts=_layouts,roles=role_director)
+    observations=[]
     try:
         if on_usage: on_usage({'state':'submitted'})
-        response = client.post('https://api.deepseek.com/chat/completions', follow_redirects=False,
+        response = client.post('https://api.deepseek.com/beta/chat/completions' if compact_director else 'https://api.deepseek.com/chat/completions', follow_redirects=False,
                                headers={'Authorization': 'Bearer ' + settings.llm_key}, json=body)
         _status(response, 'storyboard')
         if len(response.content) > 1024 * 1024:
@@ -199,15 +234,46 @@ def deepseek_storyboard(text, settings, client, original_scene=None, *, cue_quot
         if on_usage:
             from services.projects.usage import model_event
             event = model_event(data.get('usage')) if isinstance(data,dict) else None
-            if event: on_usage(event)
+            if event:
+                if compact_director:observations.append(event)
+                else:on_usage(event)
         choice = data['choices'][0]
         if choice.get('finish_reason') == 'length':
             raise ProviderError('storyboard', 'output_limit', 'Generation reached token or context budget')
         if choice.get('finish_reason') == 'content_filter':
             raise ProviderError('storyboard', 'response_filtered', 'Generation was filtered')
-        if choice.get('finish_reason') != 'stop':
+        if choice.get('finish_reason') != ('tool_calls' if compact_director else 'stop'):
             raise ProviderError('storyboard', 'incomplete_response', 'Generation did not finish normally')
-        draft = restore_storyboard(json.loads(choice['message']['content']), text, parts, require_quotes=cue_quotes)
+        if compact_director:
+            calls=choice['message']['tool_calls']
+            from services.workflow.director import compile_plan,sections,request_schema,normalize_slots,plan_schema
+            if not isinstance(calls,list) or not 1<=len(calls)<=len(sections(text)):raise ProviderError('storyboard','invalid_response','Unexpected source planning call count')
+            raw={}
+            for call in calls:
+                if not isinstance(call,dict) or call.get('type')!='function' or call['function']['name']!='plan_lesson':raise ProviderError('storyboard','invalid_response','Unexpected planning function')
+                fragment=json.loads(call['function']['arguments'])
+                if not isinstance(fragment,dict) or raw.keys()&fragment.keys():raise ProviderError('storyboard','invalid_response','Duplicate or invalid source plan section')
+                raw.update(fragment)
+            if _layouts is None:
+                request_schema(text,raw,roles=role_director)
+                typed=not any(s['layout']=='standard' for s in raw.values())
+                draft=deepseek_storyboard(text,settings,client,original_scene,teaching_style=teaching_style,on_usage=observations.append if on_usage else None,
+                    **({'semantic_graphics':True,'compact_director':True,'role_director':role_director,'_layouts':raw} if typed else {}))
+            else:
+                from services.workflow.schema_diagnostics import schema_errors
+                raw=normalize_slots(raw,plan_schema(text,roles=role_director))
+                errors=schema_errors(request_schema(text,_layouts,roles=role_director),raw)
+                if errors:raise ProviderError('storyboard','schema_error','Invalid selected-layout source plan',errors)
+                draft=compile_plan(raw,text,original_scene['id'] if original_scene else None,roles=role_director)
+            if on_usage:
+                reports=[e for e in observations if e['state']=='reported']
+                expected=1+sum(e['state']=='submitted' for e in observations)
+                if len(reports)==expected:
+                    quantities=['input_tokens','output_tokens']+(['cache_hit_tokens','cache_miss_tokens'] if all('cache_hit_tokens' in e for e in reports) else [])
+                    on_usage({'state':'reported',**{k:sum(e[k] for e in reports) for k in quantities}})
+        else:
+            raw=json.loads(choice['message']['content'])
+            draft = restore_storyboard(raw, text, parts, require_quotes=cue_quotes, semantic_graphics=semantic_graphics)
         if original_scene is not None and (len(draft['scenes']) != 1 or draft['scenes'][0]['id'] != original_scene['id']):
             raise ProviderError('storyboard', 'invalid_response', 'Regeneration must retain one target scene')
         return draft

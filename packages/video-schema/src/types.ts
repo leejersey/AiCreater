@@ -17,6 +17,9 @@ export type Scene = {
     | "concept";
   motif?: "default" | "funnel" | "dialogue_split" | "means_row" | "schematic";
   chart?: Chart;
+  dialogue?: Dialogue;
+  process?: Process;
+  funnel?: Funnel;
   timeline?: {
     duration_ms: number;
     /**
@@ -55,6 +58,10 @@ export type Scene = {
     from: Id;
     to: Id;
   }[];
+  /**
+   * @maxItems 12
+   */
+  visual_actions?: VisualAction[];
   /**
    * @minItems 1
    * @maxItems 6
@@ -102,6 +109,20 @@ export type Chart = {
     values: number[];
   }[];
 };
+export type VisualAction = {
+  [k: string]: unknown;
+} & {
+  kind: "connect" | "highlight" | "update";
+  target: Id;
+  to?: Id;
+  source?: Id;
+  cue: {
+    text_start: number;
+    text_end: number;
+  };
+  start_frame: number;
+  duration_frames: number;
+};
 
 export interface VideoProject {
   schema_version: "1.0";
@@ -129,6 +150,45 @@ export interface Asset {
   storage_key: string;
   checksum: string;
   duration_ms: number;
+}
+export interface Dialogue {
+  /**
+   * @minItems 1
+   * @maxItems 3
+   */
+  messages: Id[];
+  state: Id;
+  /**
+   * @maxItems 2
+   */
+  context_messages?: Id[];
+}
+export interface Process {
+  /**
+   * @minItems 2
+   * @maxItems 4
+   */
+  stages: Id[];
+  /**
+   * @maxItems 2
+   */
+  details: Id[];
+}
+export interface Funnel {
+  /**
+   * @minItems 2
+   * @maxItems 3
+   */
+  layers: Id[];
+  /**
+   * @minItems 1
+   * @maxItems 3
+   */
+  notes: {
+    element_id: Id;
+    target?: Id;
+    direction?: "up" | "down";
+  }[];
 }
 export interface Element {
   id: Id;

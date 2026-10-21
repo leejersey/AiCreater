@@ -10,7 +10,7 @@ export type DraftData = {
   'visual-style': {visual_style:string};
   chart: {text: string};
   scene: {text: string; code: string; steps: string; arrayName?: string;
-    edges: {from: string; to: string}[]; rawStates: Record<string, string>; rawCues?: RawCues};
+    edges: {from: string; to: string}[]; rawStates: Record<string, string>; rawCues?: RawCues; graphics?: string};
 };
 export type DraftKind = keyof DraftData;
 export type DraftScope = {kind: DraftKind; projectId: string; sceneId: string; label?: string};
@@ -48,14 +48,14 @@ function validData(kind: DraftKind, data: unknown): boolean {
   if (!object(data)) return false;
   const strings = kind === 'course' ? ['title','source'] : kind === 'append' ? ['content','narration'] : kind === 'voice' ? ['speaker'] : kind==='teaching-style'?['teaching_style']:kind==='visual-style'?['visual_style']:kind === 'chart' ? ['text'] : ['text','code','steps'];
   if (!strings.every(k=>typeof data[k] === 'string')) return false;
-  const allowed = kind === 'scene' ? [...strings,'arrayName','edges','rawStates','rawCues'] : kind==='append'?[...strings,'sceneType','conceptSteps']:kind==='course'?[...strings,'audience','duration_hint','outline','teaching_style']:strings;
+  const allowed = kind === 'scene' ? [...strings,'arrayName','edges','rawStates','rawCues','graphics'] : kind==='append'?[...strings,'sceneType','conceptSteps']:kind==='course'?[...strings,'audience','duration_hint','outline','teaching_style']:strings;
   if (kind === 'course' && !['audience','duration_hint','outline'].every(k=>data[k]===undefined||typeof data[k]==='string')) return false;
   if (kind === 'course' && data.teaching_style !== undefined && !isTeachingStyle(data.teaching_style)) return false;
   if (kind === 'teaching-style' && !isTeachingStyle(data.teaching_style)) return false;
   if (!Object.keys(data).every(k=>allowed.includes(k))) return false;
   if(kind==='append')return (data.sceneType===undefined||['card_sequence','concept'].includes(data.sceneType as string))&&
     (data.conceptSteps===undefined||(Array.isArray(data.conceptSteps)&&data.conceptSteps.length>=1&&data.conceptSteps.length<=6&&data.conceptSteps.every(e=>object(e)&&Object.keys(e).length===2&&typeof e.content==='string'&&typeof e.concept_role==='string'&&Object.hasOwn(conceptLabels,e.concept_role))));
-  return kind !== 'scene' || ((data.arrayName === undefined || typeof data.arrayName === 'string') &&
+  return kind !== 'scene' || ((data.graphics === undefined || typeof data.graphics === 'string') && (data.arrayName === undefined || typeof data.arrayName === 'string') &&
     Array.isArray(data.edges) && data.edges.length <= 15 && data.edges.every(e=>object(e) && typeof e.from === 'string' && typeof e.to === 'string' && Object.keys(e).length === 2) &&
     object(data.rawStates) && Object.keys(data.rawStates).length <= 6 && Object.values(data.rawStates).every(v=>typeof v === 'string') &&
     (data.rawCues === undefined || (object(data.rawCues) && Object.keys(data.rawCues).length <= 6 &&

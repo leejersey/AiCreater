@@ -86,6 +86,100 @@ class ProjectTests(ProjectFixture, unittest.TestCase):
         self.assertEqual(len(first['scenes']), 1)
         self.assertEqual(first['source_text'], '第一章。')
 
+    def test_mechanism_style_is_optional_freezes_without_revoice_or_old_version_changes(self):
+        old = self.store.create_version(self.project['id'], 1)
+        changed = self.store.set_visual_style(self.project['id'], 1, 'mechanism')
+        self.assertEqual(changed['scenes'], self.project['scenes'])
+        self.assertEqual(changed['revision'], 2)
+        self.assertEqual(changed['visual_style']['id'], 'mechanism')
+        self.assertEqual(self.store.set_visual_style(changed['id'], 2, 'mechanism'), changed)
+        frozen = self.store.create_version(changed['id'], 2)
+        self.assertEqual(frozen['profile']['visual_style'], changed['visual_style'])
+        self.assertNotIn('presentation', frozen['profile']['visual_style']['tokens'])
+        self.assertEqual(frozen['dsl'], old['dsl'])
+        self.assertEqual(self.store.get_version(old['id']), old)
+
+    def test_visual_actions_survive_import_freeze_clone_and_candidate_retiming(self):
+        from services.projects.jobs import Jobs
+        dsl = copy.deepcopy(self.dsl)
+        scene = next(s for s in dsl['scenes'] if s['type'] == 'flow_diagram')
+        dsl['scenes'] = [scene]
+        scene['motif'] = 'funnel'
+        last = scene['elements'][-1]
+        last['content'] = scene['narration']['text'][last['cue']['text_start']:last['cue']['text_end']]
+        scene['visual_actions'] = [
+            {'kind': 'connect', 'target': 'e1', 'to': 'e2', 'cue': scene['elements'][1]['cue'], 'start_frame': 94, 'duration_frames': 12},
+            {'kind': 'highlight', 'target': 'e2', 'cue': scene['elements'][1]['cue'], 'start_frame': 94, 'duration_frames': 12},
+            {'kind': 'update', 'target': 'e1', 'source': 'e3', 'cue': last['cue'], 'start_frame': 176, 'duration_frames': 12}]
+        project = self.store.import_project('动作持久化测试', dsl)
+        row = project['scenes'][0]
+        version = self.store.create_version(project['id'], 1)
+        self.assertEqual(version['dsl']['scenes'][0]['visual_actions'], scene['visual_actions'])
+        cloned = self.store.duplicate_scene(project['id'], 1, row['id'], 1)
+        self.assertEqual(cloned['scenes'][1]['scene']['visual_actions'], scene['visual_actions'])
+        candidate = self.store.create_candidate(row['id'], 1, Jobs._draft_scene(row['scene']))
+        accepted = self.store.accept_candidate(row['id'], candidate['id'], 1)
+        changed = next(s for s in accepted['scenes'] if s['id'] == row['id'])
+        self.assertEqual(changed['state'], 'needs_timing')
+        self.assertNotIn('start_frame', changed['scene']['visual_actions'][0])
+        self.assertEqual(changed['scene']['motif'], 'funnel')
+        self.assertEqual(self.store.get_version(version['id']), version)
+
+    def test_dialogue_and_process_bindings_survive_freeze_clone_and_candidate(self):
+        import hashlib
+        import wave
+        from services.tests.test_teaching_diagrams import draft, process_draft, funnel_draft
+        from services.tests.test_role_director import role_draft
+        from services.tests.test_director import wire
+        from services.workflow.storyboard import restore_storyboard, source_parts
+        from services.tts.timing import time_scene
+        from services.projects.jobs import Jobs
+        for field, builder in [('dialogue', draft), ('process', process_draft), ('funnel', funnel_draft), ('dialogue', role_draft)]:
+            with self.subTest(field=field):
+                raw = builder(); text = raw['narration']['text']
+                restored = restore_storyboard({'scenes':[wire(raw)]}, text, source_parts(text), require_quotes=True, semantic_graphics=True)
+                self.assertEqual(restored, {'scenes':[raw]})
+                duration = len(text)*100
+                segments = [{'text_start': i, 'text_end': i+1, 'start_ms': i*100, 'end_ms': (i+1)*100} for i in range(len(text))]
+                audio = self.public / 'benchmark' / f'{field}-{builder.__name__}.wav'
+                audio.parent.mkdir(exist_ok=True)
+                with wave.open(str(audio), 'wb') as stream:
+                    stream.setparams((1, 2, 24000, 0, 'NONE', 'not compressed'))
+                    stream.writeframes(b'\x00\x00' * (duration*24))
+                asset = {'id': 'synthetic', 'type': 'audio', 'storage_key': f'benchmark/{field}-{builder.__name__}.wav',
+                         'duration_ms': duration, 'checksum': hashlib.sha256(audio.read_bytes()).hexdigest()}
+                scene = time_scene(restored['scenes'][0], asset['id'], duration, segments)
+                document = {**copy.deepcopy(self.dsl), 'assets': [asset], 'scenes': [scene]}
+                project = self.store.import_project('图形绑定存取测试', document)
+                row = project['scenes'][0]; version = self.store.create_version(project['id'], 1)
+                self.assertEqual(version['dsl']['scenes'][0][field], raw[field])
+                cloned = self.store.duplicate_scene(project['id'], 1, row['id'], 1)
+                self.assertEqual(cloned['scenes'][1]['scene'][field], raw[field])
+                candidate = self.store.create_candidate(row['id'], 1, Jobs._draft_scene(row['scene']))
+                accepted = self.store.accept_candidate(row['id'], candidate['id'], 1)
+                changed = next(s for s in accepted['scenes'] if s['id'] == row['id'])
+                self.assertEqual(changed['scene'][field], raw[field])
+                self.assertEqual(self.store.get_version(version['id']), version)
+
+    def test_graphics_patch_preserves_voice_rejects_bad_edits_and_requires_retiming(self):
+        from services.projects.store import StoreError
+        from services.projects.jobs import Jobs
+        row=next(s for s in self.project['scenes'] if s['scene']['type']=='card_sequence')
+        graphics={k:v for k,v in Jobs._draft_scene(row['scene']).items() if k in ['motif','funnel','dialogue','process','visual_actions']}
+        old=self.store.create_version(self.project['id'],1)
+        unchanged=self.store.edit_scene(row['id'],1,{'graphics':graphics})
+        self.assertEqual(unchanged,self.project)
+        changed=self.store.edit_scene(row['id'],1,{'graphics':{'visual_actions':[{'kind':'highlight','target':row['scene']['elements'][0]['id'],'cue':row['scene']['elements'][0]['cue']}]}})
+        current=next(s for s in changed['scenes'] if s['id']==row['id'])
+        self.assertEqual(current['state'],'needs_timing')
+        self.assertEqual(current['scene']['narration'],row['scene']['narration'])
+        self.assertNotIn('animations',current['scene'])
+        for bad in [{'execute':'tool'},{'visual_actions':[{'kind':'highlight','target':'missing','cue':row['scene']['elements'][0]['cue']}]},{'visual_actions':[{'kind':'highlight','target':row['scene']['elements'][0]['id'],'cue':row['scene']['elements'][0]['cue'],'start_frame':12}]}]:
+            with self.subTest(bad=bad),self.assertRaises(StoreError):self.store.edit_scene(row['id'],2,{'graphics':bad})
+            self.assertEqual(self.store.get_project(self.project['id']),changed)
+        with self.assertRaises(StoreError):self.store.edit_scene(row['id'],1,{'graphics':{}})
+        self.assertEqual(self.store.get_version(old['id']),old)
+
     def test_duplicate_scene_reuses_audio_and_keeps_snapshot(self):
         row = self.project['scenes'][0]
         old = self.store.create_version(self.project['id'], 1)

@@ -1,5 +1,7 @@
 'use client';
 import {useState} from 'react';
+import {GraphicsFields} from './GraphicsFields';
+import {graphicsText,graphicsPatch} from '../lib/graphics-editor';
 import {CodeStateFields} from './CodeStateFields';
 import {SceneRow, formSteps, scenePatch, updateStep, toggleCodeStateSteps, formEdgeError, codeStateFields, cueSteps, cuePreview, stepStartFrame} from '../lib/editor';
 import {DraftNotice, useLocalDraft} from './LocalDraft';
@@ -21,7 +23,7 @@ export function PreviewSteps({row,video,busy,dirty,onSeek,draftPreview=false}:{r
 export function SceneEditor({projectId, row, disabled, onDirty, save, act}: {projectId: string; row: SceneRow; disabled: boolean; onDirty: (v: boolean) => void; save: (changes: unknown) => Promise<void>; act: (fn: () => Promise<unknown>) => Promise<void>}) {
   const confirmDialog = useConfirm();
   const draft=useLocalDraft({kind:'scene',projectId,sceneId:row.id,label:'场景编辑 · '+row.scene.type+' · '+row.id},row.revision,
-    {text:row.scene.narration.text,code:row.scene.code?.source??'',steps:JSON.stringify(row.scene.elements,null,2),edges:row.scene.edges??[],arrayName:row.scene.code?.array_name,rawStates:{},rawCues:{}},()=>onDirty(true));
+    {text:row.scene.narration.text,code:row.scene.code?.source??'',steps:JSON.stringify(row.scene.elements,null,2),edges:row.scene.edges??[],arrayName:row.scene.code?.array_name,rawStates:{},rawCues:{},graphics:graphicsText(row.scene)},()=>onDirty(true));
   const {text,code,steps,edges,arrayName,rawStates,rawCues={}}=draft.value;
   const setText=(text:string)=>draft.change({text}),setCode=(code:string)=>draft.change({code}),setSteps=(steps:string)=>draft.change({steps});
   const setEdges=(edges:typeof draft.value.edges)=>draft.change({edges});
@@ -38,6 +40,9 @@ export function SceneEditor({projectId, row, disabled, onDirty, save, act}: {pro
   try { parsed=formSteps(steps); } catch(e) { parseError=e instanceof Error?e.message:'步骤数据错误'; }
   if(parsed)try { mergedSteps=cueSteps(steps,text,row.scene.type,rawCues);cueElements=formSteps(mergedSteps); }
   catch(e) { cueError=e instanceof Error?e.message:'触发范围无效，原输入保留。'; }
+  let graphicsError='';const graphics=draft.value.graphics??graphicsText(row.scene);
+  const graphicsScene={...row.scene,narration:{text},elements:cueElements??parsed??row.scene.elements,...(row.scene.type==='flow_diagram'?{edges}:{})};
+  try{graphicsPatch(graphicsScene,graphics);}catch(e){graphicsError=e instanceof Error?e.message:'图形配置错误';}
   function rawCue(step:Element) {
     return Object.hasOwn(rawCues,step.id)?rawCues[step.id]:{text_start:String(step.cue.text_start),text_end:String(step.cue.text_end)};
   }
@@ -48,7 +53,7 @@ export function SceneEditor({projectId, row, disabled, onDirty, save, act}: {pro
     try { setSteps(updateStep(steps,index,values));setError('');onDirty(true);return true; }
     catch(e) { setError(e instanceof Error?e.message:'修改失败；输入保留。');return false; }
   }
-  return <form onSubmit={e=>{e.preventDefault();if(disabled||!parsed||invalidState||edgeError||cueError)return;void act(async()=>{await save(scenePatch({...row.scene,code:row.scene.code?{...row.scene.code,array_name:arrayName}:undefined},text,code,mergedSteps,JSON.stringify(edges)!==JSON.stringify(row.scene.edges??[])?edges:undefined));draft.clear();});}}>
+  return <form onSubmit={e=>{e.preventDefault();if(disabled||!parsed||invalidState||edgeError||cueError||graphicsError)return;void act(async()=>{await save({...scenePatch({...row.scene,code:row.scene.code?{...row.scene.code,array_name:arrayName}:undefined},text,code,mergedSteps,JSON.stringify(edges)!==JSON.stringify(row.scene.edges??[])?edges:undefined),...(graphics!==graphicsText(row.scene)?{graphics:graphicsPatch(graphicsScene,graphics)}:{})});draft.clear();});}}>
     <DraftNotice {...draft.notice} disabled={externalDisabled}/>
     {invalidState&&<p role="alert" className="error-text">数组快照存在无效输入，请修正后保存；原始文本已保留。</p>}
     <fieldset disabled={disabled} style={{border:0,padding:0,margin:0,minWidth:0}}>
@@ -62,7 +67,7 @@ export function SceneEditor({projectId, row, disabled, onDirty, save, act}: {pro
           message: '确定要关闭同屏模式切回旧布局吗？',
           detail: '切回旧布局会清除数组、指针、轮次、输入快照；变量、输出和代码保留。',
           confirmText: '确认切回',
-          type: 'warning'
+          variant: 'warning'
         });
         if(!ok)return;
       }
@@ -101,6 +106,8 @@ export function SceneEditor({projectId, row, disabled, onDirty, save, act}: {pro
         <label>步骤 {i+1} 输出<input value={step.output??''} onChange={e=>change(i,{output:e.target.value})}/></label>
       </>}
     </fieldset>)}
+    {['card_sequence','flow_diagram','comparison_panel'].includes(row.scene.type)&&<GraphicsFields scene={graphicsScene} value={graphics} onChange={graphics=>{draft.change({graphics});setError('');onDirty(true);}}/>}
+    {graphicsError&&<p role="alert" className="error-text">{graphicsError}；原输入保留，请修正后保存。</p>}
     {row.scene.type==='flow_diagram'&&<fieldset disabled={disabled}><legend>流程连线</legend>
       <p className="hint">只连接现有节点，最多15条；可删除全部连线。重复或成环由服务端拒绝，原输入保留。仅改连线保留原配音与时间轴。</p>
       {edges.map((edge,i)=><div key={i}>
@@ -116,7 +123,7 @@ export function SceneEditor({projectId, row, disabled, onDirty, save, act}: {pro
       {edgeError&&<p role="alert" className="error-text">{edgeError}</p>}
     </fieldset>}
     <p className="hint">元素编号、顺序、主题标记只读，流程连线和概念教学角色可手工编辑。概念须恰好一个定义、至多一个总结；仅改角色保留配音和时间轴，仍需人工核对教学含义。仅改触发范围保留原配音，保存后待对齐，不能预览/导出当前稿；需显式本地重算时间轴（按原规则重建字幕与入场，缓存缺失会报错，不自动配音）。状态/时间线专用字段在高级JSON编辑，原数据保留。修改口播仍需重新配音。</p>
-    <button className="primary" disabled={disabled||!parsed||invalidState||!!edgeError||!!cueError} type="submit">保存当前场景</button>
+    <button className="primary" disabled={disabled||!parsed||invalidState||!!edgeError||!!cueError||!!graphicsError} type="submit">保存当前场景</button>
     </fieldset>
   </form>;
 }

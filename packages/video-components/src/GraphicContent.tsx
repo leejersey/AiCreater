@@ -13,22 +13,19 @@ const paths: Record<NonNullable<Element['icon']>,string> = {
 export function GraphicIcon({icon}:{icon:NonNullable<Element['icon']>}) {
   return <svg data-icon={icon} aria-hidden="true" width={32} height={32} viewBox="0 0 32 32"><path d={paths[icon]} fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round"/></svg>;
 }
+export function MarkedText({element,lines,color}:{element:Element;lines:string[];color:string}){
+ const p=usePalette(),paper=isPaperSlide(useVisualStyle());let position=0;
+ return <>{lines.map((line,i)=>{const chars=Array.from(line),start=position;position+=chars.length;return <React.Fragment key={i}>{i>0?'\n':''}{chars.map((char,j)=>element.highlight&&start+j>=element.highlight.text_start&&start+j<element.highlight.text_end?<mark key={j} data-paper-highlight={paper||undefined} style={{color:paper?p.text:color,background:paper?'#ffe566':color+'18',borderBottom:paper?'none':`2px solid ${color}`}}>{char}</mark>:char)}</React.Fragment>;})}</>;
+}
 export function GraphicContent({element,box}:{element:Element;box:ElementBox}) {
   const p=usePalette(),style=useVisualStyle(),paper=isPaperSlide(style), color=element.panel_style==='conclusion'?p.accent:element.icon==='warning'?p.warning:element.icon==='search'?p.secondary:p.source;
-  let position=0;
   return <div style={{width:'100%',display:'flex',flexDirection:'column',alignItems:'center',gap:style.typography.graphicGap,textAlign:'center'}}>
     <div style={{height:36,display:'flex',alignItems:'center',justifyContent:'center',gap:14,color}}>
       {element.icon&&<GraphicIcon icon={element.icon}/>}
       {element.step!==undefined&&<span data-step={element.step} style={{fontSize:24,border:`2px solid ${color}`,borderRadius:style.card.outline?2:18,padding:'1px 12px'}}>步骤 {element.step}</span>}
       {element.panel_style==='conclusion'&&!paper&&<span data-conclusion style={{fontSize:22,color}}>结论</span>}
     </div>
-    <div style={{fontSize:box.fontSize,lineHeight:style.typography.lineHeight,whiteSpace:'pre'}}>{box.lines.map((line,i)=>{
-      const chars=Array.from(line),start=position;position+=chars.length;
-      return <React.Fragment key={i}>{i>0?'\n':''}{chars.map((char,j)=>{
-        const marked=element.highlight&&start+j>=element.highlight.text_start&&start+j<element.highlight.text_end;
-        return marked?<mark key={j} data-paper-highlight={paper||undefined} style={{color:paper?p.text:color,background:paper?'#ffe566':color+'18',borderBottom:paper?'none':`2px solid ${color}`}}>{char}</mark>:char;
-      })}</React.Fragment>;
-    })}</div>
+    <div style={{fontSize:box.fontSize,lineHeight:style.typography.lineHeight,whiteSpace:'pre'}}><MarkedText element={element} lines={box.lines} color={color}/></div>
     <div style={{height:28,fontSize:22,color:p.muted}}>{element.source_label&&!paper&&<span data-source-label={element.source_label}>稿中来源 · {element.source_label}</span>}</div>
   </div>;
 }

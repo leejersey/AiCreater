@@ -17,7 +17,7 @@ def _fields(node):
     return result
 
 
-PUBLIC_FIELDS = _fields(json.loads((Path(__file__).resolve().parents[2] / 'packages/video-schema/schema.json').read_text())) | {'source_part_ids', 'quote'}
+PUBLIC_FIELDS = _fields(json.loads((Path(__file__).resolve().parents[2] / 'packages/video-schema/schema.json').read_text())) | {'source_part_ids', 'quote', 'layout', 'a', 'b', 'c', 'd', 'state', 'update', 'note_a', 'note_b', 'context', 'message', 'initial_state', 'state_after'}
 RULES = frozenset(Draft7Validator.VALIDATORS) | {'schema'}
 
 
@@ -32,7 +32,7 @@ def safe_schema_errors(values):
         parts = []
         # Unknown property names may contain secrets: stop before them, never echo them.
         for part in path.split('/')[1:11]:
-            if part in PUBLIC_FIELDS: parts.append(part)
+            if part in PUBLIC_FIELDS or re.fullmatch(r'p[1-9][0-9]{0,4}',part): parts.append(part)
             elif part.isascii() and part.isdigit() and len(part) <= 3 and int(part) <= 200:
                 parts.append(str(int(part)))
             else: break
@@ -43,14 +43,21 @@ def safe_schema_errors(values):
 def safe_cue_error(value):
     if not isinstance(value, dict): return None
     path, reason = value.get('path'), value.get('reason')
-    if not isinstance(path, str) or len(path) > 48 or not re.fullmatch(r'/scenes/(?:[0-9]|1[0-9])/elements/[0-5]/cue', path): return None
+    if not isinstance(path, str) or len(path) > 48 or not re.fullmatch(r'/scenes/(?:[0-9]|1[0-9])/(?:elements/[0-5]|visual_actions/(?:[0-9]|1[01]))/cue', path): return None
     if not isinstance(reason, str) or reason not in {'empty_or_reversed', 'out_of_bounds', 'blank_interval', 'quote_blank', 'quote_not_found', 'quote_ambiguous'}: return None
     return {'path': path, 'reason': reason}
 
 
 def schema_errors(schema, value):
     problems = list(islice(Draft7Validator(schema).iter_errors(value), 3))
-    details = safe_schema_errors([{'path': '/' + '/'.join(map(str, error.absolute_path)), 'rule': error.validator}
-                                 for error in problems])
+    locations=[]
+    for error in problems:
+        path=list(error.absolute_path)
+        if error.validator=='required':
+            for name in error.validator_value:
+                if re.fullmatch(r'p[1-9][0-9]{0,4}',name) and error.message==f'{name!r} is a required property':
+                    path.append(name);break
+        locations.append({'path':'/'+'/'.join(map(str,path)),'rule':error.validator})
+    details = safe_schema_errors(locations)
     # Missing diagnostics must never turn an invalid document into a valid one.
     return details or ([{'path': '/', 'rule': 'schema'}] if problems else [])

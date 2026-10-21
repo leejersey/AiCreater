@@ -71,12 +71,14 @@ def child():
         style = payload.get('teaching_style') or 'popular'
         if style not in ('popular', 'technical'):
             style = 'popular'
-        options = {**usage_options, **({'cue_quotes': False} if payload.get('protocol_version') in ['teaching-outline:1', 'scene-candidate:1'] else {}), 'teaching_style': style}
+        director = payload.get('protocol_version') in ['teaching-outline:4','scene-candidate:4','teaching-outline:5','scene-candidate:5','teaching-outline:6','scene-candidate:6']
+        options = {**({'compact_director':True} if payload.get('protocol_version') in ['teaching-outline:5','scene-candidate:5','teaching-outline:6','scene-candidate:6'] else {}), **({'role_director':True} if payload.get('protocol_version') in ['teaching-outline:6','scene-candidate:6'] else {}), **({'semantic_graphics':True} if director else {}), **usage_options, **({'cue_quotes': False} if payload.get('protocol_version') in ['teaching-outline:1', 'scene-candidate:1'] else {}), 'teaching_style': style}
         with httpx.Client(timeout=120) as client:
             if payload['kind'] == 'generate':
                 draft = deepseek_storyboard(payload['source_text'], settings, client, **options)
             else:
                 original = {k: v for k, v in payload['scene'].items() if k in ['id', 'type', 'narration', 'elements', 'edges', 'code', 'structure', 'timeline', 'chart']}
+                if director: original = Jobs._draft_scene(payload['scene'])
                 original['narration'] = {'text': original['narration']['text']}
                 draft = deepseek_storyboard(original['narration']['text'], settings, client, original, **options)['scenes'][0]
         print(json.dumps({'draft': draft}, ensure_ascii=False))

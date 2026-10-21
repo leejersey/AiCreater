@@ -4,8 +4,11 @@ import type {RawCues} from './drafts';
 import type {VisualStyleSnapshot} from '../../../packages/video-components/src/theme';
 import {AUTH_REQUIRED} from './accounts';
 import {conceptLabels} from '../../../packages/video-schema/src/concept';
+import {visualActionErrors, type DraftVisualAction} from '../../../packages/video-schema/src/visual-actions';
+import {diagramErrors} from '../../../packages/video-schema/src/diagrams';
 
-export type DraftScene = Pick<Scene, 'id' | 'type' | 'elements' | 'code' | 'edges' | 'structure' | 'timeline' | 'chart'> & {
+export type DraftScene = Pick<Scene, 'id' | 'type' | 'elements' | 'code' | 'edges' | 'structure' | 'timeline' | 'chart' | 'motif' | 'dialogue' | 'process' | 'funnel'> & {
+  visual_actions?: DraftVisualAction[];
   narration: {text: string; audio_asset_id?: string}; duration_frames?: number;
 };
 export type SceneRow = {id: string; revision: number; state: string; scene: DraftScene};
@@ -141,6 +144,7 @@ export function draftPreviewVideo(project:Project,sceneId:string):VideoProject|n
   if(!text.trim()||!row.scene.elements.length||row.scene.elements.some(e=>!e.cue||
     !Number.isSafeInteger(e.cue.text_start)||!Number.isSafeInteger(e.cue.text_end)||
     e.cue.text_start<0||e.cue.text_end<=e.cue.text_start||e.cue.text_end>length))return null;
+  if(visualActionErrors(row.scene,false).length||diagramErrors(row.scene).length)return null;
   const ordered=[...row.scene.elements].sort((a,b)=>a.cue.text_start-b.cue.text_start);
   const duration=Math.max(90,Math.min(900,12+Math.ceil(length*30/4))),origin=ordered[0].cue.text_start;
   let previous=-6;
@@ -149,10 +153,19 @@ export function draftPreviewVideo(project:Project,sceneId:string):VideoProject|n
     previous=start;
     return {target:e.id,effect:'fade_slide' as const,start_frame:start,duration_frames:12};
   });
+  const starts=new Map(animations.map(a=>[a.target,a.start_frame]));
+  let previousAction=6;
+  const actions=row.scene.visual_actions?.map(a=>{
+    const start=Math.max(previousAction,starts.get(a.target)??6,a.to?starts.get(a.to)??6:6,
+      6+Math.floor(Math.max(0,a.cue.text_start-origin)/Math.max(1,length-origin)*(duration-30)));
+    previousAction=start;
+    return {...a,start_frame:start,duration_frames:12};
+  });
   const {visual_style:_,...config}=project.config;
   return {...config,assets:[],scenes:[{...row.scene,
+    visual_actions:actions,
     narration:{text,audio_asset_id:'',audio_start_frame:6},
-    duration_frames:Math.max(duration,previous+30),animations,captions:[]}]};
+    duration_frames:Math.max(duration,previous+30,previousAction+18),animations,captions:[]}]};
 }
 
 export function sceneStartFrame(video: VideoProject, sceneId: string): number | null {

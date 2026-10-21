@@ -61,6 +61,16 @@ def time_scene(draft, audio_id, duration_ms, segments):
         scene['animations'].append({'target': element['id'], 'effect': 'fade_slide',
                                     'start_frame': 6 if topic else start,
                                     'duration_frames': 1 if topic else min(12, available)})
+    for action in scene.get('visual_actions', []):
+        cue = action['cue']
+        matches = [s for s in segments if s['text_start'] < cue['text_end'] and s['text_end'] > cue['text_start']]
+        if not matches:
+            raise ProviderError('timing', 'unmapped_cue', 'Visual action cue has no aligned speech')
+        start = 6 + math.floor(matches[0]['start_ms'] * 30 / 1000)
+        available = scene['duration_frames'] - 6 - start
+        if available < 1:
+            raise ProviderError('timing', 'frame_range', 'No audio frame remains for visual action')
+        action.update(start_frame=start, duration_frames=min(12, available))
     # Group exact word times into readable phrases; entrance cues remain word-level.
     caption_segments, group = [], None
     for i, segment in enumerate(segments):

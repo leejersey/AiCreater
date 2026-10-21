@@ -130,7 +130,7 @@ class Jobs:
             project = self.store._read(conn, project_id, lock=True)
             existing = conn.execute('''SELECT id FROM jobs WHERE project_id=%s AND kind='generate'
                 AND base_revision=%s AND input->>'model'=%s AND input->'profile'=%s
-                AND input->>'protocol_version'='teaching-outline:3'
+                AND input->>'protocol_version'='teaching-outline:6'
                 ORDER BY created_at DESC LIMIT 1''', [project['id'], base_revision, self.model, Jsonb(self.store.profile)]).fetchone()
             if existing:
                 job = self._read(conn, str(existing['id']))
@@ -141,7 +141,7 @@ class Jobs:
                     if project['scenes']: raise StoreError('conflict', 'Use scene regeneration for an existing outline')
                     payload = {'kind': 'generate', 'project_id': project['id'], 'base_revision': base_revision,
                                'source_text': project['source_text'], 'profile': copy.deepcopy(self.store.profile),
-                               'model': self.model, 'protocol_version': 'teaching-outline:3',
+                               'model': self.model, 'protocol_version': 'teaching-outline:6',
                                'teaching_style': project['teaching_style']}
                     digest = self.input_hash(payload)
                     # Reopen same row (input_hash unique); refresh source if the manuscript changed.
@@ -157,7 +157,7 @@ class Jobs:
             if project['scenes']: raise StoreError('conflict', 'Use scene regeneration for an existing outline')
             payload = {'kind': 'generate', 'project_id': project['id'], 'base_revision': base_revision,
                        'source_text': project['source_text'], 'profile': copy.deepcopy(self.store.profile),
-                       'model': self.model, 'protocol_version': 'teaching-outline:3',
+                       'model': self.model, 'protocol_version': 'teaching-outline:6',
                        'teaching_style': project['teaching_style']}
             return self._submit(conn, project['id'], None, base_revision, payload)
 
@@ -178,7 +178,9 @@ class Jobs:
 
     @staticmethod
     def _draft_scene(scene):
-        result = {k: copy.deepcopy(v) for k, v in scene.items() if k in ['id', 'type', 'elements', 'edges', 'code', 'structure', 'timeline', 'chart']}
+        result = {k: copy.deepcopy(v) for k, v in scene.items() if k in ['id', 'type', 'elements', 'edges', 'code', 'structure', 'timeline', 'chart', 'motif', 'visual_actions', 'dialogue', 'process', 'funnel']}
+        for action in result.get('visual_actions', []):
+            action.pop('start_frame', None); action.pop('duration_frames', None)
         result['narration'] = {'text': scene['narration']['text']}
         return result
 
@@ -384,7 +386,7 @@ class Jobs:
             if scene['scene']['type'] == 'data_chart': raise StoreError('validation', 'Confirmed chart data cannot use model regeneration')
             payload = {'kind': 'regenerate', 'scene_id': scene_id, 'base_revision': base_revision,
                        'scene': copy.deepcopy(scene['scene']), 'profile': copy.deepcopy(self.store.profile),
-                       'model': self.model, 'protocol_version': 'scene-candidate:3',
+                       'model': self.model, 'protocol_version': 'scene-candidate:6',
                        'teaching_style': project['teaching_style']}
             return self._submit(conn, project['id'], scene_id, base_revision, payload)
 

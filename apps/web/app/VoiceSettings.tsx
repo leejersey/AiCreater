@@ -23,7 +23,7 @@ export function VoiceSettings({project,dirty,busy,formEditing,onDirty,onSave,act
           message: '保存本项目音色设置（不计费）？',
           detail: '仅影响后续配音，已有音轨保留；不会自动重新配音，旧任务结果不会覆盖新音色。',
           confirmText: '确认保存',
-          type: 'info'
+          variant: 'info'
         });
         if(!ok)return;
         await onSave(draft.value.speaker);draft.clear();

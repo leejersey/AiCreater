@@ -19,7 +19,8 @@ DRAFT_SCHEMA['required'] = ['scenes']
 DRAFT_SCHEMA['properties'] = {'scenes': DRAFT_SCHEMA['properties']['scenes']}
 _scene = DRAFT_SCHEMA['definitions']['Scene']
 _scene['required'] = ['id', 'type', 'narration', 'elements']
-_scene['properties'] = {k: v for k, v in _scene['properties'].items() if k in ['id', 'type', 'narration', 'elements', 'edges', 'code', 'structure', 'timeline', 'chart']}
+_scene['properties'] = {k: v for k, v in _scene['properties'].items() if k in ['id', 'type', 'narration', 'elements', 'edges', 'code', 'structure', 'timeline', 'chart', 'motif', 'visual_actions', 'dialogue', 'process', 'funnel']}
+DRAFT_SCHEMA['definitions']['VisualAction']['required'] = ['kind', 'target', 'cue']
 _scene['properties']['narration']['required'] = ['text']
 _scene['properties']['narration']['properties'] = {'text': _scene['properties']['narration']['properties']['text']}
 
@@ -30,6 +31,15 @@ _reference_scene = REFERENCE_SCHEMA['definitions']['Scene']
 _reference_scene['required'].remove('narration')
 _reference_scene['required'].append('source_part_ids')
 _reference_scene['properties'].pop('narration')
+# T8 will expose source-quoted actions together with the director prompt/protocol.
+_reference_scene['properties'].pop('visual_actions')
+_reference_scene['properties'].pop('dialogue')
+_reference_scene['properties'].pop('process')
+_reference_scene['properties'].pop('funnel')
+REFERENCE_SCHEMA['definitions'].pop('VisualAction')
+REFERENCE_SCHEMA['definitions'].pop('Dialogue')
+REFERENCE_SCHEMA['definitions'].pop('Process')
+REFERENCE_SCHEMA['definitions'].pop('Funnel')
 _reference_scene['properties']['source_part_ids'] = {
     'type': 'array', 'minItems': 1, 'maxItems': 200, 'uniqueItems': True,
     'items': {'type': 'integer', 'minimum': 1, 'maximum': 200}}
@@ -39,6 +49,18 @@ LEGACY_REFERENCE_SCHEMA = copy.deepcopy(REFERENCE_SCHEMA)
 REFERENCE_SCHEMA['definitions']['Element']['properties']['cue'] = {
     'type': 'object', 'additionalProperties': False, 'required': ['quote'],
     'properties': {'quote': {'type': 'string', 'minLength': 1, 'maxLength': 4000}}}
+
+
+# Explicit offline director protocol; existing paid workers keep REFERENCE_SCHEMA.
+DIRECTOR_REFERENCE_SCHEMA = copy.deepcopy(REFERENCE_SCHEMA)
+for _key in ('visual_actions', 'dialogue', 'process', 'funnel'):
+    DIRECTOR_REFERENCE_SCHEMA['definitions']['Scene']['properties'][_key] = copy.deepcopy(_scene['properties'][_key])
+for _key in ('VisualAction', 'Dialogue', 'Process', 'Funnel'):
+    DIRECTOR_REFERENCE_SCHEMA['definitions'][_key] = copy.deepcopy(DRAFT_SCHEMA['definitions'][_key])
+_action_properties = DIRECTOR_REFERENCE_SCHEMA['definitions']['VisualAction']['properties']
+_action_properties['cue'] = copy.deepcopy(REFERENCE_SCHEMA['definitions']['Element']['properties']['cue'])
+for _key in ('start_frame', 'duration_frames'):
+    _action_properties.pop(_key)
 
 
 def source_parts(source):
@@ -71,7 +93,7 @@ def _coerce_scene_motif(scene, kind, elements):
     soft = kind in ('title_reveal', 'card_sequence', 'flow_diagram', 'comparison_panel', 'concept')
     n = len(elements)
     ok = (
-        (motif == 'funnel' and 2 <= n <= 3 and kind in ('card_sequence', 'flow_diagram')) or
+        (motif == 'funnel' and (scene.get('funnel') or 2 <= n <= 3) and kind in ('card_sequence', 'flow_diagram')) or
         (motif == 'dialogue_split' and 2 <= n <= 4 and kind == 'card_sequence') or
         (motif == 'means_row' and 2 <= n <= 3 and kind == 'card_sequence') or
         (motif == 'schematic' and 1 <= n <= 4 and kind in ('card_sequence', 'concept', 'flow_diagram'))
@@ -157,7 +179,9 @@ def coerce_storyboard_draft(draft):
     return draft
 
 
-def restore_storyboard(raw, source, parts, *, require_quotes=False):
+def restore_storyboard(raw, source, parts, *, require_quotes=False, semantic_graphics=False):
+    if semantic_graphics and not require_quotes:
+        raise ProviderError('storyboard', 'schema_error', 'Director protocol requires source quotes')
     if isinstance(raw, dict) and isinstance(raw.get('scenes'), list) and any(isinstance(s, dict) and (s.get('type') == 'data_chart' or 'chart' in s) for s in raw['scenes']):
         raise ProviderError('storyboard', 'schema_error', 'Chart data requires explicit user confirmation')
     # Exact legacy reads remain supported; new provider calls must use quote-only wire data.
@@ -166,7 +190,7 @@ def restore_storyboard(raw, source, parts, *, require_quotes=False):
         draft = coerce_storyboard_draft(copy.deepcopy(raw))
         validate_storyboard(draft, source)
         return draft
-    problems = schema_errors(REFERENCE_SCHEMA, raw)
+    problems = schema_errors(DIRECTOR_REFERENCE_SCHEMA if semantic_graphics else REFERENCE_SCHEMA, raw)
     quoted = not problems
     if problems and not require_quotes:
         problems = schema_errors(LEGACY_REFERENCE_SCHEMA, raw)
@@ -181,14 +205,15 @@ def restore_storyboard(raw, source, parts, *, require_quotes=False):
         text = ''.join(lookup[part] for part in scene.pop('source_part_ids'))
         scene['narration'] = {'text': text}
         if quoted:
-            for j, element in enumerate(scene['elements']):
-                quote = element['cue']['quote']
-                start = text.find(quote)
-                reason = 'quote_blank' if not quote.strip() else 'quote_not_found' if start < 0 else 'quote_ambiguous' if text.find(quote, start + 1) >= 0 else None
-                if reason:
-                    path = f'/scenes/{i}/elements/{j}/cue'
-                    raise ProviderError('storyboard', 'invalid_cue', 'Expected a unique original quote', cue_error={'path': path, 'reason': reason})
-                element['cue'] = {'text_start': start, 'text_end': start + len(quote)}
+            for field in ('elements', 'visual_actions'):
+                for j, item in enumerate(scene.get(field, [])):
+                    quote = item['cue']['quote']
+                    start = text.find(quote)
+                    reason = 'quote_blank' if not quote.strip() else 'quote_not_found' if start < 0 else 'quote_ambiguous' if text.find(quote, start + 1) >= 0 else None
+                    if reason:
+                        path = f'/scenes/{i}/{field}/{j}/cue'
+                        raise ProviderError('storyboard', 'invalid_cue', 'Expected a unique original quote', cue_error={'path': path, 'reason': reason})
+                    item['cue'] = {'text_start': start, 'text_end': start + len(quote)}
     result = coerce_storyboard_draft(result)
     validate_storyboard(result, source)
     return result

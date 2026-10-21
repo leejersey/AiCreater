@@ -67,10 +67,12 @@ python3 -m celery -A services.workflow.queue:app worker -Q workflow --hostname=w
 # 第三终端：
 python3 -m celery -A services.workflow.queue:app worker -Q render --hostname=workbench-render@%h --concurrency=1 --loglevel=WARNING
 # 第四终端，只允许1个beat；确认旧收费队列后再启动：
-python3 -m celery -A services.workflow.queue:app beat --loglevel=WARNING --schedule=/tmp/aicreater-celerybeat
+python3 -m celery -A services.workflow.queue:app beat --loglevel=WARNING --schedule=/tmp/aicreater-celerybeat --pidfile=/tmp/aicreater-celerybeat.pid
 # 第五终端，开发页面；或已有生产构建时 npm run web:start，不能两者并开：
 npm run web
 ```
+
+Beat只运行一个，统一使用上面的PID文件。旧实例若没带`--pidfile`，先在原终端正常退出，再换新命令；不能直接补开。`Resource temporarily unavailable`可能是文件锁冲突，先用`ps`/`lsof`查占用，不直接删schedule；旧进程即使文件被删仍可能持有已unlink文件。PID文件只保护同样遵守该路径的命令，不会自动接管旧进程。
 
 macOS worker使用已配置solo，实际工作仍在受限子进程内；不要改prefork逃避启动检查。beat只发固定唤醒，PG才是任务状态来源；控制ping和端口检查不代表付费调用质量验收。
 

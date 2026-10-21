@@ -2,7 +2,31 @@
 
 已交付的A/B/C视觉、完整Python C版及RAG课程不再重复生成。此表集中跟踪未完成项；文档检查完成不等于整个平台验收通过。
 
-## 当前优先：AI导演制作闭环（用户确认“执行”）
+## 当前优先：从摆模板到教学过程演示（用户2026-10-21批准）
+
+- [x] 第一批：固定“取消订单”14.73秒同稿同音轨，新增纯帧过程演示；建立案例→显式连线移动→重点推进→边界揭示→回收总览。原版/新版实际渲染、音频解码SHA一致、中文容量检查、关键帧审看/回退逐帧相同；478项Node及类型检查通过，无模型/配音费用，无原课程/生产入口变更。见[样片](../output/workbench/process-demonstration/v2/after.mp4)/[前后对照](../output/workbench/process-demonstration/v2/comparison.jpg)/[记录](../output/workbench/process-demonstration/receipt.json)。
+- [x] 用户“继续实现”后完成第二批对话/状态：前文与当前片段显式关联，保留状态前后，更新素材不冒充用户消息；原稿安全边界按字幕分块，修正重复短语/乱序更新。15.13秒同音轨新版/原版真实导出、解码音频相同、回退与中文容量通过；486项Node及类型检查通过。见[样片](../output/workbench/dialogue-demonstration/v2/after.mp4)/[前后对照](../output/workbench/dialogue-demonstration/v2/comparison.jpg)/[记录](../output/workbench/dialogue-demonstration/receipt.json)。独立原型、人工编排，0付费/原课程变更，不是生产默认或AI能力提升。
+- [x] 第三批漏斗过程：层间原文/字幕给出衔接条件，层级推进/显式连接示意移动，按原稿最后强调非真实流量比例；支持2/3层和3侧注，无重叠。15.5秒真实同音轨新旧导出、PCM一致、回退和中文容量检查通过；492项Node及类型检查通过。见[样片](../output/workbench/funnel-demonstration/v2/after.mp4)/[对照](../output/workbench/funnel-demonstration/v2/comparison.jpg)/[记录](../output/workbench/funnel-demonstration/receipt.json)。未改生产默认/课程、未调用模型/TTS。
+- [x] 三类演示接通共享Video/工作台可选“机制演示”：保存风格不改分镜/配音，静音草稿和冻结导出使用同路径，其他模板正常回退、旧风格不切换。496项Node/类型检查和8项原生PG风格冻结用例通过；真实隔离浏览器登录→设置保存200→刷新保留→播放推进/暂停→三场景实路由通过，0页面错误/任务；45.37秒正式MP4完整解码、配音PCM与原片一致、3旧金样像素相同。见[记录](../output/workbench/mechanism-style/receipt.json)。原服务只读健康/编译检查通过，无重启/课程写入/收费。
+- [x] AI编排首批（受控输出）：明确state初始上下文/update结果（非用户发言），声明相关消息→状态关系，编译生成晚端点cue连线；update来源不再作输入，纯update无消息拒绝。4新增用例先红后绿，44项离线/33项原生（重叠不求和）、496项Node/类型通过；受控两阶段输出无手工补丁，复用真实配音缓存完成严格校验/正式渲染/PCM对比。见[验证片](../output/workbench/director-choreography/render/after.mp4)/[记录](../output/workbench/director-choreography/receipt.json)。0模型/TTS调用。
+- [x] V6离线根因修复并部署：对话`context/message/initial_state/state_after`统一原稿ID，新增可选`context_messages`贯通验证/表单/草稿/渲染/存取，前文不再按序号猜，结果不作输入。新任务/估价/用量/v6去重/worker同步，旧v1–v5保留。138项原生PG相关（无跳过）、499项Node/类型检查通过；受控输出15.13秒实际渲染/完整解码/音轨相同，非真实模型成功。空闲核对/私有备份后正常重载原API/web及同参温替换两个既有worker，Beat不动、9表/326文件不变、0付费/任务；见[记录](../output/workbench/role-director/receipt.json)。
+- [x] V6真实模型三段验收课：在新增2次授权内实际生成漏斗/对话状态/处理链，统一摘录ID/角色通过；保留原响应无手改，复用原真实音轨/词级缓存。45.37秒1080P成片完整解码、与原PCM一致、三段关键帧审看、回退及3既有金样像素相同；真实临时PG冻结→生产CLI→校验发布→MP4/SRT HTTP200/SHA一致。500Node/435全原生Python（0跳过）/类型/私有生产构建及1项实际CLI下载烟测通过；0新TTS/原课写入/重启。见[视频](../output/workbench/v6-final-acceptance/frozen-cli.mp4)/[字幕](../output/workbench/v6-final-acceptance/frozen-cli.srt)/[记录](../output/workbench/v6-final-acceptance/receipt.json)。
+- [ ] 用户最终视觉质量确认、逐词听检及全部历史冻结画面穷尽：之前用户授权后2次真实请求均HTTP200，但第二次`/p1/update enum`拒绝（模型把摘录ID5填进0–3槽位编号），且说明句被当作消息；未通过，未静默修正、发布或继续付费。1849输入/109输出token，0配音/原课写入；见[实测记录](../output/workbench/director-choreography/live/receipt.json)。双编号/显式角色已在v6修复，本轮已新增授权完成一门短验收课的真实复验；不能把离线通过称为真实质量通过。新增机制风格仍只使用已有分组/动作，不会凭空把普通卡片变成新结构，不再先堆组件或独立样片。早期样片是人工编排，本轮新增真实模型成片，但不证明所有文稿自动达到参考片标准；不继续用组件数量替代质量。
+
+## 历史批次：对标参考视频的语义图形（用户“继续完成”）
+
+- [x] T1设计确认、T2受控动作、T3漏斗含独立侧注与能力/成本方向；后两项由T6补齐。
+- [x] T4对话＋上下文状态、T5处理/工具调用链：原稿绑定、按讲解揭示、前后状态、失败分支、惰性参数；23项Node专项和10项临时原生PG回归通过，旧3张金样及倒回同帧像素不变。已导出[37.2秒三段静音片](../output/workbench/reference-grade-visuals/t4-t5/render-final/three-diagrams-silent.mp4)/[接触表](../output/workbench/reference-grade-visuals/t4-t5/render-final/three-diagrams-contact.jpg)，不是正式有声M1。见[规划](superpowers/plans/2026-10-19-reference-grade-visuals.md)/[验收](../output/workbench/reference-grade-visuals/t4-t5/receipt.json)。
+- [x] T6三组合版式、原稿重点/标签/结论、独立侧注/方向：27项Node专项、11项临时原生PG/时间轴用例通过，40码点中文/emoji侧注不缩字、回退同帧及3旧金样像素相同。已导出[新版37.2秒静音片](../output/workbench/reference-grade-visuals/t6/render-reviewed/three-diagrams-annotated-silent.mp4)/[新旧同稿静音对照](../output/workbench/reference-grade-visuals/t6/render-reviewed/old-new-comparison-silent.mp4)/[关键帧](../output/workbench/reference-grade-visuals/t6/render-reviewed/contact.jpg)；见[回执](../output/workbench/reference-grade-visuals/t6/receipt.json)。
+- [x] T8离线基础：可选导演quote协议与Mock适配器验证三图形/动作，唯一原文恢复→对齐→原生PG保存/复制/候选/冻结；9项新测试、56项专项和20项临时原生PG用例通过（有重叠不求和），T6真实三段原稿控制输出通过TS最终DSL/布局框检查。Worker/API默认旧协议，无在线调用/新设施；见[回执](../output/workbench/reference-grade-visuals/t8/receipt.json)。不代表模型选型正确率或T8全部完成。
+- [x] T9核心图形编辑/草稿/保存：分组、侧注/方向/引线、动作/cue；切换确认、空白/非法原输入保留、revision原子护栏。真实隔离工作台登录→改图形→草稿恢复→保存200→刷新保留→取消切换通过，0页面错误；59项原生PG/缓存对齐/导演及11项编辑/预览Node专项通过（不相加算去重）；保留原音轨，0任务/收费。见[记录](../output/workbench/reference-grade-visuals/t9/receipt.json)。
+- [x] 收尾回归与受控整课：修复ConfirmOptions调用、课程数量可选值、Project夹具、讲稿UI断言、quote测试Schema提取及密集图形流程排版。472项Node全通过、类型检查/私有生产构建通过；离线Python409项OK/168环境跳过、原生59项通过。同隔离浏览器编辑保存→原生本地对齐claim/publish→ready播放→冻结→37.2秒正式MP4及完整解码，配音/ASR均合成，无收费；见[记录](../output/workbench/reference-grade-visuals/final/receipt.json)。
+- [x] T9图形续登及原环境启用：本轮按真实原位过期弹窗交互验收（旧脚本错误强制导航，非应用故障），真实会话到期→弹窗重登录→未保存空白cue/方向不丢，不自动保存/发任务；同次隔离链保留对齐→ready播放→冻结，临时页/DB/服务清理。核对空闲和进程身份、私有PG备份后，短暂SIGSTOP/SIGCONT原1 worker/2 beat（含已验证子进程），正常重载既有API/web；恢复相同消费者PID，9表逐行/326媒体及配置不变，匿名401、健康200，无收费。见[最新记录](../output/workbench/reference-grade-visuals/completion/receipt.json)。
+- [x] T8在线代码接通：新生成/候选采用v4，经既有Worker调用导演协议，候选保留图形、旧v1–v3冻结任务照旧。估价/用量费率/教学风格及复用hash同步；Mock实际适配器→worker→原生PG发布验证三图形，67项专项、27项原生通过（重叠不相加）。472项Node/类型检查通过，离线Python412项OK/169跳过；受控重载原API/web并替换原worker角色，不增消费者，原9表/326文件不变，无收费。见[记录](../output/workbench/reference-grade-visuals/online/receipt.json)。不代表真实模型选图正确率通过。
+- [x] 实际有声/真实选择收尾：用户“直接完成”后进行有界实测，保留5次模型实验和3段实际TTS，最终实际响应选择漏斗/对话/调用链；修复供应商分片规划解析后离线重放同一真实响应，未手工改决策或为重放收费。v5源摘录枚举/程序构造结构已上线，专用模板最多再调用一次且估价/用量含两次；v1–v4旧任务保留。45.4秒1080P有声片、完整解码、实际冻结/发布校验及视频/SRT HTTP下载200/SHA验证通过。472项Node/类型检查、419项离线Python（170环境跳过）、70项原生及1项实际下载通过（有重叠不相加）；原9表/326文件未变，见[记录](../output/workbench/reference-grade-visuals/compact/receipt.json)。
+- [ ] 人工主观/逐词听检、用户本人更长原稿、全部历史冻结逐帧金样仍未验收。密集旧图形流程排版会变；一个真实样本不证明通用选图准确率，混合专用段落可能整课回退旧生成器；不把这些标成已完成。
+
+## AI导演制作闭环（视觉样片优先，后续再续）
 
 - [x] 第一批：已保存分镜的静音动画草稿与临时步骤定位，复用Video/Player，零音轨/任务/正式数据回写；就绪章及冻结导出护栏不变。独立真实Next/API/PG概念课播放中末卡opacity由0至1，无media/浏览器写请求，项目数据不变；原网页新chunk已含功能，无重启/原课写入。见[计划](superpowers/plans/2026-10-19-ai-director-preview.md)/[回执](../output/workbench/ai-director-preview/receipt.json)。
 - [ ] 第二批：教学意图/模板选择的可理解方案和局部重生成，复用现有JSON协议，不做自由执行Agent。

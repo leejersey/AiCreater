@@ -72,7 +72,9 @@ def draft_valid(document):
     unicode_valid(document)
     scenes = []
     for scene in document['scenes']:
-        draft = {k: copy.deepcopy(v) for k, v in scene.items() if k in ['id', 'type', 'elements', 'edges', 'code', 'structure', 'timeline', 'chart']}
+        draft = {k: copy.deepcopy(v) for k, v in scene.items() if k in ['id', 'type', 'elements', 'edges', 'code', 'structure', 'timeline', 'chart', 'motif', 'visual_actions', 'dialogue', 'process', 'funnel']}
+        for action in draft.get('visual_actions', []):
+            action.pop('start_frame', None); action.pop('duration_frames', None)
         draft['narration'] = {'text': scene['narration']['text']}
         scenes.append(draft)
     try: validate_storyboard({'scenes': scenes}, ''.join(s['narration']['text'] for s in scenes))
@@ -222,7 +224,7 @@ class Store:
 
     def edit_scene(self, scene_id, expected_revision, patch):
         revision(expected_revision)
-        if not isinstance(patch, dict) or not patch or set(patch) - {'elements', 'code', 'captions', 'narration_text', 'edges'}:
+        if not isinstance(patch, dict) or not patch or set(patch) - {'elements', 'code', 'captions', 'narration_text', 'edges', 'graphics'}:
             raise StoreError('invalid_patch', 'Unsupported or empty scene patch')
         if 'narration_text' in patch and (not isinstance(patch['narration_text'], str) or
                 not patch['narration_text'].strip() or len(patch['narration_text']) > 4000):
@@ -259,6 +261,26 @@ class Store:
                 scene['narration'] = {'text': patch['narration_text']}
                 for key in ['duration_frames', 'animations', 'captions']: scene.pop(key, None)
                 state = 'needs_voice'
+            if 'graphics' in patch:
+                keys = ['motif', 'funnel', 'dialogue', 'process', 'visual_actions']
+                graphics = patch['graphics']
+                if not isinstance(graphics, dict) or set(graphics) - set(keys):
+                    raise StoreError('invalid_patch', 'Unknown graphics field')
+                actions = graphics.get('visual_actions', [])
+                if not isinstance(actions, list) or any(not isinstance(a, dict) or set(a)-{'kind','target','to','source','cue'} for a in actions):
+                    raise StoreError('invalid_patch', 'Graphics actions cannot supply derived timing')
+                old_graphics = {k:copy.deepcopy(v) for k,v in row['scene'].items() if k in keys}
+                for action in old_graphics.get('visual_actions', []):
+                    action.pop('start_frame', None); action.pop('duration_frames', None)
+                for key in keys: scene.pop(key, None)
+                scene.update(copy.deepcopy(graphics))
+                # Validate before equality: Python bool/number equality must not bypass the contract.
+                draft_valid({'scenes':[scene]})
+                if graphics == old_graphics:
+                    for key in keys:
+                        if key in row['scene']: scene[key] = copy.deepcopy(row['scene'][key])
+                elif state != 'needs_voice':
+                    state = 'needs_timing'; scene.pop('animations', None)
             if scene == row['scene']: return project
             row['scene'], row['state'] = scene, state
             document = self._dsl(project)
@@ -531,7 +553,7 @@ class Store:
                 for key in ['duration_frames', 'captions']: scene[key] = copy.deepcopy(old[key])
                 same_cues = [(e['id'], e['cue'], e.get('role')) for e in scene['elements']] == [(e['id'], e['cue'], e.get('role')) for e in old['elements']]
                 state = 'needs_timing'
-                if row['state'] == 'ready' and same_cues:
+                if row['state'] == 'ready' and same_cues and not scene.get('visual_actions'):
                     scene['animations'] = copy.deepcopy(old['animations'])
                     state = 'ready'
             row['scene'], row['state'] = scene, state

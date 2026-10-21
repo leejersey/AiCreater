@@ -4,6 +4,8 @@ import type {StyleTokens} from './theme';
 import {usePalette} from './theme';
 import {layoutElements, type ElementBox, wrapText} from './layout';
 
+export {funnelLayers} from './FunnelDiagram';
+
 export type MotifId = 'default' | 'funnel' | 'dialogue_split' | 'means_row' | 'schematic';
 
 export function normalizeMotif(scene: Scene): MotifId {

@@ -481,28 +481,92 @@ time.sleep(20)
         self.assertEqual(self.jobs.get(job['id'])['attempts'], 1)
         self.assertFalse(self.jobs.get(job['id'])['error']['retryable'])
 
-    def test_v3_generation_dedup_does_not_reuse_failed_v1_or_v2_jobs(self):
+    def test_v5_compiled_provider_publishes_source_bound_graphics(self):
+        import io,json,httpx
+        from contextlib import redirect_stdout
+        from unittest.mock import patch
+        from services.workflow.worker import child
+        from services.projects.estimates import estimate_project
+        self.jobs.model='deepseek-flash'
+        project=self.store.create_project('紧凑导演链','先识别，再校验。');self.project=project
+        job=self.jobs.submit_generate(project['id'],1)
+        self.assertEqual(job['input']['protocol_version'],'teaching-outline:6')
+        quote=estimate_project(self.store,self.jobs.model,project['id'],1,'generate',[])
+        self.assertEqual(quote['status'],'no_new_call')
+        args={'p1':{'layout':'process','a':1,'b':2,'c':0,'d':0,'note_a':0,'note_b':0}}
+        calls=[]
+        def handler(req):
+            calls.append(json.loads(req.content));value={'p1':{'layout':'process'}} if len(calls)==1 else args
+            return httpx.Response(200,json={'choices':[{'finish_reason':'tool_calls','message':{'tool_calls':[{'type':'function','function':{'name':'plan_lesson','arguments':json.dumps(value)}}]}}]})
+        client=httpx.Client(transport=httpx.MockTransport(handler))
+        output=io.StringIO()
+        with patch('httpx.Client',return_value=client),patch.dict('os.environ',{'DEEPSEEK_API_KEY':'test'}),patch('sys.stdin',io.StringIO(json.dumps(job['input']))),redirect_stdout(output):child()
+        draft=json.loads(output.getvalue())['draft'];self.assertEqual(len(calls),2);attempt=self.jobs.claim()
+        self.assertEqual(self.jobs.publish_outline(job['id'],attempt['attempt_id'],draft)['state'],'succeeded')
+        saved=self.store.get_project(project['id']);self.assertIn('process',saved['scenes'][0]['scene'])
+        self.assertEqual(saved['scenes'][0]['state'],'needs_voice')
+
+    def test_frozen_v4_mock_provider_publishes_all_graphics(self):
+        import io,json,httpx
+        from contextlib import redirect_stdout
+        from unittest.mock import patch
+        from services.tests.test_teaching_diagrams import funnel_draft,draft,process_draft
+        from services.tests.test_director import wire
+        from services.workflow.storyboard import source_parts
+        from services.workflow.worker import child
+        from services.projects.estimates import estimate_project
+        scenes=[funnel_draft(),draft(),process_draft()];text=''.join(s['narration']['text'] for s in scenes)
+        project=self.store.create_project('导演完整链',text,teaching_style='technical');self.project=project
+        self.jobs.model='deepseek-flash'
+        payload={'kind':'generate','project_id':project['id'],'base_revision':1,'source_text':text,'profile':copy.deepcopy(self.store.profile),'model':self.jobs.model,'protocol_version':'teaching-outline:4','teaching_style':'technical'}
+        with self.store.connection() as conn:job=self.jobs._submit(conn,project['id'],None,1,payload)
+        quote=estimate_project(self.store,self.jobs.model,project['id'],1,'generate',[])
+        self.assertEqual(quote['status'],'estimated')
+        output=[];cursor=1
+        for scene in scenes:
+            count=len(source_parts(scene['narration']['text']));output.append(wire(scene,list(range(cursor,cursor+count))));cursor+=count
+        calls=[]
+        def handler(request):
+            body=json.loads(request.content);calls.append(body)
+            schema=json.JSONDecoder().raw_decode(body['messages'][0]['content'].split('JSON Schema: ',1)[1])[0]
+            self.assertIn('funnel',schema['definitions']['Scene']['properties'])
+            return httpx.Response(200,json={'choices':[{'finish_reason':'stop','message':{'content':json.dumps({'scenes':output})}}]})
+        client=httpx.Client(transport=httpx.MockTransport(handler));captured=io.StringIO()
+        with patch('httpx.Client',return_value=client),patch.dict('os.environ',{'DEEPSEEK_API_KEY':'test-only'}),patch('sys.stdin',io.StringIO(json.dumps(job['input']))),redirect_stdout(captured):child()
+        value=json.loads(captured.getvalue());self.assertEqual(value,{'draft':{'scenes':scenes}});self.assertEqual(len(calls),1)
+        attempt=self.jobs.claim();self.assertEqual(attempt['id'],job['id'])
+        result=self.jobs.publish_outline(job['id'],attempt['attempt_id'],value['draft'])
+        self.assertEqual(result['state'],'succeeded')
+        saved=self.store.get_project(project['id'])
+        self.assertEqual([s['scene'] for s in saved['scenes']],scenes)
+        self.assertTrue(all(s['state']=='needs_voice' for s in saved['scenes']))
+        selected=saved['scenes'][1];candidate=self.jobs.submit_regenerate(selected['id'],selected['revision'])
+        quote=estimate_project(self.store,self.jobs.model,project['id'],saved['revision'],'regenerate',[{'scene_id':selected['id'],'expected_revision':selected['revision']}])
+        self.assertEqual(quote['status'],'no_new_call');self.assertEqual(quote['quantity']['reused_jobs'],1)
+        self.assertEqual(candidate['input']['protocol_version'],'scene-candidate:6')
+
+    def test_v5_generation_dedup_does_not_reuse_failed_legacy_jobs(self):
         project=self.store.create_project('protocol upgrade','规则匹配。');self.project=project;old_ids=[]
-        for version in [1,2]:
+        for version in [1,2,3,4,5]:
             payload={'kind':'generate','project_id':project['id'],'base_revision':1,'source_text':'规则匹配。',
                      'profile':copy.deepcopy(self.store.profile),'model':self.jobs.model,'protocol_version':f'teaching-outline:{version}'}
             with self.store.connection() as conn:old=self.jobs._submit(conn,project['id'],None,1,payload)
             attempt=self.jobs.claim();self.assertEqual(attempt['id'],old['id'])
             self.jobs.fail(old['id'],attempt['attempt_id'],'storyboard_invalid_cue');old_ids.append(old['id'])
         current=self.jobs.submit_generate(project['id'],1)
-        self.assertNotIn(current['id'],old_ids);self.assertEqual(current['input']['protocol_version'],'teaching-outline:3')
+        self.assertNotIn(current['id'],old_ids);self.assertEqual(current['input']['protocol_version'],'teaching-outline:6')
         self.assertEqual(self.jobs.submit_generate(project['id'],1)['id'],current['id'])
         self.assertTrue(all(self.jobs.get(identifier)['state']=='failed' for identifier in old_ids))
-        self.assertEqual(len(self.jobs.list_project(project['id'])),3)
+        self.assertEqual(len(self.jobs.list_project(project['id'])),6)
 
-    def test_v3_regeneration_hash_is_distinct_from_v1_and_v2_inputs(self):
+    def test_v5_regeneration_hash_is_distinct_from_legacy_inputs(self):
         current=self.submit();old_ids=[]
-        for version in [1,2]:
+        for version in [1,2,3,4,5]:
             payload=copy.deepcopy(current['input']);payload['protocol_version']=f'scene-candidate:{version}'
             with self.store.connection() as conn:old=self.jobs._submit(conn,current['project_id'],current['scene_id'],current['base_revision'],payload)
             old_ids.append(old['id']);self.assertEqual(self.jobs.get(old['id'])['input']['protocol_version'],payload['protocol_version'])
-        self.assertEqual(current['input']['protocol_version'],'scene-candidate:3');self.assertNotIn(current['id'],old_ids)
-        self.assertEqual(len(set(old_ids+[current['id']])),3);self.assertEqual(self.submit()['id'],current['id'])
+        self.assertEqual(current['input']['protocol_version'],'scene-candidate:6');self.assertNotIn(current['id'],old_ids)
+        self.assertEqual(len(set(old_ids+[current['id']])),6);self.assertEqual(self.submit()['id'],current['id'])
 
     def test_cancelled_or_failed_generate_resubmit_reopens_same_job(self):
         for title, finish in [('取消后再生成', 'cancel'), ('失败后再生成', 'fail')]:
@@ -524,7 +588,8 @@ time.sleep(20)
             claimed = self.jobs.claim()
             self.assertEqual(claimed['id'], job['id'])
             self.assertEqual(claimed['attempts'], 1)
-            self.jobs.cancel(job['id'])
+            self.assertTrue(self.jobs.cancel(job['id'])['cancel_requested'])
+            self.assertEqual(self.jobs.fail(job['id'],claimed['attempt_id'],'transport_error')['state'],'cancelled')
 
     def test_failed_generate_resubmit_picks_up_edited_source_text(self):
         empty = self.store.create_project('改稿后再生成', '旧稿规则匹配。')

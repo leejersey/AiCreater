@@ -102,7 +102,7 @@ export function DraftShelf({busy,onOpen}:{busy:boolean;onOpen:(scope:DraftScope)
           message: '确定要删除这份本机备份吗？',
           detail: '仅删除这份本机备份，不会修改服务器或清除当前表单输入。后续编辑会重新暂存。',
           confirmText: '确认删除',
-          type: 'danger'
+          variant: 'danger'
         });
         if(!ok)return;
         try{removeDraft(storage(),scope,raw);announce((userId?userDraftPrefix(userId):'')+draftKey(scope));}catch{setError('草稿已变化或存储受限，未删除；请重新打开检查并复制备份。');}

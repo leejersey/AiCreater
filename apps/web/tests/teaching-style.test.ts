@@ -6,8 +6,10 @@ import {outlinePlaceholder, isTeachingStyle, type TeachingStyle} from '../lib/te
 import {TeachingStyleSettings} from '../app/TeachingStyleSettings';
 import {draftKey,readDraft,writeDraft,listDrafts} from '../lib/drafts';
 import type {Project} from '../lib/editor';
+import {parseProject} from '../../../packages/video-schema/src/validate';
+import {validProject} from '../../../packages/video-schema/tests/fixture';
 
-const project={id:'p',title:'课程',revision:2,source_text:'文稿',teaching_style:'popular' as const,scenes:[]} as Project;
+const project:Project={id:'p',title:'课程',revision:2,source_text:'文稿',teaching_style:'popular',config:parseProject(validProject()),scenes:[]};
 const props={project,dirty:false,busy:false,formEditing:false,onDirty:()=>{},onSave:async()=>{},act:async(fn:()=>Promise<unknown>)=>{await fn();}};
 
 test('outlinePlaceholder differs by style', () => {

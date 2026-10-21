@@ -69,7 +69,9 @@ class QuotedCueTests(unittest.TestCase):
             body=json.loads(request.content);prompt=body['messages'][0]['content']
             self.assertIn('cue.quote',prompt);self.assertIn('exactly once',prompt);self.assertIn('element.role=topic',prompt)
             self.assertNotIn('code-point (not UTF-16) cue offsets',prompt)
-            schema=json.loads(prompt.split('JSON Schema: ',1)[1].split(' Regenerate exactly ONE scene',1)[0])
+            schema_text=prompt.split('JSON Schema: ',1)[1]
+            schema,end=json.JSONDecoder().raw_decode(schema_text)
+            self.assertIn('Regenerate exactly ONE scene',schema_text[end:])
             self.assertEqual(schema['definitions']['Element']['properties']['cue']['required'],['quote'])
             return httpx.Response(200,json={'choices':[{'finish_reason':'stop','message':{'content':json.dumps(raw)}}]})
         with httpx.Client(transport=httpx.MockTransport(handler)) as client:

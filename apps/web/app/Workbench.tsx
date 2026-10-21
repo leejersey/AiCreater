@@ -156,7 +156,7 @@ export default function Workbench({routeProjectId}:{routeProjectId?:string}) {
             title: '离开页面确认',
             message: '离开前请保存或复制当前修改；本机草稿不会自动保存到服务器。确定离开？',
             confirmText: '确定离开',
-            type: 'warning'
+            variant: 'warning'
           });
           if(ok) window.location.href = href;
         })();
@@ -295,7 +295,7 @@ export default function Workbench({routeProjectId}:{routeProjectId?:string}) {
             title: '打开草稿确认',
             message: '离开前请保存或复制当前修改，确定打开草稿？',
             confirmText: '确定打开',
-            type: 'warning'
+            variant: 'warning'
           });
           if(!ok)return;
         }

@@ -29,11 +29,11 @@ test('legacy soft-template coordinates keep silhouette contracts after vertical-
   scene.type='flow_diagram';
   assert.deepEqual(coordinates(),[114,242,370,498,626,754].map(y=>[510,y,900,112]));
   scene.elements[0].icon='idea';
-  // Graphic flow stays a single vertical column (no 2×2 grid).
+  // Dense metadata cannot fit six vertical nodes; use two rows instead of clipping it.
   const graphic=coordinates();
-  assert.equal(new Set(graphic.map(([x])=>x)).size,1);
-  assert.equal(graphic[0][2],1000);
-  for(let i=1;i<graphic.length;i++)assert.ok(graphic[i][1]>graphic[i-1][1]);
+  assert.equal(new Set(graphic.map(([x])=>x)).size,3);
+  assert.equal(graphic[0][2],520);
+  assert.ok(graphic[3][1]>=graphic[0][1]+graphic[0][3]);
   assert.ok(graphic.every(([,y,,h])=>y>=80&&y+h<=900));
   scene.type='card_sequence';assert.deepEqual(coordinates().at(-1),[1252,552,520,300]);
   scene.type='title_reveal';assert.deepEqual(coordinates()[0],[200,320,1520,320]);

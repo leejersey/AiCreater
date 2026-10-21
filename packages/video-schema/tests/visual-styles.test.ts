@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import {test} from 'node:test';
 import {parseProject,validateProject} from '../src/validate';
 import {validProject,codeProject} from './fixture';
-import {layoutElements} from '../../video-components/src/layout';
+import {layoutElements,flowPath} from '../../video-components/src/layout';
 import {formSteps,updateStep} from '../../../apps/web/lib/editor';
 
 test('legacy and three style IDs validate; arbitrary theme does not',()=>{
@@ -27,6 +27,14 @@ test('enriched layout preserves all content and reserves labels without overlap'
       assert.ok(box.y+box.height<=900);
     }
   }
+});
+test('dense enriched flows route through row gutters, leaving old flows unchanged',()=>{
+  const s=parseProject(validProject()).scenes[0];s.type='flow_diagram';
+  s.elements=Array.from({length:6},(_,i)=>({id:`e${i}`,content:'字'.repeat(40),cue:{text_start:0,text_end:1},source_label:'字'}));
+  const boxes=layoutElements(s);
+  assert.equal(boxes[0].y,boxes[2].y);assert.ok(boxes[3].y>boxes[0].y+boxes[0].height);
+  assert.match(flowPath(boxes[0],boxes[3],0),new RegExp(`M ${boxes[0].x+boxes[0].width/2} ${boxes[0].y+boxes[0].height}`));
+  assert.notEqual(flowPath(boxes[0],boxes[2],0),flowPath(boxes[0],boxes[2],1));
 });
 test('editor adds and removes display fields without touching role, IDs or cue',()=>{
   const step={id:'a',content:'规则',role:'topic',cue:{text_start:2,text_end:4}};

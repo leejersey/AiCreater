@@ -23,6 +23,14 @@
     "typography": {"lineHeight":1.25,"graphicGap":10},
     "entrance": {"kind":"slide","distance":12}
   },
+  "mechanism": {
+    "label": "机制演示",
+    "card": {"radius":6,"borderWidth":2,"padding":22,"flowPadding":10,"graphicPadding":12,"outline":true,"shadow":"none"},
+    "layout": {"columnGap":40,"rowGap":28,"flowRowGap":20},
+    "arrow": {"path":"orthogonal","head":"filled","width":3},
+    "typography": {"lineHeight":1.35,"graphicGap":12},
+    "entrance": {"kind":"slide","distance":16}
+  },
   "paper_slide": {
     "label": "纸质幻灯",
     "card": {"radius":6,"borderWidth":2,"padding":22,"flowPadding":14,"graphicPadding":16,"outline":true,"shadow":"0 6px 0px #00000014"},

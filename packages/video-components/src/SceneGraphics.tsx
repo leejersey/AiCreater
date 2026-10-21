@@ -2,18 +2,29 @@ import React from 'react';
 import type {Scene} from '../../video-schema/src/types';
 import {layoutElements, flowPath, hasGraphicStyle} from './layout';
 import {usePalette, useVisualStyle, isPaperSlide} from './theme';
-import {entranceAtFrame} from './motion';
+import {entranceAtFrame,actionProgressAtFrame,visualSceneAtFrame} from './motion';
 import {GraphicContent} from './GraphicContent';
 import {MotifDecor, motifLayout} from './motifs';
 import {conceptLabels} from '../../video-schema/src/concept';
+import {FunnelDiagram,isSemanticFunnel} from './FunnelDiagram';
+import {TeachingDiagram} from './TeachingDiagrams';
+import {demonstrationFor} from './demonstrations';
 
 // Shared by the actual video and static visual regression tests.
-export function SceneGraphics({scene,frame}:{scene:Scene;frame:number}){
+export function SceneGraphics({scene:original,frame}:{scene:Scene;frame:number}){
+  const scene=visualSceneAtFrame(original,frame);
+  const actions=scene.visual_actions??[],connections=actions.filter(a=>a.kind==='connect');
+  const focus=actions.filter(a=>a.kind==='highlight'&&a.start_frame<=frame).at(-1);
+  const focusProgress=focus?actionProgressAtFrame(focus,frame):0;
   const palette=usePalette(),style=useVisualStyle(),paper=isPaperSlide(style);
+  const demo=demonstrationFor(original,style);
+  if(demo){const View=demo.View;return <View scene={original} frame={frame}/>;}
+  if(scene.dialogue||scene.process)return <TeachingDiagram scene={original} frame={frame}/>;
   const motif = typeof scene.motif === 'string' ? scene.motif : 'default';
   const boxes = motifLayout(scene, style.layout) ?? layoutElements(scene, style.layout);
   const animations=new Map(scene.animations.map(a=>[a.target,a]));
   const state=(id:string)=>{const a=animations.get(id)!;return entranceAtFrame(frame,a.start_frame,a.duration_frames,style.entrance);};
+  if(isSemanticFunnel(scene))return <FunnelDiagram scene={original} frame={frame}/>;
   const titleOutline=scene.type==='title_reveal';
   return <>
     <MotifDecor scene={scene} boxes={boxes} frame={frame}/>
@@ -24,9 +35,20 @@ export function SceneGraphics({scene,frame}:{scene:Scene;frame:number}){
       <defs><marker id={`arrow-${scene.id}`} markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto">
         <path d={style.arrow.head==='open'?'M 0 0 L 8 4 L 0 8':'M 0 0 L 8 4 L 0 8 z'} fill={style.arrow.head==='open'?'none':palette.accent} stroke={style.arrow.head==='open'?palette.accent:undefined} strokeWidth={style.arrow.head==='open'?1.5:undefined}/>
       </marker></defs>
-      {(scene.edges??[]).map((edge,i)=>{
+      {(scene.edges??[]).filter(e=>!connections.some(a=>a.target===e.from&&a.to===e.to)).map((edge,i)=>{
         const from=boxes.find(b=>b.id===edge.from)!,to=boxes.find(b=>b.id===edge.to)!;
         return <path key={`${edge.from}:${edge.to}`} d={flowPath(from,to,i,style.arrow.path)} fill="none" stroke={palette.accent} strokeWidth={style.arrow.width} opacity={Math.min(state(edge.from).opacity,state(edge.to).opacity)} markerEnd={`url(#arrow-${scene.id})`}/>;
+      })}
+    </svg>}
+    {connections.length>0&&<svg width={1920} height={1080} style={{position:'absolute'}} aria-hidden="true">
+      <defs><marker id={`action-arrow-${scene.id}`} markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto"><path d="M0 0 L8 4 L0 8" fill="none" stroke={palette.accent} strokeWidth={1.5}/></marker></defs>
+      {connections.map((action,i)=>{
+        const from=boxes.find(b=>b.id===action.target)!,to=boxes.find(b=>b.id===action.to)!;
+        const progress=actionProgressAtFrame(action,frame);
+        const horizontal=Math.abs(to.x-from.x)>Math.abs(to.y-from.y);
+        const right=to.x>from.x,x1=from.x+(right?from.width:0),x2=to.x+(right?0:to.width),mid=(x1+x2)/2;
+        const path=horizontal?`M${x1} ${from.y+from.height/2} H${mid} V${to.y+to.height/2} H${x2}`:flowPath(from,to,i,style.arrow.path);
+        return <path key={i} data-visual-connection={`${action.target}:${action.to}`} d={path} fill="none" stroke={palette.accent} strokeWidth={style.arrow.width} pathLength={1} strokeDasharray={1} strokeDashoffset={1-progress} opacity={progress>0?Math.min(state(action.target).opacity,state(action.to!).opacity):0} markerEnd={progress===1?`url(#action-arrow-${scene.id})`:undefined}/>;
       })}
     </svg>}
     {boxes.map((box,i)=>{
@@ -38,7 +60,7 @@ export function SceneGraphics({scene,frame}:{scene:Scene;frame:number}){
       const background=outline?palette.background:element.panel_style==='conclusion'?palette.selected:palette.card;
       const borderWidth=titleOutline?Math.max(style.card.borderWidth,2):style.card.borderWidth;
       const stamp = paper && (element.source_label || element.panel_style === 'conclusion');
-      return <div key={box.id} data-element={box.id} data-entrance={style.entrance.kind} data-silhouette={scene.type} data-sticky={sticky||undefined} style={{position:'absolute',left:box.x,top:box.y,width:box.width,height:box.height,boxSizing:'border-box',padding,borderRadius:sticky?4:titleOutline?Math.max(style.card.radius,12):style.card.radius,border:`${borderWidth}px solid ${outline?accent:accent+'55'}`,background,boxShadow:titleOutline?'none':sticky?'0 8px 0 rgba(0,0,0,0.08)':style.card.shadow,opacity:motion.opacity,transform:`translateY(${motion.translateY}px) rotate(${sticky?(i%2?-0.6:0.5):0}deg)`,clipPath:motion.clipPath,display:'flex',alignItems:'center',justifyContent:'center'}}>
+      return <div key={box.id} data-element={box.id} data-action-highlight={focus?.target===box.id?box.id:undefined} data-entrance={style.entrance.kind} data-silhouette={scene.type} data-sticky={sticky||undefined} style={{position:'absolute',left:box.x,top:box.y,width:box.width,height:box.height,boxSizing:'border-box',padding,borderRadius:sticky?4:titleOutline?Math.max(style.card.radius,12):style.card.radius,border:`${borderWidth}px solid ${outline?accent:accent+'55'}`,background,outline:focus?.target===box.id?`3px solid ${palette.accent}`:undefined,outlineOffset:focus?.target===box.id?6:undefined,boxShadow:titleOutline?'none':sticky?'0 8px 0 rgba(0,0,0,0.08)':style.card.shadow,opacity:motion.opacity*(focus&&focus.target!==box.id?1-0.6*focusProgress:1),transform:`translateY(${motion.translateY}px) rotate(${sticky?(i%2?-0.6:0.5):0}deg)`,clipPath:motion.clipPath,display:'flex',alignItems:'center',justifyContent:'center'}}>
         {sticky&&<div data-tape aria-hidden="true" style={{position:'absolute',top:-10,left:'42%',width:64,height:18,background:'#f0d56c',opacity:0.85,transform:'rotate(-2deg)'}}/>}
         {stamp&&<div data-stamp={element.source_label||'结论'} style={{position:'absolute',top:12,right:16,padding:'2px 10px',border:`2px solid ${palette.warning}`,color:palette.warning,fontSize:18,transform:'rotate(8deg)',background:palette.background}}>{element.source_label||'结论'}</div>}
         {scene.type==='concept'?<div data-concept-role={element.concept_role} style={{display:'flex',flexDirection:'column',alignItems:'center',gap:style.typography.graphicGap,textAlign:'center',lineHeight:style.typography.lineHeight}}>

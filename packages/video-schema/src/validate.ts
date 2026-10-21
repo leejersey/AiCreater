@@ -1,6 +1,8 @@
 import Ajv from 'ajv';
 import schema from '../schema.json';
 import type {VideoProject} from './types';
+import {visualActionErrors} from './visual-actions';
+import {diagramErrors} from './diagrams';
 
 export type ValidationError = {path: string; code: string; message: string};
 const checkStructure = new Ajv({allErrors: true, strict: false}).compile<VideoProject>(schema);
@@ -101,6 +103,7 @@ export function validateProject(input: unknown): ValidationError[] {
       const times = scene.elements.map(e => starts.get(e.id));
       if (times.every(t => t !== undefined) && times.some((t, j) => j > 0 && times[j - 1]! >= t!)) fail(`${path}/animations`, 'step_order', 'Teaching step times must increase strictly');
     }
+    errors.push(...visualActionErrors(scene).map(e=>({...e,path:path+e.path})),...diagramErrors(scene).map(e=>({...e,path:path+e.path})));
     const targets = scene.animations.map(a => a.target);
     if (new Set(targets).size !== targets.length || targets.length !== ids.size || targets.some(t => !ids.has(t))) fail(`${path}/animations`, 'animation_targets', 'Each element needs exactly one entrance animation');
     scene.animations.forEach((a, j) => {

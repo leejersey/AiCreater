@@ -12,6 +12,115 @@ SCHEMA = json.loads(Path(__file__).with_name('schema.json').read_text())
 WHITESPACE = ' \t\n\r\v\f\u00a0\u1680\u2000\u2001\u2002\u2003\u2004\u2005\u2006\u2007\u2008\u2009\u200a\u2028\u2029\u202f\u205f\u3000\ufeff'
 
 
+def validate_actions(scene, path, timed=False):
+    errors = []
+    def fail(i, code, message):
+        errors.append({'path': f'{path}/visual_actions/{i}', 'code': code, 'message': message})
+    actions = scene.get('visual_actions', [])
+    if actions and scene['type'] not in ['card_sequence', 'flow_diagram', 'comparison_panel']:
+        fail(0, 'action_scene', 'Actions require a supported graphics scene')
+    text = scene['narration']['text']
+    elements = {e['id']: e for e in scene['elements']}
+    starts = {a['target']: a['start_frame'] for a in scene.get('animations', [])}
+    previous_cue = previous_frame = -1
+    updates = set()
+    for i, action in enumerate(actions):
+        kind = action['kind']; target = elements.get(action['target'])
+        to = elements.get(action.get('to')); source = elements.get(action.get('source'))
+        start, end = action['cue']['text_start'], action['cue']['text_end']
+        if (not target or kind == 'connect' and (not to or action['to'] == action['target']) or
+                kind == 'update' and (not source or action['source'] == action['target'])):
+            fail(i, 'action_reference', 'Distinct existing element references required')
+        if start >= end or end > len(text) or not text[start:end].strip(WHITESPACE):
+            fail(i, 'action_cue', 'Action requires nonblank original text')
+        if start < previous_cue:
+            fail(i, 'action_order', 'Actions must follow source order')
+        previous_cue = start
+        for element in [target] + ([to] if kind == 'connect' else []):
+            if element and element.get('role') != 'topic' and element['cue']['text_start'] > start:
+                fail(i, 'action_early', 'Action precedes its visible target')
+        if kind == 'update' and source:
+            if len(source['content']) > 16 or source['content'] not in text[start:end]:
+                fail(i, 'action_state', 'Updated state must be a literal source excerpt of at most 16 code points')
+            key = (action['target'], start)
+            if key in updates:
+                fail(i, 'action_conflict', 'Two updates cannot write the same target at one source position')
+            updates.add(key)
+        if timed:
+            frame, duration = action['start_frame'], action['duration_frames']
+            if frame + duration > scene['duration_frames'] - 6:
+                fail(i, 'action_frames', 'Action must fit the audio interval')
+            if frame < previous_frame:
+                fail(i, 'action_order', 'Action frames must follow source order')
+            previous_frame = frame
+            for id_ in [action['target']] + ([action['to']] if kind == 'connect' else []):
+                if id_ in starts and frame < starts[id_]:
+                    fail(i, 'action_early', 'Action precedes target entrance')
+    return errors
+
+
+def validate_diagrams(scene, path):
+    errors = []
+    d, p, funnel = scene.get('dialogue'), scene.get('process'), scene.get('funnel')
+    if funnel:
+        def bad(message):
+            errors.append({'path': f'{path}/funnel', 'code': 'diagram_binding', 'message': message})
+        layers, notes = funnel['layers'], funnel['notes']
+        elements = {e['id']: e for e in scene['elements']}
+        ids = layers + [n['element_id'] for n in notes]
+        if d or p or scene.get('motif') != 'funnel' or scene['type'] not in ['card_sequence', 'flow_diagram']:
+            bad('Unsupported funnel shape')
+        if len(ids) != len(elements) or len(set(ids)) != len(ids) or any(i not in elements for i in ids):
+            bad('Bind every element exactly once')
+        for note in notes:
+            if 'target' in note and note['target'] not in layers:
+                bad('Note target must be a layer')
+        for e in scene['elements']:
+            quote = scene['narration']['text'][e['cue']['text_start']:e['cue']['text_end']]
+            if e.get('role') or e['content'] not in quote or e['id'] in layers and len(e['content']) > 12 or e.get('source_label') and e['source_label'] not in quote:
+                bad('Funnel labels and notes must fit and quote their own cue')
+        if any(a in elements and b in elements and elements[a]['cue']['text_start'] > elements[b]['cue']['text_start'] for a,b in zip(layers,layers[1:])):
+            bad('Layers must follow narration order')
+        if any(a['kind'] == 'connect' and (a['target'] not in layers or a['to'] not in layers) for a in scene.get('visual_actions', [])):
+            bad('Explicit connections must join layers; notes use their target')
+        return errors
+    if not d and not p:
+        return errors
+    field = 'dialogue' if d else 'process'
+    def fail(message):
+        errors.append({'path': f'{path}/{field}', 'code': 'diagram_binding', 'message': message})
+    if d and p:
+        fail('Only one diagram binding is allowed')
+        return errors
+    ids = d['messages'] + [d['state']] if d else p['stages'] + p['details']
+    elements = {e['id']: e for e in scene['elements']}
+    if len(ids) != len(elements) or len(set(ids)) != len(ids) or any(id_ not in elements for id_ in ids):
+        fail('Bind every element exactly once')
+    if d and (scene['type'] != 'card_sequence' or scene.get('motif') != 'dialogue_split') or p and (scene['type'] != 'flow_diagram' or scene.get('motif', 'default') != 'default'):
+        fail('Unsupported diagram shape')
+    if d and 'context_messages' in d:
+        contexts=d['context_messages']
+        updates={a['source'] for a in scene.get('visual_actions',[]) if a['kind']=='update'}
+        if (any(a['kind']=='connect' and (a['target'] in updates or a['to'] in updates) for a in scene.get('visual_actions',[]))
+                or len(set(contexts))!=len(contexts) or any(id_ not in d['messages'] or id_ in updates for id_ in contexts)
+                or not set(d['messages'])-updates-set(contexts)):
+            fail('Context roles must be evidence, with a current message')
+    for e in scene['elements']:
+        quote = scene['narration']['text'][e['cue']['text_start']:e['cue']['text_end']]
+        if e.get('source_label') and (e['source_label'] not in quote or p and e['id'] in p['stages'] and len(e['source_label']) > 8):
+            fail('Source label must fit and quote its own cue')
+        if e.get('role') or e['content'] not in quote:
+            fail('Diagram labels must be literal source excerpts, not early topics')
+        if d and e['id'] == d['state'] and len(e['content']) > 16 or p and e['id'] in p['stages'] and len(e['content']) > 24:
+            fail('State or stage label exceeds capacity')
+    ordered = d['messages'] if d else p['stages']
+    if any(a in elements and b in elements and elements[a]['cue']['text_start'] > elements[b]['cue']['text_start'] for a,b in zip(ordered, ordered[1:])):
+        fail('Display groups must follow narration order')
+    if p and any(e['from'] not in p['stages'] or e['to'] not in p['stages'] for e in scene.get('edges', [])):
+        fail('Process edges must connect stages')
+    return errors
+
+
 def validate_scene_visuals(scene, path):
     """Shared visual checks for schema-validated drafts and final scenes."""
     errors = []
@@ -19,6 +128,8 @@ def validate_scene_visuals(scene, path):
     def fail(suffix, code, message):
         errors.append({'path': path + suffix, 'code': code, 'message': message})
 
+    errors.extend(validate_actions(scene, path, 'animations' in scene and 'duration_frames' in scene))
+    errors.extend(validate_diagrams(scene, path))
     text = scene['narration']['text']
     if not text.strip(WHITESPACE):
         fail('/narration/text', 'blank_text', 'Narration is blank')

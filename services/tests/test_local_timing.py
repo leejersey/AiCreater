@@ -33,6 +33,22 @@ class LocalTimingTests(unittest.TestCase):
         self.assertEqual(result['scenes'][0]['narration']['text'],'规则匹配。')
         self.assertEqual(result['scenes'][0]['captions'][-1]['end_frame'],96)
 
+    def test_edited_graphics_retime_from_existing_cache_without_speech_calls(self):
+        from services.workflow.local_timing import timing_document
+        from services.tests.test_teaching_diagrams import funnel_draft, draft, process_draft
+        for field,builder in [('funnel',funnel_draft),('dialogue',draft),('process',process_draft)]:
+            scene=builder();text=scene['narration']['text'];e=scene['elements'][0]
+            scene['visual_actions']=[{'kind':'highlight','target':e['id'],'cue':e['cue']}]
+            words=[{'word':char,'startTime':i*3/len(text),'endTime':(i+1)*3/len(text)} for i,char in enumerate(text)]
+            self.words.write_text(json.dumps(words));self.payload['words_checksum']=hashlib.sha256(self.words.read_bytes()).hexdigest()
+            self.payload['scene']=scene
+            with self.subTest(field=field),patch('httpx.Client',side_effect=AssertionError('No HTTP')),patch('services.workflow.providers.volcengine_speech',side_effect=AssertionError('No TTS')):
+                document=timing_document(self.payload,self.public)
+                timed=document['scenes'][0]
+                self.assertEqual(timed[field],scene[field]);self.assertEqual(document['assets'],[self.asset])
+                self.assertEqual(timed['visual_actions'][0]['cue'],e['cue'])
+                self.assertIn('start_frame',timed['visual_actions'][0])
+
     def test_local_timing_preserves_explicit_topic_and_audio(self):
         from services.workflow.local_timing import timing_document
         self.payload['scene']['elements'][0]['role']='topic'

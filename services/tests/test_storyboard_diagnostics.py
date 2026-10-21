@@ -104,6 +104,12 @@ class StoryboardDiagnosticsTests(unittest.TestCase):
             self.assertNotIn('schema_errors',Jobs._error({'stage':'storyboard','scene_id':None,'attempts':1},'storyboard_schema_error',value))
         self.assertNotIn('schema_errors',Jobs._error({'stage':'storyboard','scene_id':None,'attempts':1},'timeout',values))
 
+    def test_missing_compact_sections_identify_program_keys_without_values(self):
+        from services.workflow.schema_diagnostics import schema_errors
+        schema={'type':'object','required':['p1','p2','p3'],'properties':{'p1':{},'p2':{},'p3':{}}}
+        self.assertEqual(schema_errors(schema,{'p1':{'secret':'provider-output'}}),[{'path':'/p2','rule':'required'},{'path':'/p3','rule':'required'}])
+        self.assertEqual(schema_errors({'type':'object','required':['secret-field']},{}),[{'path':'/','rule':'required'}])
+
     def test_missing_diagnostic_never_hides_validation_failure(self):
         from services.workflow.schema_diagnostics import schema_errors
         self.assertEqual(schema_errors(False,{'secret':'response'}),[{'path':'/','rule':'schema'}])

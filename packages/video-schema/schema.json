@@ -17,6 +17,35 @@
   },
   "definitions": {
     "Id": {"type": "string", "minLength": 1, "maxLength": 80, "pattern": "^[a-zA-Z0-9_-]+$"},
+    "Dialogue": {
+      "type":"object","additionalProperties":false,"required":["messages","state"],
+      "properties":{"messages":{"type":"array","minItems":1,"maxItems":3,"uniqueItems":true,"items":{"$ref":"#/definitions/Id"}},"state":{"$ref":"#/definitions/Id"},"context_messages":{"type":"array","maxItems":2,"uniqueItems":true,"items":{"$ref":"#/definitions/Id"}}}
+    },
+    "Process": {
+      "type":"object","additionalProperties":false,"required":["stages","details"],
+      "properties":{"stages":{"type":"array","minItems":2,"maxItems":4,"uniqueItems":true,"items":{"$ref":"#/definitions/Id"}},"details":{"type":"array","maxItems":2,"uniqueItems":true,"items":{"$ref":"#/definitions/Id"}}}
+    },
+    "Funnel": {
+      "type":"object","additionalProperties":false,"required":["layers","notes"],
+      "properties":{"layers":{"type":"array","minItems":2,"maxItems":3,"uniqueItems":true,"items":{"$ref":"#/definitions/Id"}},"notes":{"type":"array","minItems":1,"maxItems":3,"items":{"type":"object","additionalProperties":false,"required":["element_id"],"properties":{"element_id":{"$ref":"#/definitions/Id"},"target":{"$ref":"#/definitions/Id"},"direction":{"enum":["up","down"]}},"not":{"required":["target","direction"]}}}}
+    },
+    "VisualAction": {
+      "type":"object", "additionalProperties":false,
+      "required":["kind","target","cue","start_frame","duration_frames"],
+      "properties":{
+        "kind":{"enum":["connect","highlight","update"]},
+        "target":{"$ref":"#/definitions/Id"},
+        "to":{"$ref":"#/definitions/Id"},
+        "source":{"$ref":"#/definitions/Id"},
+        "cue":{"type":"object","additionalProperties":false,"required":["text_start","text_end"],"properties":{"text_start":{"type":"integer","minimum":0},"text_end":{"type":"integer","minimum":1}}},
+        "start_frame":{"type":"integer","minimum":6,"maximum":8993},
+        "duration_frames":{"type":"integer","minimum":1,"maximum":60}
+      },
+      "allOf":[
+        {"if":{"properties":{"kind":{"const":"connect"}}},"then":{"required":["to"]},"else":{"not":{"required":["to"]}}},
+        {"if":{"properties":{"kind":{"const":"update"}}},"then":{"required":["source"]},"else":{"not":{"required":["source"]}}}
+      ]
+    },
     "Asset": {
       "type": "object", "additionalProperties": false,
       "required": ["id", "type", "storage_key", "checksum", "duration_ms"],
@@ -103,6 +132,9 @@
         "type": {"enum": ["title_reveal", "card_sequence", "flow_diagram", "code_walkthrough", "comparison_panel", "state_diagram", "execution_timeline", "data_chart", "concept"]},
         "motif": {"enum": ["default", "funnel", "dialogue_split", "means_row", "schematic"]},
         "chart": {"$ref":"#/definitions/Chart"},
+        "dialogue":{"$ref":"#/definitions/Dialogue"},
+        "process":{"$ref":"#/definitions/Process"},
+        "funnel":{"$ref":"#/definitions/Funnel"},
         "timeline": {"type": "object", "additionalProperties": false, "required": ["duration_ms", "lanes"], "properties": {
           "duration_ms": {"type": "integer", "minimum": 1, "maximum": 3600000},
           "lanes": {"type": "array", "minItems": 1, "maxItems": 3, "items": {"type": "object", "additionalProperties": false, "required": ["id", "label"], "properties": {
@@ -136,6 +168,7 @@
             "properties": {"from": {"$ref": "#/definitions/Id"}, "to": {"$ref": "#/definitions/Id"}}
           }
         },
+        "visual_actions":{"type":"array","maxItems":12,"items":{"$ref":"#/definitions/VisualAction"}},
         "animations": {
           "type": "array", "minItems": 1, "maxItems": 6,
           "items": {
@@ -157,6 +190,9 @@
         }
       },
       "allOf": [
+        {"if":{"required":["funnel"]},"then":{"required":["motif"],"properties":{"type":{"enum":["card_sequence","flow_diagram"]},"motif":{"const":"funnel"}},"not":{"anyOf":[{"required":["dialogue"]},{"required":["process"]}]}}},
+        {"if":{"required":["dialogue"]},"then":{"required":["motif"],"properties":{"type":{"const":"card_sequence"},"motif":{"const":"dialogue_split"}},"not":{"required":["process"]}}},
+        {"if":{"required":["process"]},"then":{"properties":{"type":{"const":"flow_diagram"},"motif":{"const":"default"}},"not":{"required":["dialogue"]}}},
         {"if":{"properties":{"type":{"const":"concept"}}},"then":{"properties":{"elements":{"items":{"required":["concept_role"]}}}},"else":{"properties":{"elements":{"items":{"not":{"required":["concept_role"]}}}}}},
         {"if":{"required":["code"],"properties":{"type":{"const":"code_walkthrough"},"code":{"required":["array_name"]}}},"then":{"properties":{"elements":{"items":{"required":["array_items","pointers","loop","input"],"properties":{"content":{"maxLength":20},"variables":{"items":{"properties":{"name":{"maxLength":6},"value":{"maxLength":8}}}}}}}}},"else":{"properties":{"elements":{"items":{"not":{"anyOf":[{"required":["array_items"]},{"required":["pointers"]},{"required":["loop"]},{"required":["input"]}]}}}}}},
         {"if":{"properties":{"type":{"const":"data_chart"}}},"then":{"required":["chart"]},"else":{"not":{"required":["chart"]}}},
@@ -180,7 +216,7 @@
         {"if": {"properties": {"type": {"enum": ["code_walkthrough", "state_diagram", "execution_timeline", "data_chart"]}}},
           "then": {"not": {"required": ["motif"]}}},
         {"if": {"required": ["motif"], "properties": {"motif": {"const": "funnel"}}},
-          "then": {"properties": {"type": {"enum": ["card_sequence", "flow_diagram"]}, "elements": {"minItems": 2, "maxItems": 3}}}},
+          "then": {"properties": {"type": {"enum": ["card_sequence", "flow_diagram"]}, "elements": {"minItems": 2}}, "if":{"required":["funnel"]},"else":{"properties":{"elements":{"maxItems":3}}}}},
         {"if": {"required": ["motif"], "properties": {"motif": {"const": "dialogue_split"}}},
           "then": {"properties": {"type": {"enum": ["card_sequence"]}, "elements": {"minItems": 2, "maxItems": 4}}}},
         {"if": {"required": ["motif"], "properties": {"motif": {"const": "means_row"}}},

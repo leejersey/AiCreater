@@ -38,7 +38,7 @@ export default function Courses(){
   const visible = queryFiltered.filter(p => {
     if (statusFilter === 'running') return Boolean(activeJobLabel(p));
     if (statusFilter === 'needs_voice') return p.needs_voice || p.scene_count === 0;
-    if (statusFilter === 'ready') return p.scene_count > 0 && !p.needs_voice && !p.needs_timing && !activeJobLabel(p);
+    if (statusFilter === 'ready') return (p.scene_count??0) > 0 && !p.needs_voice && !p.needs_timing && !activeJobLabel(p);
     return true;
   });
 
@@ -85,7 +85,7 @@ export default function Courses(){
 
     {loading&&<p role="status"><Spinner size={16} className="icon-spin" /> 正在读取课程…</p>}
     {error&&<p role="alert"><AlertCircle size={16} /> {error} 可点击刷新重试，已有列表保留。</p>}
-    {!loading&&!error&&!projects.length&&<section className="empty"><h2><BookOpen size={24} /> 还没有视频</h2><p>点击上方“新建视频”开启你的第一个作品。</p><Link href="/courses/new"><Plus size={16} />创建第一堂课</Link></section>}
+    {!loading&&!error&&!projects.length&&<section className="empty"><h2><BookOpen size={24} /> 还没有视频</h2><p>点击“新建视频”，生成或填写讲稿，再选择画面表达。</p><Link href="/courses/new"><Plus size={16} />创建第一堂课</Link></section>}
     {!loading&&projects.length>0&&!visible.length&&<p className="muted" style={{textAlign:'center',padding:'32px'}}>没有符合当前条件的视频项目。</p>}
     <div className="course-grid">{visible.map(p=>{const job=activeJobLabel(p);return <article key={p.id} style={{display:'flex',flexDirection:'column'}}><h2>{p.title}</h2>
       <div className="scene-meta">

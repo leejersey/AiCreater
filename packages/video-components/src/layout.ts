@@ -1,7 +1,7 @@
 import type {Scene, Element} from '../../video-schema/src/types';
 import {visualStyles, type StyleTokens} from './theme';
 
-export type ElementBox = {id: string; x: number; y: number; width: number; height: number; fontSize: number; lines: string[]};
+export type ElementBox = {id: string; x: number; y: number; width: number; height: number; fontSize: number; lines: string[]; routing?: 'grid'};
 export const hasGraphicStyle = (e: Element) => e.icon !== undefined || e.step !== undefined || e.highlight !== undefined || e.source_label !== undefined || e.panel_style !== undefined;
 
 export function wrapText(text: string, width: number): string[] {
@@ -103,12 +103,15 @@ export function layoutElements(scene: Scene, layout: StyleTokens['layout'] = vis
       step = height + gap;
       span = (n - 1) * step + height;
     }
+    const fontSize=graphic&&height<160?26:32;
+    if(graphic&&elements.some(e=>wrapText(e.content,20).length*fontSize*1.35+(hasGraphicStyle(e)?96:0)>height-32))
+      return cardStrip(elements,layout,true).map(box=>({...box,routing:'grid'}));
     const width = graphic ? 1000 : 900;
     const x = (1920 - width) / 2;
     const top = bandTop + Math.max(0, (band - span) / 2);
     return elements.map((e, i) => ({
       id: e.id, x, y: top + i * step, width, height,
-      fontSize: graphic && height < 160 ? 26 : 32,
+      fontSize,
       lines: wrapText(e.content, 20),
     }));
   }
@@ -143,6 +146,12 @@ export function layoutElements(scene: Scene, layout: StyleTokens['layout'] = vis
 /** Vertical-stack orthogonal/curve arrows (single column). */
 export function flowPath(from: ElementBox, to: ElementBox, index: number, routing: string = 'orthogonal'): string {
   const fromMidX = from.x + from.width / 2, toMidX = to.x + to.width / 2;
+  if(from.routing==='grid'||to.routing==='grid'){
+    const sameRow=from.y===to.y,down=to.y>from.y;
+    const sy=sameRow||!down?from.y:from.y+from.height,ey=sameRow||down?to.y:to.y+to.height;
+    const lane=sameRow?sy-16-index*3:(sy+ey)/2+index*2;
+    return routing==='curve'?`M ${fromMidX} ${sy} C ${fromMidX} ${lane} ${toMidX} ${lane} ${toMidX} ${ey}`:`M ${fromMidX} ${sy} V ${lane} H ${toMidX} V ${ey}`;
+  }
   if (routing === 'curve') {
     const lane = Math.min(fromMidX, toMidX) - 48 - index * 16;
     return `M ${from.x} ${from.y + from.height / 2} C ${lane} ${from.y + from.height / 2} ${lane} ${to.y + to.height / 2} ${to.x} ${to.y + to.height / 2}`;

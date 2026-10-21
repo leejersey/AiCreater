@@ -6,6 +6,8 @@ import {PreviewSteps} from '../app/SceneEditor';
 import * as editor from '../lib/editor';
 import demo from '../../../examples/demo.json';
 import type {VideoProject} from '../../../packages/video-schema/src/types';
+import {interactiveExamples} from '../../../packages/video-components/tests/interactive-fixture';
+import {annotatedFunnel} from '../../../packages/video-components/tests/annotated-funnel-fixture';
 
 function project():editor.Project {
   const {scenes:_,...config}=structuredClone(demo as VideoProject);
@@ -65,6 +67,26 @@ test('temporary step seeking is explicitly labelled and keeps unsaved/busy prote
   assert.match(draft,/临时/);assert.doesNotMatch(draft,/disabled/);
   assert.match(renderToStaticMarkup(createElement(PreviewSteps,{...props,draftPreview:true,dirty:true})),/disabled/);
   assert.match(renderToStaticMarkup(createElement(PreviewSteps,{...props,draftPreview:true,busy:true})),/disabled/);
+});
+
+test('visual actions receive temporary cue timing without touching stored frame plans',()=>{
+  const p=project(),row=p.scenes[0];row.scene.type='card_sequence';
+  row.scene.visual_actions=[{kind:'highlight',target:'a',cue:{text_start:2,text_end:3},start_frame:8000,duration_frames:90}];
+  const before=structuredClone(p),video=editor.draftPreviewVideo(p,'s')!;
+  const actions=video.scenes[0].visual_actions!;
+  assert.equal(actions.length,1);assert.ok(actions[0].start_frame<video.scenes[0].duration_frames);
+  assert.notEqual(actions[0].start_frame,8000);assert.ok(actions[0].start_frame>=video.scenes[0].animations[0].start_frame);
+  assert.deepEqual(p,before);
+});
+
+test('interactive bindings remain read-only in draft preview and malformed groups cannot render',()=>{
+ for(const scene of [annotatedFunnel(),...interactiveExamples()]){
+  const p=project();p.scenes[0].scene=scene;
+  const before=structuredClone(p),video=editor.draftPreviewVideo(p,'s');assert.ok(video);
+  assert.deepEqual(video.scenes[0].dialogue,scene.dialogue);assert.deepEqual(video.scenes[0].process,scene.process);assert.deepEqual(video.scenes[0].funnel,scene.funnel);assert.deepEqual(p,before);
+  if(scene.funnel)scene.funnel.layers.push('missing');else if(scene.dialogue)scene.dialogue.state='missing';else scene.process!.stages.push('missing');
+  assert.equal(editor.draftPreviewVideo(p,'s'),null);
+ }
 });
 
 test('formal ready previews remain unchanged and do not become draft views',()=>{

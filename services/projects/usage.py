@@ -13,7 +13,7 @@ def initial_usage(payload, *, now=None):
     kind = payload.get('kind')
     rates, sources, model = None, [], 'unknown'
     valid = 0 <= ((now or date.today()) - PRICES_CHECKED_ON).days <= 30
-    if kind in ['generate','regenerate'] and payload.get('model') == 'deepseek-flash' and payload.get('protocol_version') in ['teaching-outline:1','teaching-outline:2','teaching-outline:3','scene-candidate:1','scene-candidate:2','scene-candidate:3']:
+    if kind in ['generate','regenerate'] and payload.get('model') == 'deepseek-flash' and payload.get('protocol_version') in ['teaching-outline:1','teaching-outline:2','teaching-outline:3','teaching-outline:4','teaching-outline:5','teaching-outline:6','scene-candidate:1','scene-candidate:2','scene-candidate:3','scene-candidate:4','scene-candidate:5','scene-candidate:6']:
         model, sources = 'deepseek-flash', [LLM_SOURCE]
         if valid: rates = LLM_RATES
     if kind == 'voice' and payload.get('protocol_version') == 'native-voice:1' and payload.get('profile',{}).get('voice',{}).get('resource_id') == 'seed-tts-2.0':

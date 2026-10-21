@@ -3,11 +3,12 @@ import type {VideoProject} from '../../video-schema/src/types';
 import visualStyles from './visual-styles.json';
 
 export {visualStyles};
-export type StyleTokens = typeof visualStyles.legacy;
+export type StyleTokens = typeof visualStyles.legacy & {presentation?:'mechanism'};
+const mechanismStyle:StyleTokens={...visualStyles.mechanism,presentation:'mechanism'};
 export type VisualStyleId = keyof typeof visualStyles;
 export function getVisualStyle(id: unknown = 'legacy'): StyleTokens {
   if(typeof id!=='string'||!Object.hasOwn(visualStyles,id))throw new Error('invalid_visual_style');
-  return visualStyles[id as VisualStyleId];
+  return id==='mechanism'?mechanismStyle:visualStyles[id as VisualStyleId];
 }
 export type VisualStyleSnapshot={id:VisualStyleId;tokens:StyleTokens};
 const ranges:Record<string,[number,number]>={
@@ -43,6 +44,7 @@ export function validateVisualStyle(project: VideoProject | undefined, id?:unkno
     getVisualStyle(frozen.id);
     if(id!==undefined&&id!==frozen.id)throw new Error('invalid_visual_style_mismatch');
     style=styleValue(frozen.tokens,visualStyles.legacy) as StyleTokens;
+    if(frozen.id==='mechanism')style={...style,presentation:'mechanism'};
     if(frozen.id==='legacy'){
       if(JSON.stringify(style)!==JSON.stringify(visualStyles.legacy))throw new Error('legacy_visual_style_changed');
       style=visualStyles.legacy;

@@ -25,8 +25,10 @@ python3 -m celery -A services.workflow.queue:app worker -Q workflow --hostname=w
 python3 -m celery -A services.workflow.queue:app worker -Q render --hostname=render@%h --concurrency=1 --loglevel=WARNING
 
 # 5. 启动 Celery Beat 定时调度器（仅运行单实例）
-python3 -m celery -A services.workflow.queue:app beat --loglevel=WARNING --schedule=/tmp/aicreater-celerybeat
+python3 -m celery -A services.workflow.queue:app beat --loglevel=WARNING --schedule=/tmp/aicreater-celerybeat --pidfile=/tmp/aicreater-celerybeat.pid
 ```
+
+Beat只开一个，统一PID文件防止重复启动；旧不带PID参数的实例须先在原终端正常退出，再用新命令，不能叠加启动。文件锁冲突先查占用，不直接删除schedule。
 
 ### 安全限制与运行规范
 
@@ -69,6 +71,10 @@ python3 -m celery -A services.workflow.queue:app beat --loglevel=WARNING --sched
 ```
 
 `state`为`detected`/`not_detected`/`unknown`；`code`为`checked`/`configuration`/`inspection_failed`/`invalid_response`。无响应是未检测到，配置/连接/响应格式错误是未知，原异常、worker名及broker不会返回。继承本机Host/Origin限制，不访问项目数据库或供应商、不派任务；独立控制客户端只查询队列订阅，连接/读/响应等待各1s并禁连接重试。未响应不证明离线，忙碌solo也可能暂不响应；响应不证明beat或任务执行可用。前端仅进入时及手动检查，5s超时后显示未知，不把旧状态作为当前就绪，不改任务提交规则。
+
+## 新分镜任务协议V6（本机已启用）
+
+新提交生成/候选采用`teaching-outline:6`/`scene-candidate:6`，对话角色为`context/message/initial_state/state_after`，非零统一原文摘录ID；估价仍按最多2次模型请求保守计算，用量支持v6。可选`dialogue.context_messages`标记前文，须属于消息证据且不得是更新来源，并至少保留一条当前消息；旧数据未提供该字段时保留原标签。图形草稿/保存/冻结保留字段，标签不再根据消息次序猜测。v1–v5已有任务不改，直接重试旧失败任务仍按旧协议执行；新提交才用v6。未自动重试旧任务或补历史用量，v6后续已在2次新授权内完成三段短验收课真实复验，并通过隔离原生PG冻结/实际CLI渲染/发布校验/MP4及SRT HTTP下载；不等于通用正确率或人工逐词听检，见 `output/workbench/v6-final-acceptance/receipt.json`。
 
 ## 每次尝试的用量记录（本机已启用）
 
@@ -161,7 +167,7 @@ status为`estimated`/`unknown`/`no_new_call`；unknown的金额为null而非0，
 
 只接受受信任预设ID（当前legacy/whiteboard/minimal），不接受客户端tokens/CSS或额外字段。严格整数revision、项目锁和Host/Origin校验；过期409，未知ID/坏请求400或422，跨源403。初始分镜任务仍活动时拒绝保存。已保存的同一完整快照no-op，否则仅项目revision/config升版，场景/原音轨/字幕/旧版本/任务不变，不登记新任务或配音。
 
-200返回项目，GET项目也追加`visual_style:{id,tokens}`，未设置的项目只读返回legacy默认、不回填原记录。完整快照保存在config元数据，不属于教学DSL；预览、导出阻塞检查和本地对齐输入显式剥离，配音profile不含风格，主题/音色保存保留风格设置。新的版本profile冻结完整快照；历史无此字段版本维持v1/legacy。
+支持`legacy/whiteboard/minimal/paper_slide/mechanism`；`mechanism`按已有`funnel/dialogue/process`结构启用演示，其余场景普通回退，不改变分镜或触发模型。机制标记由稳定id在渲染时派生，不写入tokens或DSL；仅改变label不会把旧快照变为演示，额外tokens字段仍拒绝。200返回项目，GET项目也追加`visual_style:{id,tokens}`，未设置的项目只读返回legacy默认、不回填原记录。完整快照保存在config元数据，不属于教学DSL；预览、导出阻塞检查和本地对齐输入显式剥离，配音profile不含风格，主题/音色保存保留风格设置。新的版本profile冻结完整快照；历史无此字段版本维持v1/legacy。
 
 前期隔离DB/worker/CLI验收见[记录](../output/workbench/style-selection-qa/receipt.json)。原API/web已正常重载，无新增迁移；16项原生API与8项无mock页面检查通过，3次成功风格保存和1个冻结版本仅在自有临时副本完成，清理后原六表/媒体/配置/队列不变，无任务或收费调用，见[原生验收](../output/workbench/style-selection-activation/receipt.json)。旧API缺字段/404仍保留草稿并提示未启用，不调用主题接口兜底。
 
@@ -234,16 +240,17 @@ status为`estimated`/`unknown`/`no_new_call`；unknown的金额为null而非0，
 ## 场景编辑
 
 ### `PATCH /api/scenes/{id}`
-- **功能描述**：更新指定场景的草稿字段（`elements/code/captions/narration_text/edges`）；不允许元素增删、ID/顺序/topic或concept_role变化。
+- **功能描述**：更新指定场景的草稿字段（`elements/code/captions/narration_text/edges/graphics`）；不允许元素增删、ID/顺序/topic或concept_role变化。
 - **请求参数**：
   - `expected_revision` (int)：期望的场景版本号。
   - `changes` (object)：需要更新的字段及其新值。
+- **图形编辑（T9源码、隔离续登/对齐验收及原环境受控启用完成）**：`changes.graphics`为可选完整替换对象，仅允许`motif/funnel/dialogue/process/visual_actions`，不含渲染帧。`{}`清除旧图形设置；可与步骤/连线同笔修改，使用修改后的原稿和连线校验。未知键、引用/分组/cue错误原子拒绝，不静默替代。未传该字段的旧调用不受影响；已有音轨的实际图形变化进入`needs_timing`、保留配音并移除失效动作帧，no-op不升版本，保存不自动发任务或重新配音。后续已在零活动任务、私有备份与身份复核后短暂停/恢复原消费者并正常重载原API/web，9表/326文件不变；图形保存已启用；最新新任务已接通v5：模型先选每段表达方式，再按该方式的精确schema选择局部摘录，程序构造引用/时序（最多两次请求，standard在第二次转旧专用生成器，无第三次重试），已用一个真实有声样本验证三类图形，不代表通用准确率。
 - **音频复用与状态流转规则**：
   - **复用音频与时间**：口播、cue不变时，沿用已有状态及合法音频/时间轴；原`needs_voice/needs_timing`不会因改说明而升级ready。
   - **标记 `needs_timing`**：仅cue变化、口播不变且原来非`needs_voice`，保留narration/音频引用、字幕、时长，删除失效的animations并待对齐；原来`needs_voice`仍待配音。保存不派发任务，须显式本地重算，缓存缺失/无法匹配词戳报错，不回退收费配音。cue变化不能与手改captions同时提交，以免吞掉用户字幕。
   - **标记 `needs_voice`**：口播变化则清旧音频引用/时长/字幕/入场计划，仍需显式配音。
 - **手工cue（本机已启用）**：在完整`changes.elements`里仅改现有步骤的`cue.text_start/text_end`；0起Unicode码点、起点含/终点不含，须整数且`0 <= start < end <= len(口播)`，原文切片不能全空白。代码/状态图/时间线/数据图表起点严格递增；不为卡片额外禁止范围重叠。topic仍提前显示，图表数据确认仍走原chart接口。
-- **版本与错误**：相同内容no-op；有效变化递增scene revision/user_revision和project revision，不增generated_revision。过期revision409、非法范围422、身份/顺序/role或不允许的组合400，均整笔回滚；旧voice/timing按既有revision/profile/attempt护栏不附着。当前待对齐稿禁止预览/冻结，旧快照/媒体保留。
+- **版本与错误**：相同内容no-op；有效变化递增scene revision/user_revision和project revision，不增generated_revision。过期revision409、非法范围422、身份/顺序/role或不允许的组合400，均整笔回滚；旧voice/timing按既有revision/profile/attempt护栏不附着。当前待对齐稿禁止正式带音预览/冻结，可查看已保存分镜的临时时序静音草稿；旧快照/媒体保留。
 - **验收边界**：前期571项去重测试与10项受控页面检查见[代码验收](../output/workbench/manual-cues-qa/receipt.json)。本机原API/web现已受控重载，19项原生API、6项无mock页面检查通过；只对临时副本做3次成功范围保存，原数据/旧版本/媒体/配置/队列不变，副本/自有页已清理，无新增迁移、任务、消费者或收费。Tabbit注入html属性导致的hydration提示按完整React diff记录，未改应用屏蔽。见[原生验收](../output/workbench/manual-cues-activation/receipt.json)。
 
 ### `POST /api/projects/{project_id}/scenes/concept`
@@ -259,7 +266,7 @@ status为`estimated`/`unknown`/`no_new_call`；unknown的金额为null而非0，
 
 PATCH仍用原changes/elements格式；concept_role现可编辑并校验恰好一个定义、至多一个总结，不改变已有音轨或触发时间，仍保护ID/顺序/topic。非法摘录422、旧revision409均不改变原稿/音频/冻结版本。有效cue变化标记needs_timing，显式本地缓存重算可恢复ready；测试使用真实隔离DB与本地子进程，不调用供应商。
 
-新分镜/候选任务分别登记`teaching-outline:3/scene-candidate:3`，同hash复用不会误用旧v1/v2任务；旧input不回填或自动重试。参考估价与attempt费率识别v3，但不是账单或硬预算。原API现已随风格功能受控加载，但本契约的真实模型分镜/配音/事实审校尚未验收，不把代码加载等同教学质量通过；未启动消费者。见[隔离验收](../output/workbench/concept-qa/receipt.json)。
+新分镜/候选任务登记`teaching-outline:5/scene-candidate:5`。模型经严格函数规划选择固定原稿段落内的整数摘录ID，不自行分章/编引用/造帧；程序构造图形与按原文排序的动作并整体验证。供应商若返回多份规划，仅安全合并不重复的段落，重复/错函数/非法引用拒绝，不执行任何业务工具。模型选择standard（代码/概念/对比等专用能力）时最多再调用一次既有生成器；估价计入tools/schema和两次上界，实际usage汇总后发布，部分失败保持未知，不漏计/无限重试。混合专用段落目前可能整课回退既有模板，这是保留旧能力的边界，不承诺所有段均用新图形。v1–v4冻结任务保留原协议，候选保留原图形并移除旧帧；估算非账单或硬预算。既有API/web/原worker角色已受控重载，仍1 worker/2 beat、9表326文件不变。已验证一个实际三图形有声课、正式渲染/冻结及隔离HTTP视频/SRT下载；未证明跨课程准确率、用户长课或人工同步听检，见[本轮记录](../output/workbench/reference-grade-visuals/compact/receipt.json)。
 
 ### `GET /api/scenes/{id}/candidates`
 - **功能描述**：获取指定场景当前保留的所有重生成候选分镜。
