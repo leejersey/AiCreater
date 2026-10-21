@@ -44,6 +44,10 @@ export default function NewCourse(){
   return <main className="new-course-container">
     <div className="studio-topbar">
       <div className="studio-title-group">
+        <Link href="/" title="返回首页" style={{textDecoration:'none',display:'inline-flex',alignItems:'center'}}>
+          <b className="brand">AI CREATER</b>
+        </Link>
+        <span style={{color:'var(--line-strong)'}}>|</span>
         <Link href="/courses" style={{display:'inline-flex',alignItems:'center',gap:'4px',fontSize:'13px',color:'var(--text-secondary)'}}>
           <ArrowLeft size={14}/> 返回我的视频
         </Link>

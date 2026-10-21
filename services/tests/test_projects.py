@@ -99,6 +99,18 @@ class ProjectTests(ProjectFixture, unittest.TestCase):
         self.assertEqual(frozen['dsl'], old['dsl'])
         self.assertEqual(self.store.get_version(old['id']), old)
 
+    def test_focus_style_freezes_separately_and_preserves_mechanism_audio_and_version(self):
+        project=self.store.set_visual_style(self.project['id'],1,'mechanism')
+        old=self.store.create_version(project['id'],2)
+        changed=self.store.set_visual_style(project['id'],2,'mechanism_focus')
+        self.assertEqual(changed['scenes'],project['scenes'])
+        self.assertEqual(changed['visual_style']['id'],'mechanism_focus')
+        self.assertEqual(self.store.set_visual_style(changed['id'],3,'mechanism_focus'),changed)
+        frozen=self.store.create_version(changed['id'],3)
+        self.assertEqual(frozen['profile']['visual_style'],changed['visual_style'])
+        self.assertEqual(frozen['dsl'],old['dsl'])
+        self.assertEqual(self.store.get_version(old['id']),old)
+
     def test_visual_actions_survive_import_freeze_clone_and_candidate_retiming(self):
         from services.projects.jobs import Jobs
         dsl = copy.deepcopy(self.dsl)

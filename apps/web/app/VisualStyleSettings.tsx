@@ -14,7 +14,7 @@ export function VisualStyleSettings({project,dirty,busy,formEditing,onDirty,onSa
   const disabled=busy||(dirty&&!formEditing)||!project.visual_style;
   return <section aria-label="项目视觉风格"><h3>视觉风格</h3>
     {!project.visual_style?<p className="hint">本地API尚未启用视觉风格设置，暂不可编辑。</p>:<>
-      <p className="hint">独立于配色。保存后更新当前预览，不重新配音、不改教学内容或对齐；导出冻结实际风格参数，旧版本和排队任务不随当前选择变化。「纸质幻灯」建议配浅色教学/彩色信息图主题，呈现系列头、黄高亮与红印章气质。「机制演示」对已有漏斗、对话状态、处理链按讲解推进，其余场景正常显示；依据现有分组与动作，不自动修正AI分组或补造事实。</p>
+      <p className="hint">独立于配色。保存后更新当前预览，不重新配音、不改教学内容或对齐；导出冻结实际风格参数，旧版本和排队任务不随当前选择变化。「纸质幻灯」建议配浅色教学/彩色信息图主题，呈现系列头、黄高亮与红印章气质。「机制演示」对已有漏斗、对话状态、处理链按讲解推进，其余场景正常显示；依据现有分组与动作，不自动修正AI分组或补造事实。「机制演示·聚焦」优化处理链：减少字幕整句重复、保留同一示意对象、放缓有据推进并稳定结论；其余图形沿用机制演示，不猜关键词或分支、不修改旧版本。</p>
       <DraftNotice {...draft.notice} disabled={disabled}/>
       <form onSubmit={event=>{event.preventDefault();if(disabled||draft.blocked)return;void act(async()=>{
         if(await onSave(draft.value.visual_style)!==false)draft.clear();

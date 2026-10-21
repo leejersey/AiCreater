@@ -235,7 +235,9 @@ export default function Workbench({routeProjectId}:{routeProjectId?:string}) {
   return <main>
     <div className="studio-topbar">
       <div className="studio-title-group">
-        <b className="brand">AI CREATER</b>
+        <Link href="/" title="返回首页" style={{textDecoration:'none',display:'inline-flex',alignItems:'center'}}>
+          <b className="brand">AI CREATER</b>
+        </Link>
         {routeProjectId ? <>
           <Link href="/courses" style={{display:'inline-flex',alignItems:'center',gap:'4px',fontSize:'13px',color:'var(--text-secondary)'}}>
             <ArrowLeft size={13}/> 我的视频

@@ -4,7 +4,7 @@ import Link from 'next/link';
 import {usePathname,useRouter} from 'next/navigation';
 import {API,request} from '../lib/editor';
 import {AUTH_REQUIRED,safeReturn,parseAccount,type Account} from '../lib/accounts';
-import {User,Key,LogOut,BookOpen,Spinner,AlertCircle,RefreshCw,Lock} from './Icons';
+import {User,Key,LogOut,BookOpen,Spinner,AlertCircle,RefreshCw,Lock,Home} from './Icons';
 import {useConfirm} from './ConfirmContext';
 
 type Session={user:Account|null;ready:boolean;error:string;reload:()=>void;accept:(user:Account|null)=>void};
@@ -58,20 +58,34 @@ export function AccountGate({children}:{children:ReactNode}) {
 
 export function AccountNav(){
   const {user,accept}=useAccount(),router=useRouter(),confirmDialog=useConfirm();const [error,setError]=useState(''),[busy,setBusy]=useState(false);
-  return <nav className="account-nav" aria-label="账号导航"><Link href="/courses"><BookOpen size={14} /> 我的课程</Link><span><User size={14} /> {user?.username}</span><Link href="/account"><Key size={14} /> 修改密码</Link>
-    <button disabled={busy} onClick={async()=>{
-      const ok = await confirmDialog({
-        title: '确定退出登录？',
-        message: '请先保存或复制未保存内容。退出将清空页面输入，本机草稿仍保留在当前浏览器。',
-        confirmText: '退出登录',
-        cancelText: '取消',
-        variant: 'danger',
-      });
-      if(!ok)return;
-      setBusy(true);setError('');
-      try{await request('/api/auth/logout',{});accept(null);router.replace('/login');}
-      catch(e){if(e instanceof Error&&e.cause===401){accept(null);router.replace('/login');}else{setError(e instanceof Error?e.message:'退出失败');setBusy(false);}}
-    }}>{busy?<Spinner size={13} className="icon-spin" />:<LogOut size={13} />}{busy?'正在退出…':'退出登录'}</button>{error&&<p role="alert">{error}</p>}</nav>;
+  return <nav className="account-nav" aria-label="账号导航">
+    <div className="account-nav-left">
+      <Link href="/" className="account-nav-brand" title="返回首页">
+        <b className="brand">AI CREATER</b>
+      </Link>
+      <span className="account-nav-divider">/</span>
+      <Link href="/" className="account-nav-link"><Home size={14} /> 首页</Link>
+      <Link href="/courses" className="account-nav-link"><BookOpen size={14} /> 我的视频</Link>
+    </div>
+    <div className="account-nav-right">
+      <span><User size={13} /> {user?.username}</span>
+      <Link href="/account" className="account-nav-link"><Key size={13} /> 修改密码</Link>
+      <button disabled={busy} onClick={async()=>{
+        const ok = await confirmDialog({
+          title: '确定退出登录？',
+          message: '请先保存或复制未保存内容。退出将清空页面输入，本机草稿仍保留在当前浏览器。',
+          confirmText: '退出登录',
+          cancelText: '取消',
+          variant: 'danger',
+        });
+        if(!ok)return;
+        setBusy(true);setError('');
+        try{await request('/api/auth/logout',{});accept(null);router.replace('/login');}
+        catch(e){if(e instanceof Error&&e.cause===401){accept(null);router.replace('/login');}else{setError(e instanceof Error?e.message:'退出失败');setBusy(false);}}
+      }}>{busy?<Spinner size={13} className="icon-spin" />:<LogOut size={13} />}{busy?'正在退出…':'退出登录'}</button>
+    </div>
+    {error&&<p role="alert">{error}</p>}
+  </nav>;
 }
 
 export function AuthForm({register=false,username:fixedUsername,onDone}:{register?:boolean;username?:string;onDone?:(user:Account)=>void}) {

@@ -1,12 +1,15 @@
 import type {Scene} from '../../video-schema/src/types';
 import type {StyleTokens} from './theme';
 import type {ElementBox} from './layout';
+import {ProcessFocus,focusTextBoxes} from './ProcessFocus';
 import {ProcessDemonstration,processTextBoxes} from './ProcessDemonstration';
 import {DialogueDemonstration,dialogueTextBoxes} from './DialogueDemonstration';
 import {FunnelDemonstration,funnelDemoTextBoxes} from './FunnelDemonstration';
+const focused={View:ProcessFocus,boxes:focusTextBoxes};
 const process={View:ProcessDemonstration,boxes:processTextBoxes},dialogue={View:DialogueDemonstration,boxes:dialogueTextBoxes},funnel={View:FunnelDemonstration,boxes:funnelDemoTextBoxes};
 export function demonstrationFor(scene:Scene,style:StyleTokens){
- if(style.presentation!=='mechanism')return undefined;
+ if(style.presentation!=='mechanism'&&style.presentation!=='mechanism_focus')return undefined;
+ if(scene.process&&style.presentation==='mechanism_focus')return focused;
  return scene.process?process:scene.dialogue?dialogue:scene.funnel?funnel:undefined;
 }
 export function demonstrationTextBoxes(scene:Scene,style:StyleTokens){

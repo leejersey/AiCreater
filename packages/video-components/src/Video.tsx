@@ -32,7 +32,7 @@ function SceneView({scene, audioSrc, index, count, seriesTitle}: {scene: Scene; 
   const frame = useCurrentFrame();
   const palette = usePalette();
   const style = useVisualStyle();
-  const paper = isPaperSlide(style),mechanism=style.presentation==='mechanism';
+  const paper = isPaperSlide(style),mechanism=!!style.presentation;
   const caption = scene.captions.find(c => frame >= c.start_frame && frame < c.end_frame);
   const header = mechanism?(seriesTitle||'机制演示').slice(0,36):paper
     ? `—— ◆ ${(seriesTitle || '知识讲解').slice(0, 24)} ◆ ——`
@@ -55,7 +55,7 @@ export function Video({project, audioUrls, visualStyle,visualStyleSnapshot,draft
   const style=useMemo(()=>validateVisualStyle(project,visualStyle,visualStyleSnapshot),[project,visualStyle,visualStyleSnapshot]);
   const [handle] = useState(() => delayRender('Loading bundled Chinese font'));
   useEffect(() => {
-    const text = (project ? project.scenes.map(s => [s.code?.source ?? '', s.chart?JSON.stringify(s.chart):'', s.structure?.name ?? '', (s.timeline?.lanes ?? []).map(l => l.label).join(''), ...s.elements.map(e => e.content + (e.source_label ?? '') + (e.output ?? '') + (e.variables ?? []).map(v => v.name + v.value).join('') + (e.items ?? []).map(item => item.key + item.value).join('')), ...s.captions.map(c => c.text)].join('')).join('') : '先运行示例生成命令') + '讲稿侧注对话消息上下文与状态均讲稿示意当前初始更新后处理阶段片段流程与参数仅为不执行真实工具不代表真实推理结果层级示意不表示数量比例机制演示分层演示过程演示对话演示从原稿看进入下一层的条件原稿衔接当前层下一层现在还不能据此认定示意人工编排同稿同音轨静音画面草稿临时时序非配音对齐步骤结论稿中来源 · 代码讲解当前步骤等待开始变量状态教学快照输出结果尚无数组对象栈空顶不执行正在的项最后进入最先取出TOP执行时间线毫秒示意非性能实测实线虚线菱形短事件空心条段重叠仅代表任务不保证并行配音轴独立CPU0123456789 ms → /—'+(style.presentation==='mechanism'?(seriesTitle??''):'');
+    const text = (project ? project.scenes.map(s => [s.code?.source ?? '', s.chart?JSON.stringify(s.chart):'', s.structure?.name ?? '', (s.timeline?.lanes ?? []).map(l => l.label).join(''), ...s.elements.map(e => e.content + (e.source_label ?? '') + (e.output ?? '') + (e.variables ?? []).map(v => v.name + v.value).join('') + (e.items ?? []).map(item => item.key + item.value).join('')), ...s.captions.map(c => c.text)].join('')).join('') : '先运行示例生成命令') + '讲稿侧注对话消息上下文与状态均讲稿示意当前初始更新后处理阶段片段流程与参数仅为不执行真实工具不代表真实推理结果层级示意不表示数量比例机制演示分层演示过程演示对话演示同一对象逐步推进从原稿看进入下一层的条件原稿衔接当前层下一层现在还不能据此认定示意人工编排同稿同音轨静音画面草稿临时时序非配音对齐步骤结论稿中来源 · 代码讲解当前步骤等待开始变量状态教学快照输出结果尚无数组对象栈空顶不执行正在的项最后进入最先取出TOP执行时间线毫秒示意非性能实测实线虚线菱形短事件空心条段重叠仅代表任务不保证并行配音轴独立CPU0123456789 ms → /—'+(style.presentation?(seriesTitle??''):'');
     let cancelled = false;
     document.fonts.load('400 44px "Noto Sans SC"', text).then(() => {
       if (cancelled) return;
@@ -119,5 +119,5 @@ export function Video({project, audioUrls, visualStyle,visualStyleSnapshot,draft
     return <Sequence key={scene.id} from={from} durationInFrames={scene.duration_frames}>
       <SceneView scene={scene} seriesTitle={seriesTitle} audioSrc={draftPreview?undefined:audioUrls?.[scene.narration.audio_asset_id] ?? staticFile(assets.get(scene.narration.audio_asset_id)!.storage_key)} index={i} count={project.scenes.length}/>
     </Sequence>;
-  })}{draftPreview&&<div style={{position:'absolute',...(style.presentation==='mechanism'?{top:112,padding:'4px 12px'}:{bottom:24,padding:'8px 16px'}),right:48,borderRadius:8,fontFamily:'"Noto Sans SC"',fontSize:24,color:palettes[project.theme].muted,background:palettes[project.theme].background}}>静音画面草稿 · 临时时序，非配音对齐</div>}</AbsoluteFill></VisualStyleContext.Provider></PaletteContext.Provider>;
+  })}{draftPreview&&<div style={{position:'absolute',...(style.presentation?{top:112,padding:'4px 12px'}:{bottom:24,padding:'8px 16px'}),right:48,borderRadius:8,fontFamily:'"Noto Sans SC"',fontSize:24,color:palettes[project.theme].muted,background:palettes[project.theme].background}}>静音画面草稿 · 临时时序，非配音对齐</div>}</AbsoluteFill></VisualStyleContext.Provider></PaletteContext.Provider>;
 }

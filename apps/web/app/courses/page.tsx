@@ -48,7 +48,9 @@ export default function Courses(){
   return <main className="courses-page">
     <div className="studio-topbar">
       <div className="studio-title-group">
-        <b className="brand">AI CREATER</b>
+        <Link href="/" title="返回首页" style={{textDecoration:'none',display:'inline-flex',alignItems:'center'}}>
+          <b className="brand">AI CREATER</b>
+        </Link>
         <h1 style={{fontSize:'20px',margin:0}}>我的视频</h1>
         <span className="studio-badge">共 {projects.length} 个作品</span>
       </div>
@@ -61,8 +63,8 @@ export default function Courses(){
 
     <DraftShelf busy={loading} onOpen={scope=>router.push(scope.kind==='course'?'/courses/new':'/courses/'+scope.projectId+(scope.sceneId?'?scene='+scope.sceneId:''))}/>
 
-    <div className="list-toolbar" style={{marginTop:'16px'}}>
-      <div className="course-filter-bar" style={{margin:0}}>
+    <div className="list-toolbar" style={{marginTop:'20px'}}>
+      <div className="course-filter-bar">
         <button type="button" className={`course-filter-pill ${statusFilter==='all'?'active':''}`} onClick={()=>setStatusFilter('all')}>
           全部 ({projects.length})
         </button>
@@ -77,9 +79,20 @@ export default function Courses(){
         </button>
       </div>
 
-      <div style={{display:'flex',gap:'10px',alignItems:'center',flexWrap:'wrap'}}>
-        <label style={{margin:0}}><Search size={14} /> 搜索视频<input type="search" placeholder="输入视频标题…" value={query} onChange={e=>setQuery(e.target.value)}/></label>
-        <button disabled={loading} onClick={()=>void load()}><RefreshCw size={14} className={loading?'icon-spin':''} /> 刷新</button>
+      <div className="list-actions">
+        <div className="search-input-wrapper">
+          <Search size={14} className="search-input-icon" />
+          <input
+            type="search"
+            aria-label="搜索视频标题"
+            placeholder="搜索视频标题…"
+            value={query}
+            onChange={e=>setQuery(e.target.value)}
+          />
+        </div>
+        <button type="button" className="btn-refresh" disabled={loading} onClick={()=>void load()}>
+          <RefreshCw size={13} className={loading?'icon-spin':''} /> 刷新
+        </button>
       </div>
     </div>
 

@@ -7,12 +7,12 @@ import {actionProgressAtFrame} from './motion';
 
 const clamp=(n:number)=>Math.max(0,Math.min(1,n));
 const ease=(n:number)=>{const t=clamp(n);return t*t*(3-2*t);};
-export function processFrame(scene:Scene,frame:number){
+export function processFrame(scene:Scene,frame:number,overviewAt?:number){
  if(!scene.process)throw new Error('process_demo_requires_process');
  const starts=new Map(scene.animations.map(a=>[a.target,a]));
  const opacity=(id:string)=>{const a=starts.get(id)!;return ease((frame-a.start_frame)/a.duration_frames);};
  const stageIndex=scene.process.stages.reduce((current,id,i)=>frame>=starts.get(id)!.start_frame?i:current,-1);
- const summary=ease((frame-Math.max(...scene.animations.map(a=>a.start_frame))-18)/18),laneY=548-108*summary;
+ const summary=ease((frame-(overviewAt??(Math.max(...scene.animations.map(a=>a.start_frame))+18)))/18),laneY=548-108*summary;
  const nodes=scene.process.stages.map((id,i)=>({id,x:290+i*1320/(scene.process!.stages.length-1),y:laneY,visible:frame>=starts.get(id)!.start_frame,opacity:opacity(id)}));
  const connections=(scene.edges??[]).map((edge,i)=>{
   const from=nodes.find(n=>n.id===edge.from)!,to=nodes.find(n=>n.id===edge.to)!;

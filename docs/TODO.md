@@ -4,6 +4,8 @@
 
 ## 当前优先：从摆模板到教学过程演示（用户2026-10-21批准）
 
+- [x] 三项聚焦优化首段：可选`mechanism_focus`“机制演示·聚焦”，仅处理链启用去重/稳定案例标记/节奏与结论静止，其他图形保持。先5项红测后通过，505全Node/类型、8原生冻结用例；真实隔离浏览器保存200/刷新/同对象移动/其余图形路由通过，0页错误/任务。14.73秒同稿音轨A/B完整解码/PCM一致、寻帧/3旧金样及上一mechanism帧像素相同；原环境chunk已含代码，无重启/收费/原课写入。见[新版](../output/workbench/process-focus/v2/after.mp4)/[对照](../output/workbench/process-focus/v2/comparison.jpg)/[回执](../output/workbench/process-focus/receipt.json)。当前仅优化同一处理段，不宣称漏斗/对话重做或自动抽取关键词。
+
 - [x] 第一批：固定“取消订单”14.73秒同稿同音轨，新增纯帧过程演示；建立案例→显式连线移动→重点推进→边界揭示→回收总览。原版/新版实际渲染、音频解码SHA一致、中文容量检查、关键帧审看/回退逐帧相同；478项Node及类型检查通过，无模型/配音费用，无原课程/生产入口变更。见[样片](../output/workbench/process-demonstration/v2/after.mp4)/[前后对照](../output/workbench/process-demonstration/v2/comparison.jpg)/[记录](../output/workbench/process-demonstration/receipt.json)。
 - [x] 用户“继续实现”后完成第二批对话/状态：前文与当前片段显式关联，保留状态前后，更新素材不冒充用户消息；原稿安全边界按字幕分块，修正重复短语/乱序更新。15.13秒同音轨新版/原版真实导出、解码音频相同、回退与中文容量通过；486项Node及类型检查通过。见[样片](../output/workbench/dialogue-demonstration/v2/after.mp4)/[前后对照](../output/workbench/dialogue-demonstration/v2/comparison.jpg)/[记录](../output/workbench/dialogue-demonstration/receipt.json)。独立原型、人工编排，0付费/原课程变更，不是生产默认或AI能力提升。
 - [x] 第三批漏斗过程：层间原文/字幕给出衔接条件，层级推进/显式连接示意移动，按原稿最后强调非真实流量比例；支持2/3层和3侧注，无重叠。15.5秒真实同音轨新旧导出、PCM一致、回退和中文容量检查通过；492项Node及类型检查通过。见[样片](../output/workbench/funnel-demonstration/v2/after.mp4)/[对照](../output/workbench/funnel-demonstration/v2/comparison.jpg)/[记录](../output/workbench/funnel-demonstration/receipt.json)。未改生产默认/课程、未调用模型/TTS。
