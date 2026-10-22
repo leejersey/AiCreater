@@ -1,0 +1,480 @@
+{
+  "schema_version": "1.0",
+  "theme": "tech_explainer",
+  "video_config": {
+    "width": 1920,
+    "height": 1080,
+    "fps": 30,
+    "language": "zh-CN"
+  },
+  "assets": [
+    {
+      "id": "narration",
+      "type": "audio",
+      "storage_key": "paper-sample/narration.wav",
+      "checksum": "c31c2d156f62f1dc33a1e1a1f5af154588ee6d6d35a99190ecb33af1ffecc2b5",
+      "duration_ms": 1000
+    }
+  ],
+  "scenes": [
+    {
+      "id": "s_intro",
+      "type": "title_reveal",
+      "narration": {
+        "text": "先看问题。",
+        "audio_asset_id": "narration",
+        "audio_start_frame": 6
+      },
+      "elements": [
+        {
+          "id": "t0",
+          "content": "先看问题",
+          "cue": {
+            "text_start": 0,
+            "text_end": 4
+          },
+          "role": "topic",
+          "entrance": "scale_pop"
+        }
+      ],
+      "section": "intro",
+      "camera": {
+        "x": 960,
+        "y": 540,
+        "scale": 1
+      },
+      "duration_frames": 42,
+      "animations": [
+        {
+          "target": "t0",
+          "effect": "scale_pop",
+          "start_frame": 6,
+          "duration_frames": 24
+        }
+      ],
+      "captions": [
+        {
+          "text": "先看问题。",
+          "start_frame": 7,
+          "end_frame": 36
+        }
+      ]
+    },
+    {
+      "id": "s_risk",
+      "type": "card_sequence",
+      "narration": {
+        "text": "一方面有风险。",
+        "audio_asset_id": "narration",
+        "audio_start_frame": 6
+      },
+      "elements": [
+        {
+          "id": "w",
+          "content": "风险",
+          "cue": {
+            "text_start": 4,
+            "text_end": 6
+          },
+          "icon": "warning",
+          "entrance": "shake"
+        }
+      ],
+      "section": "two_extremes",
+      "camera": {
+        "x": 760,
+        "y": 540,
+        "scale": 1.08
+      },
+      "duration_frames": 42,
+      "animations": [
+        {
+          "target": "w",
+          "effect": "shake",
+          "start_frame": 23,
+          "duration_frames": 8
+        }
+      ],
+      "captions": [
+        {
+          "text": "一方面有风险。",
+          "start_frame": 7,
+          "end_frame": 36
+        }
+      ]
+    },
+    {
+      "id": "s_curve",
+      "type": "card_sequence",
+      "narration": {
+        "text": "方案画出曲线。",
+        "audio_asset_id": "narration",
+        "audio_start_frame": 6
+      },
+      "elements": [
+        {
+          "id": "c1",
+          "content": "方案",
+          "cue": {
+            "text_start": 0,
+            "text_end": 2
+          },
+          "entrance": "draw"
+        },
+        {
+          "id": "c2",
+          "content": "曲线",
+          "cue": {
+            "text_start": 4,
+            "text_end": 6
+          },
+          "entrance": "draw"
+        }
+      ],
+      "section": "solution",
+      "vector": {
+        "kind": "stroke_curve"
+      },
+      "camera": {
+        "x": 960,
+        "y": 470,
+        "scale": 1.12
+      },
+      "duration_frames": 42,
+      "animations": [
+        {
+          "target": "c1",
+          "effect": "draw",
+          "start_frame": 7,
+          "duration_frames": 8
+        },
+        {
+          "target": "c2",
+          "effect": "draw",
+          "start_frame": 23,
+          "duration_frames": 8
+        }
+      ],
+      "captions": [
+        {
+          "text": "方案画出曲线。",
+          "start_frame": 7,
+          "end_frame": 36
+        }
+      ]
+    },
+    {
+      "id": "s_zoom",
+      "type": "card_sequence",
+      "narration": {
+        "text": "曲线继续增长。",
+        "audio_asset_id": "narration",
+        "audio_start_frame": 6
+      },
+      "elements": [
+        {
+          "id": "z1",
+          "content": "曲线",
+          "cue": {
+            "text_start": 0,
+            "text_end": 2
+          },
+          "entrance": "draw"
+        },
+        {
+          "id": "z2",
+          "content": "增长",
+          "cue": {
+            "text_start": 4,
+            "text_end": 6
+          },
+          "entrance": "draw"
+        }
+      ],
+      "section": "two_extremes",
+      "vector": {
+        "kind": "stroke_curve"
+      },
+      "camera": {
+        "x": 1180,
+        "y": 460,
+        "scale": 1.38
+      },
+      "duration_frames": 42,
+      "animations": [
+        {
+          "target": "z1",
+          "effect": "draw",
+          "start_frame": 7,
+          "duration_frames": 8
+        },
+        {
+          "target": "z2",
+          "effect": "draw",
+          "start_frame": 23,
+          "duration_frames": 8
+        }
+      ],
+      "captions": [
+        {
+          "text": "曲线继续增长。",
+          "start_frame": 7,
+          "end_frame": 36
+        }
+      ]
+    },
+    {
+      "id": "s_gauge",
+      "type": "card_sequence",
+      "narration": {
+        "text": "仪表越过红线。",
+        "audio_asset_id": "narration",
+        "audio_start_frame": 6
+      },
+      "elements": [
+        {
+          "id": "g1",
+          "content": "仪表",
+          "cue": {
+            "text_start": 0,
+            "text_end": 2
+          },
+          "entrance": "fade_slide"
+        },
+        {
+          "id": "g2",
+          "content": "红线",
+          "cue": {
+            "text_start": 4,
+            "text_end": 6
+          },
+          "entrance": "draw"
+        }
+      ],
+      "section": "solution",
+      "vector": {
+        "kind": "gauge"
+      },
+      "camera": {
+        "x": 960,
+        "y": 470,
+        "scale": 1.12
+      },
+      "duration_frames": 42,
+      "animations": [
+        {
+          "target": "g1",
+          "effect": "fade_slide",
+          "start_frame": 7,
+          "duration_frames": 8
+        },
+        {
+          "target": "g2",
+          "effect": "draw",
+          "start_frame": 23,
+          "duration_frames": 8
+        }
+      ],
+      "captions": [
+        {
+          "text": "仪表越过红线。",
+          "start_frame": 7,
+          "end_frame": 36
+        }
+      ]
+    },
+    {
+      "id": "s_funnel",
+      "type": "card_sequence",
+      "narration": {
+        "text": "漏斗过滤噪声。",
+        "audio_asset_id": "narration",
+        "audio_start_frame": 6
+      },
+      "elements": [
+        {
+          "id": "f1",
+          "content": "漏斗",
+          "cue": {
+            "text_start": 0,
+            "text_end": 2
+          },
+          "entrance": "draw"
+        },
+        {
+          "id": "f2",
+          "content": "过滤",
+          "cue": {
+            "text_start": 2,
+            "text_end": 4
+          },
+          "entrance": "draw"
+        },
+        {
+          "id": "f3",
+          "content": "噪声",
+          "cue": {
+            "text_start": 4,
+            "text_end": 6
+          },
+          "entrance": "draw"
+        }
+      ],
+      "section": "layers",
+      "vector": {
+        "kind": "dot_funnel"
+      },
+      "camera": {
+        "x": 960,
+        "y": 640,
+        "scale": 1.08
+      },
+      "duration_frames": 42,
+      "animations": [
+        {
+          "target": "f1",
+          "effect": "draw",
+          "start_frame": 7,
+          "duration_frames": 8
+        },
+        {
+          "target": "f2",
+          "effect": "draw",
+          "start_frame": 15,
+          "duration_frames": 8
+        },
+        {
+          "target": "f3",
+          "effect": "draw",
+          "start_frame": 23,
+          "duration_frames": 8
+        }
+      ],
+      "captions": [
+        {
+          "text": "漏斗过滤噪声。",
+          "start_frame": 7,
+          "end_frame": 36
+        }
+      ]
+    },
+    {
+      "id": "s_trade",
+      "type": "card_sequence",
+      "narration": {
+        "text": "三角权衡成本。",
+        "audio_asset_id": "narration",
+        "audio_start_frame": 6
+      },
+      "elements": [
+        {
+          "id": "d1",
+          "content": "三角",
+          "cue": {
+            "text_start": 0,
+            "text_end": 2
+          },
+          "entrance": "fade_slide"
+        },
+        {
+          "id": "d2",
+          "content": "权衡",
+          "cue": {
+            "text_start": 2,
+            "text_end": 4
+          },
+          "entrance": "fade_slide"
+        },
+        {
+          "id": "d3",
+          "content": "成本",
+          "cue": {
+            "text_start": 4,
+            "text_end": 6
+          },
+          "entrance": "box"
+        }
+      ],
+      "section": "tradeoff",
+      "vector": {
+        "kind": "tradeoff_triangle"
+      },
+      "camera": {
+        "x": 960,
+        "y": 700,
+        "scale": 1.16
+      },
+      "duration_frames": 42,
+      "animations": [
+        {
+          "target": "d1",
+          "effect": "fade_slide",
+          "start_frame": 7,
+          "duration_frames": 8
+        },
+        {
+          "target": "d2",
+          "effect": "fade_slide",
+          "start_frame": 15,
+          "duration_frames": 8
+        },
+        {
+          "target": "d3",
+          "effect": "box",
+          "start_frame": 23,
+          "duration_frames": 8
+        }
+      ],
+      "captions": [
+        {
+          "text": "三角权衡成本。",
+          "start_frame": 7,
+          "end_frame": 36
+        }
+      ]
+    },
+    {
+      "id": "s_end",
+      "type": "title_reveal",
+      "narration": {
+        "text": "最后记住结论。",
+        "audio_asset_id": "narration",
+        "audio_start_frame": 6
+      },
+      "elements": [
+        {
+          "id": "t1",
+          "content": "记住结论",
+          "cue": {
+            "text_start": 2,
+            "text_end": 6
+          },
+          "role": "topic",
+          "entrance": "scale_pop"
+        }
+      ],
+      "section": "conclusion",
+      "camera": {
+        "x": 960,
+        "y": 540,
+        "scale": 0.94
+      },
+      "duration_frames": 42,
+      "animations": [
+        {
+          "target": "t1",
+          "effect": "scale_pop",
+          "start_frame": 6,
+          "duration_frames": 25
+        }
+      ],
+      "captions": [
+        {
+          "text": "最后记住结论。",
+          "start_frame": 7,
+          "end_frame": 36
+        }
+      ]
+    }
+  ]
+}

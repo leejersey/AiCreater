@@ -54,7 +54,7 @@ def estimate_payload(payload, *, reused=False, now=None):
         original = None
         if kind == 'regenerate':
             original = {k: copy.deepcopy(v) for k, v in payload['scene'].items() if k in ['id', 'type', 'narration', 'elements', 'edges', 'code', 'structure', 'timeline', 'chart']}
-            if director: original = Jobs._draft_scene(payload['scene'])
+            if director: original = Jobs.model_original(payload['scene'])
             original['narration'] = {'text': original['narration']['text']}
         text = payload['source_text'] if original is None else original['narration']['text']
         body, _ = storyboard_request(text, payload['model'], original, cue_quotes=payload['protocol_version'].endswith((':2', ':3', ':4', ':5', ':6', ':7', ':8', ':9')), semantic_graphics=director, **({'compact_director':True,'role_director':payload['protocol_version'].endswith(':6')} if payload['protocol_version'].endswith((':5',':6')) else {}), teaching_style=payload.get('teaching_style') or 'popular', materials=payload.get('materials'), image_planning=image_planning_enabled(payload['protocol_version'], payload.get('visual_style')))

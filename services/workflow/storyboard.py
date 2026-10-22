@@ -19,7 +19,7 @@ DRAFT_SCHEMA['required'] = ['scenes']
 DRAFT_SCHEMA['properties'] = {'scenes': DRAFT_SCHEMA['properties']['scenes']}
 _scene = DRAFT_SCHEMA['definitions']['Scene']
 _scene['required'] = ['id', 'type', 'narration', 'elements']
-_scene['properties'] = {k: v for k, v in _scene['properties'].items() if k in ['id', 'type', 'narration', 'elements', 'edges', 'code', 'structure', 'timeline', 'chart', 'motif', 'visual_actions', 'dialogue', 'process', 'funnel']}
+_scene['properties'] = {k: v for k, v in _scene['properties'].items() if k in ['id', 'type', 'narration', 'elements', 'edges', 'code', 'structure', 'timeline', 'chart', 'motif', 'visual_actions', 'dialogue', 'process', 'funnel', 'camera', 'vector', 'section']}
 DRAFT_SCHEMA['definitions']['VisualAction']['required'] = ['kind', 'target', 'cue']
 from services.workflow.image_plans import PLAN_SCHEMA, validate_plan
 _scene['properties']['image_plan'] = copy.deepcopy(PLAN_SCHEMA)
@@ -64,9 +64,11 @@ _action_properties = DIRECTOR_REFERENCE_SCHEMA['definitions']['VisualAction']['p
 _action_properties['cue'] = copy.deepcopy(REFERENCE_SCHEMA['definitions']['Element']['properties']['cue'])
 for _key in ('start_frame', 'duration_frames'):
     _action_properties.pop(_key)
-# Final DSL may carry an entrance hint. Model wire schemas must not require or accept it.
+# Paper-slide direction is a program post-pass. Model wire schemas must not require or accept it.
 for _schema in (REFERENCE_SCHEMA, LEGACY_REFERENCE_SCHEMA, DIRECTOR_REFERENCE_SCHEMA):
     _schema['definitions']['Element']['properties'].pop('entrance', None)
+    for _key in ('camera', 'vector', 'section'):
+        _schema['definitions']['Scene']['properties'].pop(_key, None)
 
 
 def source_parts(source):

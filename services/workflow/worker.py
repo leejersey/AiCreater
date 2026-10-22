@@ -83,11 +83,12 @@ def child():
                 draft = deepseek_storyboard(payload['source_text'], settings, client, **options)
             else:
                 original = {k: v for k, v in payload['scene'].items() if k in ['id', 'type', 'narration', 'elements', 'edges', 'code', 'structure', 'timeline', 'chart']}
-                if director: original = Jobs._draft_scene(payload['scene'])
+                if director: original = Jobs.model_original(payload['scene'])
                 original['narration'] = {'text': original['narration']['text']}
                 draft = deepseek_storyboard(original['narration']['text'], settings, client, original, **options)['scenes'][0]
         if payload.get('visual_style') == 'paper_slide':
-            draft = stamp_paper_plans(draft)
+            from services.workflow.paper_direction import apply_paper_direction
+            draft = apply_paper_direction(stamp_paper_plans(draft))
         print(json.dumps({'draft': draft}, ensure_ascii=False))
     except ProviderError as exc:
         code = 'transport_error' if exc.code == 'transport_error' else 'validation'

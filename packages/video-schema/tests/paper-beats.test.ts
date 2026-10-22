@@ -10,11 +10,13 @@ test('legacy fade_slide projects stay valid and new beats stay optional', () => 
   const scene = project.scenes[0] as Scene;
   scene.camera = {x: 1200, y: 640, scale: 1.4};
   scene.vector = {kind: 'gauge'};
+  scene.section = 'layers';
   scene.elements[0].entrance = 'draw';
   scene.animations[0].effect = 'draw';
   scene.animations[0].duration_frames = 30;
   scene.animations[1].effect = 'shake';
   assert.equal(parseProject(project).scenes[0].vector?.kind, 'gauge');
+  assert.equal(parseProject(project).scenes[0].section, 'layers');
   assert.equal(parseProject(project).scenes[0].animations[0].duration_frames, 30);
 });
 

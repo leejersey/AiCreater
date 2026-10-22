@@ -76,6 +76,7 @@ export type Scene = {
   vector?: {
     kind: "stroke_curve" | "gauge" | "tradeoff_triangle" | "dot_funnel";
   };
+  section?: "intro" | "two_extremes" | "solution" | "layers" | "tradeoff" | "conclusion";
   /**
    * @minItems 1
    * @maxItems 6

@@ -106,6 +106,9 @@ class ImagePlanWorkerTests(unittest.TestCase):
         scene=json.loads(output.getvalue())['draft']['scenes'][0]
         self.assertEqual(scene['image_plan'], paper_vector_plan())
         self.assertFalse(scene['image_plan']['needed'])
+        self.assertEqual(scene['section'], 'intro')
+        self.assertEqual(scene['camera'], {'x': 960, 'y': 540, 'scale': 1})
+        self.assertNotIn('vector', scene)
 
 
 @unittest.skipUnless(os.environ.get('TEST_DATABASE_URL'),'Use disposable PostgreSQL')

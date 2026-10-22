@@ -193,11 +193,22 @@ class Jobs:
     def _draft_scene(scene):
         # shortcut: image transformations await batch 2; never silently discard a binding.
         if scene.get('images'): raise StoreError('validation', 'Teaching images currently support preview/export, not voice or timing changes')
-        result = {k: copy.deepcopy(v) for k, v in scene.items() if k in ['id', 'type', 'elements', 'edges', 'code', 'structure', 'timeline', 'chart', 'motif', 'visual_actions', 'dialogue', 'process', 'funnel']}
+        result = {k: copy.deepcopy(v) for k, v in scene.items() if k in ['id', 'type', 'elements', 'edges', 'code', 'structure', 'timeline', 'chart', 'motif', 'visual_actions', 'dialogue', 'process', 'funnel', 'camera', 'vector', 'section']}
         for action in result.get('visual_actions', []):
             action.pop('start_frame', None); action.pop('duration_frames', None)
         result['narration'] = {'text': scene['narration']['text']}
         return result
+
+    @staticmethod
+    def model_original(scene):
+        """Teaching fields for the model. Program-owned paper direction stays off the prompt."""
+        original = Jobs._draft_scene(scene)
+        for key in ('camera', 'vector', 'section'):
+            original.pop(key, None)
+        for element in original.get('elements', []):
+            if isinstance(element, dict):
+                element.pop('entrance', None)
+        return original
 
     def submit_preview(self, scene_id, base_revision):
         from services.projects.store import final_valid

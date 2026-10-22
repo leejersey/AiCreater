@@ -374,14 +374,23 @@ class TimingTests(unittest.TestCase):
         self.assertEqual(scene['animations'][0]['duration_frames'], 30)
         draft['elements'][0]['entrance'] = 'not-an-effect'
         self.assertEqual(time_scene(draft, 'audio_1', 1000, [{'text_start': 0, 'text_end': 4, 'start_ms': 0, 'end_ms': 1000}])['animations'][0]['effect'], 'fade_slide')
+        topic = outline()['scenes'][0]
+        topic['elements'][0]['role'] = 'topic'
+        topic['elements'][0]['entrance'] = 'scale_pop'
+        titled = time_scene(topic, 'audio_1', 1000, [{'text_start': 0, 'text_end': 4, 'start_ms': 0, 'end_ms': 1000}])
+        self.assertEqual(titled['animations'][0]['effect'], 'scale_pop')
+        self.assertEqual(titled['animations'][0]['start_frame'], 6)
+        self.assertEqual(titled['animations'][0]['duration_frames'], 30)
 
     def test_model_wire_hides_renderer_only_fields(self):
-        from services.workflow.storyboard import DIRECTOR_REFERENCE_SCHEMA, DRAFT_SCHEMA, REFERENCE_SCHEMA
+        from services.workflow.storyboard import DIRECTOR_REFERENCE_SCHEMA, DRAFT_SCHEMA, LEGACY_REFERENCE_SCHEMA, REFERENCE_SCHEMA
         self.assertIn('entrance', DRAFT_SCHEMA['definitions']['Element']['properties'])
-        for schema in (REFERENCE_SCHEMA, DIRECTOR_REFERENCE_SCHEMA):
+        self.assertIn('camera', DRAFT_SCHEMA['definitions']['Scene']['properties'])
+        self.assertIn('section', DRAFT_SCHEMA['definitions']['Scene']['properties'])
+        for schema in (REFERENCE_SCHEMA, LEGACY_REFERENCE_SCHEMA, DIRECTOR_REFERENCE_SCHEMA):
             self.assertNotIn('entrance', schema['definitions']['Element']['properties'])
-        self.assertNotIn('camera', DRAFT_SCHEMA['definitions']['Scene']['properties'])
-        self.assertNotIn('vector', DRAFT_SCHEMA['definitions']['Scene']['properties'])
+            for key in ('camera', 'vector', 'section'):
+                self.assertNotIn(key, schema['definitions']['Scene']['properties'])
 
 
 if __name__ == '__main__':

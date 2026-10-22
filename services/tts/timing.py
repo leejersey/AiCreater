@@ -76,15 +76,17 @@ def time_scene(draft, audio_id, duration_ms, segments):
         available = scene['duration_frames'] - 6 - start
         if available < 1:
             raise ProviderError('timing', 'frame_range', 'No audio frame remains for entrance')
-        # Explicit topic preview is not a spoken execution/result cue; ordinary elements stay aligned.
+        # Topic still appears at frame 6. An unmarked topic stays a 1-frame fade; a directed entrance lasts through its cue.
         topic = element.get('role') == 'topic'
-        if topic:
+        effect = _effect(element)
+        if topic and effect == 'fade_slide':
             scene['animations'].append({'target': element['id'], 'effect': 'fade_slide', 'start_frame': 6, 'duration_frames': 1})
         else:
             end = 6 + math.ceil(matches[-1]['end_ms'] * 30 / 1000)
-            duration = min(max(1, end - start), scene['duration_frames'] - start)
-            scene['animations'].append({'target': element['id'], 'effect': _effect(element),
-                                        'start_frame': start, 'duration_frames': duration})
+            begin = 6 if topic else start
+            duration = min(max(1, end - begin), scene['duration_frames'] - begin)
+            scene['animations'].append({'target': element['id'], 'effect': effect,
+                                        'start_frame': begin, 'duration_frames': duration})
     for action in scene.get('visual_actions', []):
         cue = action['cue']
         matches = [s for s in segments if s['text_start'] < cue['text_end'] and s['text_end'] > cue['text_start']]

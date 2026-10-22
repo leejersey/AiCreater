@@ -22,7 +22,7 @@ function useMotions(scene: Scene, frame: number): Motion[] {
 function StrokeCurve({motions}: {motions: Motion[]}) {
   const palette = usePalette();
   const drawn = motions.filter(m => m.effect === 'draw');
-  const draw = Math.max(...(drawn.length ? drawn : motions).map(m => m.draw));
+  const draw = Math.max(...(drawn.length ? drawn : motions).map(m => m.draw ?? m.opacity));
   const d = 'M 220 760 C 520 760, 620 280, 960 420 S 1480 220, 1720 260';
   return <svg data-vector="stroke_curve" width={1920} height={1080} style={{position: 'absolute'}}>
     <path d={d} fill="none" stroke={palette.muted} strokeWidth={8} opacity={0.35}/>
@@ -31,7 +31,7 @@ function StrokeCurve({motions}: {motions: Motion[]}) {
       const t = (i + 1) / (motions.length + 1);
       const x = 220 + (1720 - 220) * t;
       const y = 760 - 420 * Math.sin(t * Math.PI);
-      return <g key={motion.id} data-vector-label={motion.id} opacity={motion.opacity} transform={`translate(${x + motion.shiftX} ${y}) scale(${motion.scale})`}>
+      return <g key={motion.id} data-vector-label={motion.id} opacity={motion.opacity} transform={`translate(${x + (motion.shiftX ?? 0)} ${y}) scale(${motion.scale ?? 1})`}>
         <circle r={14} fill={palette.accent}/>
         <text y={48} textAnchor="middle" fill={palette.text} fontSize={36} fontFamily='"Noto Serif SC", "Noto Sans SC"'>{motion.label}</text>
       </g>;
@@ -42,7 +42,7 @@ function StrokeCurve({motions}: {motions: Motion[]}) {
 function Gauge({motions}: {motions: Motion[]}) {
   const palette = usePalette();
   const lead = motions[motions.length - 1] ?? motions[0];
-  const wobble = lead?.effect === 'shake' ? lead.shiftX : 0;
+  const wobble = lead?.effect === 'shake' ? lead.shiftX ?? 0 : 0;
   const angle = -180 + 180 * (lead?.draw ?? 0) + wobble;
   const rad = (angle * Math.PI) / 180;
   const x2 = 960 + Math.cos(rad) * 280;
@@ -67,9 +67,9 @@ function TradeoffTriangle({motions}: {motions: Motion[]}) {
     {motions.slice(0, 3).map((motion, i) => {
       const corner = corners[i];
       const on = motion.id === active?.id;
-      return <g key={motion.id} data-vector-label={motion.id} opacity={motion.opacity} transform={`translate(${motion.shiftX} 0) scale(${motion.scale})`}>
+      return <g key={motion.id} data-vector-label={motion.id} opacity={motion.opacity} transform={`translate(${motion.shiftX ?? 0} 0) scale(${motion.scale ?? 1})`}>
         <circle data-vector-corner={motion.id} cx={corner.x} cy={corner.y} r={on ? 22 : 12} fill={on ? palette.accent : palette.card} stroke={palette.text} strokeWidth={3}/>
-        {motion.effect === 'box' && <rect data-vector-box={motion.id} x={corner.x - 90} y={corner.y - 70} width={180 * motion.box} height={48} fill="none" stroke={palette.accent} strokeWidth={4}/>}
+        {motion.effect === 'box' && <rect data-vector-box={motion.id} x={corner.x - 90} y={corner.y - 70} width={180 * (motion.box ?? 0)} height={48} fill="none" stroke={palette.accent} strokeWidth={4}/>}
         <text x={corner.x} y={corner.y + (i === 0 ? -36 : 56)} textAnchor="middle" fill={palette.text} fontSize={36} fontFamily='"Noto Serif SC", "Noto Sans SC"'>{motion.label}</text>
       </g>;
     })}
@@ -84,14 +84,14 @@ function DotFunnel({motions}: {motions: Motion[]}) {
       const width = 980 - i * 220;
       const y = 240 + i * 160;
       const count = 12 - i * 3;
-      const kept = Math.max(1, Math.round(count * motion.draw));
+      const kept = Math.max(1, Math.round(count * (motion.draw ?? motion.opacity)));
       return <g key={motion.id} data-vector-layer={motion.id} opacity={motion.opacity}>
         <rect x={(1920 - width) / 2} y={y} width={width} height={110} rx={8} fill={palette.card} stroke={palette.text} strokeWidth={3}/>
         {Array.from({length: count}, (_, dot) => {
           const dropped = dot >= kept;
           return <circle key={dot} data-vector-dot={dropped ? 'out' : 'kept'} cx={(1920 - width) / 2 + 40 + dot * ((width - 80) / Math.max(1, count - 1))} cy={y + 55 + (dropped ? 28 : 0)} r={dropped ? 7 : 10} fill={dropped ? palette.muted : palette.accent} opacity={dropped ? 0.45 : 1}/>;
         })}
-        <text x={960 + motion.shiftX} y={y + 150} textAnchor="middle" fill={palette.text} fontSize={32}>{motion.label}</text>
+        <text x={960 + (motion.shiftX ?? 0)} y={y + 150} textAnchor="middle" fill={palette.text} fontSize={32}>{motion.label}</text>
       </g>;
     })}
   </svg>;
