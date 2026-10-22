@@ -142,7 +142,6 @@ def compile_plan(raw,text,original_id=None,*,roles=False):
             reference=extra.get('source',target)
             if kind=='connect':reference=max((target,extra['to']),key=lambda id_:elements[id_]['cue']['text_start'])
             actions.append({'kind':kind,'target':target,'cue':copy.deepcopy(elements[reference]['cue']),**extra})
-        for e in scene['elements']:action('highlight',e['id'])
         if kind in ('funnel','process'):
             for a,b in zip(main,main[1:]):action('connect',a,to=b)
         if kind=='dialogue':

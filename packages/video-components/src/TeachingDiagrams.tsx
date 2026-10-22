@@ -3,7 +3,7 @@ import type {Scene} from '../../video-schema/src/types';
 import {wrapText,type ElementBox} from './layout';
 import {GraphicIcon,MarkedText} from './GraphicContent';
 import {usePalette,useVisualStyle} from './theme';
-import {actionProgressAtFrame,entranceAtFrame,visualSceneAtFrame} from './motion';
+import {actionProgressAtFrame,entranceAtFrame,visualSceneAtFrame,latestBeat,beatCamera,cameraTransform} from './motion';
 
 type DiagramBox=ElementBox & {kind:'message'|'state'|'stage'|'detail';columns:number};
 // The exact same text rectangles are used by rendering and font-capacity checks.
@@ -28,11 +28,15 @@ export function TeachingDiagram({scene,frame}:{scene:Scene;frame:number}){
  const shown=visualSceneAtFrame(scene,frame),actions=scene.visual_actions??[];
  const state=(id:string)=>{const a=scene.animations.find(a=>a.target===id)!;return entranceAtFrame(frame,a.start_frame,a.duration_frames,style.entrance);};
  const focus=actions.filter(a=>a.kind==='highlight'&&a.start_frame<=frame).at(-1);
+ const focusProgress=focus?actionProgressAtFrame(focus,frame):0;
+ const beat=latestBeat(scene.animations,frame);
+ const beatId=focus?.target??beat?.target;
  const updates=scene.dialogue?actions.filter(a=>a.kind==='update'&&a.target===scene.dialogue!.state&&a.start_frame<=frame):[];
  const previous=updates.length?(updates.length>1?scene.elements.find(e=>e.id===updates.at(-2)!.source)!.content:scene.elements.find(e=>e.id===scene.dialogue!.state)!.content):undefined;
  const connections=[...actions.filter(a=>a.kind==='connect').map(a=>({from:a.target,to:a.to!,progress:actionProgressAtFrame(a,frame)})),...(scene.edges??[]).filter(e=>!actions.some(a=>a.kind==='connect'&&a.target===e.from&&a.to===e.to)).map(e=>({...e,progress:Math.min(state(e.from).opacity,state(e.to).opacity)}))];
  const rect=(b:DiagramBox)=>b.kind==='state'?{x:1120,y:300,width:640,height:540}:b.kind==='message'?{x:b.x-26,y:b.y-50,width:b.width+52,height:182}:b.kind==='stage'?{x:b.x-24,y:320,width:b.width+48,height:200}:{x:b.x-24,y:620,width:b.width+48,height:210};
- return <div data-teaching-diagram={scene.dialogue?'dialogue':'process'} style={{position:'absolute',inset:0}}>
+ const camera=beatCamera(boxes.find(b=>b.id===beatId),boxes.find(b=>b.id===scene.animations.filter(a=>a.start_frame<=frame&&a.target!==beatId).at(-1)?.target),beat?frame-(focus?.start_frame??beat.start_frame):0);
+ return <div data-teaching-diagram={scene.dialogue?'dialogue':'process'} data-beat-focus={beatId} data-beat-camera={beatId||undefined} style={{position:'absolute',inset:0,...cameraTransform(camera)}}>
   <div style={{position:'absolute',left:140,top:220,fontSize:36,color:palette.text}}>{scene.dialogue?'对话消息':'处理阶段'}</div>
   {scene.dialogue&&<div style={{position:'absolute',left:1120,top:220,fontSize:36,color:palette.text}}>上下文与状态</div>}
   <svg width={1920} height={1080} style={{position:'absolute'}} aria-hidden="true">
@@ -47,16 +51,18 @@ export function TeachingDiagram({scene,frame}:{scene:Scene;frame:number}){
    })}
   </svg>
   {boxes.map((b,i)=>{
-   const motion=state(b.id),r=rect(b),element=shown.elements.find(e=>e.id===b.id)!,value=element.content,active=focus?.target===b.id;
+   const motion=state(b.id),r=rect(b),element=shown.elements.find(e=>e.id===b.id)!,value=element.content,active=(focus?.target??beat?.target)===b.id;
+   const past=!focus&&!!beat&&b.id!==beat.target&&motion.opacity>0;
+   const shownOpacity=motion.opacity*(focus&&focus.target!==b.id?1-0.6*focusProgress:past?0.35:1);
    return <React.Fragment key={b.id}>
-    <div data-dialogue-message={b.kind==='message'?b.id:undefined} data-dialogue-state={b.kind==='state'?b.id:undefined} data-process-stage={b.kind==='stage'?b.id:undefined} data-process-detail={b.kind==='detail'?b.id:undefined} style={{position:'absolute',left:r.x,top:r.y,width:r.width,height:r.height,boxSizing:'border-box',border:`${active||element.panel_style?3:style.card.borderWidth}px solid ${active||element.panel_style?palette.accent:palette.muted}`,borderRadius:b.kind==='message'?18:style.card.radius,background:element.panel_style==='conclusion'?palette.selected:palette.card,opacity:motion.opacity,transform:`translateY(${motion.translateY}px)`,clipPath:motion.clipPath,boxShadow:style.card.shadow}}>
+    <div data-dialogue-message={b.kind==='message'?b.id:undefined} data-dialogue-state={b.kind==='state'?b.id:undefined} data-process-stage={b.kind==='stage'?b.id:undefined} data-process-detail={b.kind==='detail'?b.id:undefined} style={{position:'absolute',left:r.x,top:r.y,width:r.width,height:r.height,boxSizing:'border-box',border:`${active||element.panel_style?3:style.card.borderWidth}px solid ${active||element.panel_style?palette.accent:palette.muted}`,borderRadius:b.kind==='message'?18:style.card.radius,background:element.panel_style==='conclusion'?palette.selected:palette.card,opacity:shownOpacity,transform:`translateY(${motion.translateY}px)`,clipPath:motion.clipPath,boxShadow:style.card.shadow}}>
      {b.kind==='message'&&<svg width={24} height={12} style={{position:'absolute',left:16,bottom:-12}} aria-hidden="true"><path d="M0 0 L14 0 L0 10 Z" fill={palette.card} stroke={palette.muted} strokeWidth={style.card.borderWidth}/></svg>}
     </div>
-    <div data-conclusion={element.panel_style||undefined} data-source-label={element.source_label} style={{position:'absolute',left:r.x+24,top:r.y+14,fontSize:element.source_label?20:22,color:palette.muted,opacity:motion.opacity}}>{element.panel_style==='conclusion'?'结论 · ':''}{element.source_label??(b.kind==='message'?(scene.dialogue!.context_messages===undefined?`讲稿消息 ${scene.dialogue!.messages.indexOf(b.id)+1}`:scene.dialogue!.context_messages.includes(b.id)?'前文消息':'当前消息'):b.kind==='state'?'当前状态 · 讲稿示意':b.kind==='stage'?`阶段 ${i+1}`:`讲稿片段 ${scene.process!.details.indexOf(b.id)+1}`)}</div>
-    {element.icon&&<div style={{position:'absolute',left:r.x+r.width-56,top:r.y+12,color:element.icon==='warning'?palette.warning:palette.accent,opacity:motion.opacity}}><GraphicIcon icon={element.icon}/></div>}
-    {b.kind==='state'&&previous!==undefined&&<div data-previous-state={previous} style={{position:'absolute',left:1160,top:420,width:560,fontSize:32,lineHeight:1.35,color:palette.muted,whiteSpace:'pre',opacity:motion.opacity,textDecoration:'line-through'}}>{wrapText(previous,16).join('\n')}</div>}
-    {b.kind==='state'&&<div style={{position:'absolute',left:1160,top:520,fontSize:24,color:palette.muted,opacity:motion.opacity}}>{previous!==undefined?'更新后':'初始状态'}</div>}
-    <div data-element={b.id} data-state-value={b.kind==='state'?value:undefined} style={{position:'absolute',left:b.x,top:b.y,width:b.width,height:b.height,fontSize:b.fontSize,lineHeight:1.35,color:element.icon==='warning'?palette.warning:active||b.kind==='state'?palette.accent:palette.text,whiteSpace:'pre',opacity:motion.opacity,transform:`translateY(${motion.translateY}px)`,clipPath:motion.clipPath}}><MarkedText element={element} lines={wrapText(value,b.columns)} color={palette.accent}/></div>
+    <div data-conclusion={element.panel_style||undefined} data-source-label={element.source_label} style={{position:'absolute',left:r.x+24,top:r.y+14,fontSize:element.source_label?20:22,color:palette.muted,opacity:shownOpacity}}>{element.panel_style==='conclusion'?'结论 · ':''}{element.source_label??(b.kind==='message'?(scene.dialogue!.context_messages===undefined?`讲稿消息 ${scene.dialogue!.messages.indexOf(b.id)+1}`:scene.dialogue!.context_messages.includes(b.id)?'前文消息':'当前消息'):b.kind==='state'?'当前状态 · 讲稿示意':b.kind==='stage'?`阶段 ${i+1}`:`讲稿片段 ${scene.process!.details.indexOf(b.id)+1}`)}</div>
+    {element.icon&&<div style={{position:'absolute',left:r.x+r.width-56,top:r.y+12,color:element.icon==='warning'?palette.warning:palette.accent,opacity:shownOpacity}}><GraphicIcon icon={element.icon}/></div>}
+    {b.kind==='state'&&previous!==undefined&&<div data-previous-state={previous} style={{position:'absolute',left:1160,top:420,width:560,fontSize:32,lineHeight:1.35,color:palette.muted,whiteSpace:'pre',opacity:shownOpacity,textDecoration:'line-through'}}>{wrapText(previous,16).join('\n')}</div>}
+    {b.kind==='state'&&<div style={{position:'absolute',left:1160,top:520,fontSize:24,color:palette.muted,opacity:shownOpacity}}>{previous!==undefined?'更新后':'初始状态'}</div>}
+    <div data-element={b.id} data-state-value={b.kind==='state'?value:undefined} style={{position:'absolute',left:b.x,top:b.y,width:b.width,height:b.height,fontSize:b.fontSize,lineHeight:1.35,color:element.icon==='warning'?palette.warning:active||b.kind==='state'?palette.accent:palette.text,whiteSpace:'pre',opacity:shownOpacity,transform:`translateY(${motion.translateY}px)`,clipPath:motion.clipPath}}><MarkedText element={element} lines={wrapText(value,b.columns)} color={palette.accent}/></div>
    </React.Fragment>;
   })}
   <div style={{position:'absolute',left:140,top:886,fontSize:22,color:palette.muted}}>{scene.dialogue?'对话与状态均为讲稿示意 · 不代表真实推理结果':'流程与参数仅为讲稿示意 · 不执行真实工具'}</div>

@@ -14,6 +14,9 @@ test('teaching image occupies an element card with separate label and narration-
   const render=(frame:number)=>renderToStaticMarkup(React.createElement(Internals.CompositionManager.Provider,{value:{compositions:[],folders:[],currentCompositionMetadata:null,currentAssetMetadata:{asset:'fixture',src:'',width:1920,height:1080,durationInFrames:100,fps:30,props:{},defaultCodec:null,defaultOutName:null,defaultVideoImageFormat:null,defaultPixelFormat:null,defaultProResProfile:null,defaultSampleRate:null},canvasContent:{type:'asset',asset:'fixture'}}},React.createElement(Internals.CanUseRemotionHooks.Provider,{value:true},React.createElement(Internals.TimelineContext.Provider,{value:{frame:{'asset:fixture':frame},isPlaying:()=>false,isInsideFreeze:false,audioAndVideoTags:{current:[]}}},React.createElement(SceneGraphics,{scene,frame,imageSources:{toolbox:'/private/toolbox.png'}})))));
   const before=render(0),shown=render(42);
   assert.match(shown,/data-teaching-image="a"/);
+  assert.match(shown,/data-beat-focus="a"/);
+  assert.match(shown,/flex:1 1 auto/);
+  assert.doesNotMatch(shown,/height:180/);
   // Remotion attaches Img.src after hydration; actual loading is checked by the local render.
   assert.match(shown,/alt="独立项目的工具箱"/);
   assert.match(shown,/object-fit:contain/);

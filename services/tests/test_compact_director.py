@@ -27,6 +27,7 @@ class CompactDirectorTests(unittest.TestCase):
         self.assertEqual(wire,before);self.assertEqual(''.join(s['narration']['text'] for s in draft['scenes']),text)
         for s,k in zip(draft['scenes'],['funnel','dialogue','process']):self.assertIn(k,s)
         self.assertTrue(any(a['kind']=='update' for a in draft['scenes'][1]['visual_actions']))
+        self.assertFalse(any(a['kind']=='highlight' for s in draft['scenes'] for a in s['visual_actions']))
         for s in draft['scenes']:self.assertEqual([a['cue']['text_start'] for a in s['visual_actions']],sorted(a['cue']['text_start'] for a in s['visual_actions']))
         for mutate in [lambda w:w['p1'].update(a=3999),lambda w:w['p1'].update(a='不存在'),lambda w:w['p2'].update(a=1),lambda w:w['p2'].update(state=3,a=1,b=2,update=1),lambda w:w.pop('p3'),lambda w:w['p1'].update(script='alert(1)')]:
             bad=copy.deepcopy(wire);mutate(bad)

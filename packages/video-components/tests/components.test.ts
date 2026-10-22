@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import {test} from 'node:test';
 import {layoutElements, wrapText, flowPath, orderFlowElements} from '../src/layout';
-import {entranceAtFrame} from '../src/motion';
+import {entranceAtFrame, leadInText} from '../src/motion';
 import {parseProject} from '../../video-schema/src/validate';
 import {validProject} from '../../video-schema/tests/fixture';
 
@@ -45,4 +45,13 @@ test('入场函数可随机寻帧，开始之前隐藏，完成后固定', () =>
   const halfway = entranceAtFrame(12, 6, 12);
   assert.ok(halfway.opacity > 0 && halfway.opacity < 1);
   assert.deepEqual(entranceAtFrame(12, 6, 12), halfway);
+  assert.equal(entranceAtFrame(30, 6, 200).opacity, 1);
+  assert.ok(entranceAtFrame(18, 6, 200).opacity < 1);
+});
+
+test('口播先于第一张卡片时，用当前字幕填上空白', () => {
+  const scene = {animations: [{start_frame: 205}], captions: [{text: '知识库不是建完就结束。', start_frame: 6, end_frame: 55}]};
+  assert.equal(leadInText(scene, 40), '知识库不是建完就结束。');
+  assert.equal(leadInText(scene, 205), undefined);
+  assert.equal(leadInText(scene, 2), undefined);
 });

@@ -37,13 +37,16 @@ test('saved manuscript preserves Unicode and whitespace and escapes markup',()=>
 test('Markdown archive stays separate from spoken script and renderer metadata',()=>{
   const p=project();p.source_text='口播原文。';
   p.config.manuscript={markdown:'## [s1] 标题\n### 画面素材\n<script>not executable</script>'};
+  p.config.teaching_style='popular';
   const html=renderToStaticMarkup(createElement(courseUI.SavedManuscript,{project:p}));
   assert.match(html,/原始 Markdown/);assert.match(html,/只读存档/);assert.match(html,/不随章节口播编辑更新/);
   assert.match(html,/&lt;script&gt;not executable&lt;\/script&gt;/);assert.doesNotMatch(html,/<script>/);
   assert.equal('manuscript' in videoDocument(p),false);
+  assert.equal('teaching_style' in videoDocument(p),false);
   p.scenes[0].state='needs_voice';
   const preview=draftPreviewVideo(p,p.scenes[0].id);assert.ok(preview);
-  assert.equal('manuscript' in preview,false);assert.equal(p.source_text,'口播原文。');
+  assert.equal('manuscript' in preview,false);
+  assert.equal('teaching_style' in preview,false);assert.equal(p.source_text,'口播原文。');
 });
 test('empty saved manuscript never invents text from chapters',()=>{
   assert.equal(typeof courseUI.SavedManuscript,'function');
@@ -159,5 +162,17 @@ test('course overview presents confirmation, reuse, failures and navigable expor
   assert.match(html, /保留原音频/); assert.match(html, /失败 1/); assert.match(html, /显式重试/);
   assert.match(html, /导出前检查/); assert.match(html, /定位第1章/);
   assert.match(html, /disabled=""[^>]*>批量配音/);
+  assert.match(html, /有未保存的修改，请先保存。/);
   assert.deepEqual(p, before);
+});
+
+test('unconfirmed chapters explain why batch voice cannot be selected', () => {
+  const p = project();
+  p.scenes[0].state = 'needs_voice';
+  const html = renderToStaticMarkup(createElement(CourseOverview, {
+    project: p, jobs: [], reviews: new Set<string>(), dirty: false, busy: false,
+    onSelect: () => {}, onReview: () => {}, onSubmit: () => {}, onTiming: () => {},
+  }));
+  assert.match(html, /disabled=""[^>]*\/>选择第1章批量配音/);
+  assert.match(html, /请先展开「核对口播与步骤」，勾选已核对。/);
 });

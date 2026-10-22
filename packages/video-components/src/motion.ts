@@ -33,8 +33,21 @@ export type EntranceState = {
   box?: number;
 };
 
+/** Spoken cues can last several seconds. The entrance itself stays within 24 frames; the element then holds. */
+export const ENTRANCE_FRAMES = 24;
+
+export function entranceSpan(duration: number) {
+  return Math.max(1, Math.min(duration, ENTRANCE_FRAMES));
+}
+
+export function leadInText(scene: {animations: {start_frame: number}[]; captions: {text: string; start_frame: number; end_frame: number}[]}, frame: number) {
+  if (scene.animations.some(a => a.start_frame <= frame)) return;
+  const caption = scene.captions.find(c => frame >= c.start_frame && frame < c.end_frame);
+  return caption?.text.trim() ? caption.text : undefined;
+}
+
 export function entranceAtFrame(frame: number, start: number, duration: number, entrance?: {kind: string; distance: number}, effect = 'fade_slide'): EntranceState {
-  const progress = Math.max(0, Math.min(1, (frame - start) / duration));
+  const progress = Math.max(0, Math.min(1, (frame - start) / entranceSpan(duration)));
   const eased = 1 - (1 - progress) ** 3;
   if(entrance?.kind==='wipe')return {opacity:progress>0?1:0,translateY:0,clipPath:`inset(0 ${(1-progress)*100}% 0 0)`};
   const slide = {opacity: eased, translateY: (entrance?.distance ?? 24) * (1 - eased)};
@@ -51,6 +64,16 @@ export function entranceAtFrame(frame: number, start: number, duration: number, 
   if (effect === 'draw') return {...base, opacity: progress > 0 ? 1 : 0, translateY: 0, draw: eased};
   if (effect === 'box') return {...base, opacity: 1, translateY: 0, box: eased};
   return slide;
+}
+
+export function latestBeat(animations: {target: string; start_frame: number}[], frame: number) {
+  return animations.filter(a => a.start_frame <= frame).sort((a, b) => a.start_frame - b.start_frame).at(-1);
+}
+
+export function beatCamera(current: {x: number; y: number; width: number; height: number} | undefined, previous: {x: number; y: number; width: number; height: number} | undefined, framesSince: number): Camera {
+  const focus = (box?: {x: number; y: number; width: number; height: number}) => box ? {x: box.x + box.width / 2, y: box.y + box.height / 2, scale: 1.12} : IDENTITY_CAMERA;
+  if (!current) return IDENTITY_CAMERA;
+  return blendCamera(focus(previous), focus(current), framesSince);
 }
 
 export function sceneCamera(scene: {camera?: Camera | null}): Camera {

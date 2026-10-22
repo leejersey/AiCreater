@@ -1,7 +1,7 @@
 import type {CSSProperties} from 'react';
 import type {Scene} from '../../video-schema/src/types';
 import {visualStyles,type StyleTokens,type Palette} from './theme';
-import {activeStepAtFrame,entranceAtFrame} from './motion';
+import {activeStepAtFrame,entranceAtFrame,entranceSpan} from './motion';
 
 export function dedicatedPanel(style:StyleTokens,p:Palette):CSSProperties{
   const legacy=style===visualStyles.legacy;
@@ -14,5 +14,5 @@ export function dedicatedReveal(scene:Scene,frame:number,style:StyleTokens,id=ac
   const a=scene.animations.find(a=>a.target===id)!;
   const motion=entranceAtFrame(frame,a.start_frame,a.duration_frames,style.entrance);
   // A completed inset still clips outlines outside the event box.
-  return {opacity:motion.opacity,clipPath:frame>=a.start_frame+a.duration_frames?undefined:motion.clipPath};
+  return {opacity:motion.opacity,clipPath:frame>=a.start_frame+entranceSpan(a.duration_frames)?undefined:motion.clipPath};
 }

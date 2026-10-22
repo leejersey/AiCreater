@@ -11,7 +11,7 @@ import {demonstrationTextBoxes} from './demonstrations';
 import {PaletteContext, palettes, paletteFor, usePalette, useVisualStyle, VisualStyleContext, validateVisualStyle, isPaperSlide, type VisualStyleId, type VisualStyleSnapshot, visualStyles} from './theme';
 import {SceneGraphics} from './SceneGraphics';
 import {Caption} from './captions';
-import {blendCamera, cameraTransform, PAPER_CAMERA_FRAMES, sceneCamera, smoothstep} from './motion';
+import {blendCamera, cameraTransform, leadInText, PAPER_CAMERA_FRAMES, sceneCamera, smoothstep} from './motion';
 import {CodeLesson, codeFont} from './CodeLesson';
 import {StateLesson, stateBoxes} from './StateLesson';
 import {TimelineLesson} from './TimelineLesson';
@@ -36,6 +36,7 @@ function SceneView({scene, audioSrc, imageSources, index, count, seriesTitle, fr
   const style = useVisualStyle();
   const paper = isPaperSlide(style),mechanism=!!style.presentation;
   const caption = scene.captions.find(c => frame >= c.start_frame && frame < c.end_frame);
+  const lead = leadInText(scene, frame);
   const header = mechanism?(seriesTitle||'机制演示').slice(0,36):'AI CREATER / KNOWLEDGE STUDIO';
   return <AbsoluteFill style={{...(paper ? paperBackground(palette.background) : {backgroundColor: palette.background}), color: palette.text, fontFamily: '"Noto Sans SC"', fontWeight: 400}} data-paper-slide={paper || undefined}>
     {!paper && <div style={{position: 'absolute', top: 64, left: 80, right: 80, display: 'flex', justifyContent: 'space-between', fontSize: mechanism?24:32, color: palette.muted}}>
@@ -46,6 +47,7 @@ function SceneView({scene, audioSrc, imageSources, index, count, seriesTitle, fr
     {scene.type === 'data_chart' && <DataChart scene={scene} frame={frame}/>}
     {scene.type === 'execution_timeline' && <TimelineLesson scene={scene} frame={frame}/>}
     <SceneGraphics scene={scene} frame={frame} imageSources={imageSources}/>
+    {lead && <div data-lead-in style={{position: 'absolute', left: 180, right: 180, top: 340, textAlign: 'center', fontSize: 48, lineHeight: 1.45, whiteSpace: 'pre', color: palette.text, fontFamily: paper ? '"Noto Serif SC", "Noto Sans SC"' : '"Noto Sans SC"', fontWeight: paper ? 600 : 400}}>{lead}</div>}
     {caption && <Caption text={caption.text} wide={mechanism}/>}
     {playAudio&&audioSrc&&<Sequence from={scene.narration.audio_start_frame} layout="none"><Audio src={audioSrc}/></Sequence>}
   </AbsoluteFill>;

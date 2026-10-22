@@ -93,7 +93,8 @@ export function CourseOverview({project, jobs, reviews, dirty, busy, onSelect, o
         {row.state === 'needs_timing' && <label className="check"><input type="checkbox" disabled={busy || dirty || !timingCandidates.some(s => s.scene_id === row.id)}
           checked={timingBatch.some(s => s.scene_id === row.id)} onChange={e => {const value = e.target.checked; setTimingSelected(old => {const next = new Set(old); if(value) next.add(key); else next.delete(key); return next;});}}/>选择第{i + 1}章批量本地对齐</label>}
         {row.state === 'needs_voice' && <label className="check"><input type="checkbox" disabled={busy || dirty || !eligible}
-          checked={eligible && selected.has(key)} onChange={e => {const value = e.target.checked; setSelected(old => {const next = new Set(old); if (value) next.add(key); else next.delete(key); return next;});}}/>选择第{i + 1}章批量配音</label>}
+          checked={eligible && selected.has(key)} onChange={e => {const value = e.target.checked; setSelected(old => {const next = new Set(old); if (value) next.add(key); else next.delete(key); return next;});}}/>选择第{i + 1}章批量配音
+          {(busy || dirty || !eligible) && <span className="hint">{dirty ? '有未保存的修改，请先保存。' : reviews.has(key) ? '本章已有配音任务，请到持久任务中处理。' : '请先展开「核对口播与步骤」，勾选已核对。'}</span>}</label>}
       </div>;
     })}
     <details open={issues.length > 0}><summary>{issues.length ? <AlertTriangle size={14} /> : <CheckCircle size={14} />} 导出前检查 · {issues.length ? `${issues.length}项待处理` : '已保存稿字段检查通过'}</summary>
