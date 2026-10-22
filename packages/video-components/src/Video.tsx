@@ -1,14 +1,17 @@
 import React, {useEffect, useMemo, useState} from 'react';
 import {AbsoluteFill, Audio, Sequence, staticFile, useCurrentFrame, delayRender, continueRender, cancelRender} from 'remotion';
 import '@fontsource/noto-sans-sc/400.css';
+import '@fontsource/noto-serif-sc/600.css';
 import type {Scene, VideoProject} from '../../video-schema/src/types';
 import {layoutElements, wrapText, hasGraphicStyle} from './layout';
 import {motifLayout} from './motifs';
 import {funnelTextBoxes,isSemanticFunnel} from './FunnelDiagram';
 import {diagramBoxes} from './TeachingDiagrams';
 import {demonstrationTextBoxes} from './demonstrations';
-import {PaletteContext, palettes, usePalette, useVisualStyle, VisualStyleContext, validateVisualStyle, isPaperSlide, type VisualStyleId, type VisualStyleSnapshot, visualStyles} from './theme';
+import {PaletteContext, palettes, paletteFor, usePalette, useVisualStyle, VisualStyleContext, validateVisualStyle, isPaperSlide, type VisualStyleId, type VisualStyleSnapshot, visualStyles} from './theme';
 import {SceneGraphics} from './SceneGraphics';
+import {Caption} from './captions';
+import {blendCamera, cameraTransform, PAPER_CAMERA_FRAMES, sceneCamera, smoothstep} from './motion';
 import {CodeLesson, codeFont} from './CodeLesson';
 import {StateLesson, stateBoxes} from './StateLesson';
 import {TimelineLesson} from './TimelineLesson';
@@ -28,26 +31,46 @@ function paperBackground(base: string) {
   };
 }
 
-function SceneView({scene, audioSrc, imageSources, index, count, seriesTitle}: {scene: Scene; audioSrc?: string; imageSources:Record<string,string>; index: number; count: number; seriesTitle?: string}) {
-  const frame = useCurrentFrame();
+function SceneView({scene, audioSrc, imageSources, index, count, seriesTitle, frame, playAudio=true}: {scene: Scene; audioSrc?: string; imageSources:Record<string,string>; index: number; count: number; seriesTitle?: string; frame: number; playAudio?: boolean}) {
   const palette = usePalette();
   const style = useVisualStyle();
   const paper = isPaperSlide(style),mechanism=!!style.presentation;
   const caption = scene.captions.find(c => frame >= c.start_frame && frame < c.end_frame);
-  const header = mechanism?(seriesTitle||'机制演示').slice(0,36):paper
-    ? `—— ◆ ${(seriesTitle || '知识讲解').slice(0, 24)} ◆ ——`
-    : 'AI CREATER / KNOWLEDGE STUDIO';
+  const header = mechanism?(seriesTitle||'机制演示').slice(0,36):'AI CREATER / KNOWLEDGE STUDIO';
   return <AbsoluteFill style={{...(paper ? paperBackground(palette.background) : {backgroundColor: palette.background}), color: palette.text, fontFamily: '"Noto Sans SC"', fontWeight: 400}} data-paper-slide={paper || undefined}>
-    <div style={{position: 'absolute', top: 64, left: 80, right: 80, display: 'flex', justifyContent: 'space-between', fontSize: mechanism?24:paper ? 28 : 32, color: palette.muted}}>
-      <span data-series-header={paper || undefined}>{header}</span><span>{String(index + 1).padStart(2, '0')} / {String(count).padStart(2, '0')}</span>
-    </div>
+    {!paper && <div style={{position: 'absolute', top: 64, left: 80, right: 80, display: 'flex', justifyContent: 'space-between', fontSize: mechanism?24:32, color: palette.muted}}>
+      <span data-series-header>{header}</span><span data-page-number>{String(index + 1).padStart(2, '0')} / {String(count).padStart(2, '0')}</span>
+    </div>}
     {scene.type === 'code_walkthrough' && <CodeLesson scene={scene} frame={frame}/>}
     {scene.type === 'state_diagram' && <StateLesson scene={scene} frame={frame}/>}
     {scene.type === 'data_chart' && <DataChart scene={scene} frame={frame}/>}
     {scene.type === 'execution_timeline' && <TimelineLesson scene={scene} frame={frame}/>}
     <SceneGraphics scene={scene} frame={frame} imageSources={imageSources}/>
-    {caption && <div style={{position: 'absolute', left: 96, right: 96, top: mechanism?930:920, height: 128, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: mechanism?36:44, lineHeight: 1.35, textAlign: 'center', whiteSpace: 'pre', background: mechanism?'transparent':palette.caption, color: mechanism?palette.text:palette.captionText, borderRadius: paper ? 8 : 16}}>{wrapText(caption.text, mechanism?30:22).join('\n')}</div>}
-    {audioSrc&&<Sequence from={scene.narration.audio_start_frame} layout="none"><Audio src={audioSrc}/></Sequence>}
+    {caption && <Caption text={caption.text} wide={mechanism}/>}
+    {playAudio&&audioSrc&&<Sequence from={scene.narration.audio_start_frame} layout="none"><Audio src={audioSrc}/></Sequence>}
+  </AbsoluteFill>;
+}
+
+function SequencedScene(props: {scene: Scene; audioSrc?: string; imageSources:Record<string,string>; index: number; count: number; seriesTitle?: string}) {
+  const frame = useCurrentFrame();
+  return <SceneView {...props} frame={frame}/>;
+}
+
+function PaperStage({scenes, imageSources, seriesTitle, frame}: {scenes: Scene[]; imageSources: Record<string, string>; seriesTitle?: string; frame: number}) {
+  let offset = 0, index = 0;
+  for (let i = 0; i < scenes.length; i++) {
+    if (frame < offset + scenes[i].duration_frames || i === scenes.length - 1) {index = i; break;}
+    offset += scenes[i].duration_frames;
+  }
+  const scene = scenes[index];
+  const local = Math.max(0, frame - offset);
+  const previous = index > 0 ? scenes[index - 1] : undefined;
+  const blending = !!previous && local <= PAPER_CAMERA_FRAMES;
+  const camera = blending ? blendCamera(sceneCamera(previous!), sceneCamera(scene), local) : sceneCamera(scene);
+  const fade = blending ? smoothstep(local / PAPER_CAMERA_FRAMES) : 1;
+  return <AbsoluteFill data-paper-camera style={cameraTransform(camera)}>
+    {blending && <AbsoluteFill style={{opacity: 1 - fade}}><SceneView scene={previous!} imageSources={imageSources} seriesTitle={seriesTitle} frame={previous!.duration_frames - 1} index={index - 1} count={scenes.length} playAudio={false}/></AbsoluteFill>}
+    <AbsoluteFill style={{opacity: fade}}><SceneView scene={scene} imageSources={imageSources} seriesTitle={seriesTitle} frame={local} index={index} count={scenes.length} playAudio={false}/></AbsoluteFill>
   </AbsoluteFill>;
 }
 
@@ -57,18 +80,25 @@ export function Video({project, audioUrls, visualStyle,visualStyleSnapshot,draft
   useEffect(() => {
     const text = (project ? project.scenes.map(s => [s.code?.source ?? '', s.chart?JSON.stringify(s.chart):'', s.structure?.name ?? '', (s.timeline?.lanes ?? []).map(l => l.label).join(''), ...s.elements.map(e => e.content + (e.source_label ?? '') + (e.output ?? '') + (e.variables ?? []).map(v => v.name + v.value).join('') + (e.items ?? []).map(item => item.key + item.value).join('')), ...s.captions.map(c => c.text)].join('')).join('') : '先运行示例生成命令') + '讲稿侧注对话消息上下文与状态均讲稿示意当前初始更新后处理阶段片段流程与参数仅为不执行真实工具不代表真实推理结果层级示意不表示数量比例机制演示分层演示过程演示对话演示同一对象逐步推进从原稿看进入下一层的条件原稿衔接当前层下一层现在还不能据此认定示意人工编排同稿同音轨静音画面草稿临时时序非配音对齐步骤结论稿中来源 · 代码讲解当前步骤等待开始变量状态教学快照输出结果尚无数组对象栈空顶不执行正在的项最后进入最先取出TOP执行时间线毫秒示意非性能实测实线虚线菱形短事件空心条段重叠仅代表任务不保证并行配音轴独立CPU0123456789 ms → /—'+(style.presentation?(seriesTitle??''):'');
     let cancelled = false;
-    document.fonts.load('400 44px "Noto Sans SC"', text).then(() => {
+    Promise.all([
+      document.fonts.load('400 44px "Noto Sans SC"', text),
+      isPaperSlide(style) ? document.fonts.load('600 44px "Noto Serif SC"', text) : Promise.resolve(),
+    ]).then(() => {
       if (cancelled) return;
       const canvas = document.createElement('canvas');
       const ctx = canvas.getContext('2d')!;
       const custom=style!==visualStyles.legacy;
+      const paper=isPaperSlide(style);
       for (const scene of project?.scenes ?? []) {
+        if (scene.vector) continue;
         const demo=scene.images?undefined:demonstrationTextBoxes(scene,style),teaching=diagramBoxes(scene),funnel=isSemanticFunnel(scene),semantic=!!demo||!!teaching||funnel;
         const boxes=demo??teaching??(funnel?funnelTextBoxes(scene):(motifLayout(scene,style.layout)??layoutElements(scene,style.layout)));
         for (const box of boxes) {
-          const graphic=!semantic&&hasGraphicStyle(scene.elements.find(e=>e.id===box.id)!);
+          const element=scene.elements.find(e=>e.id===box.id)!;
+          const graphic=!semantic&&hasGraphicStyle(element);
           const padding=scene.images?16:graphic?style.card.graphicPadding:scene.type==='flow_diagram'?style.card.flowPadding:style.card.padding;
-          ctx.font = `400 ${box.fontSize}px "Noto Sans SC"`;
+          const serif=paper&&(scene.type==='title_reveal'||element.role==='topic');
+          ctx.font = `${serif?600:400} ${box.fontSize}px ${serif?'"Noto Serif SC"':'"Noto Sans SC"'}`;
           if (box.lines.some(line => ctx.measureText(line).width > box.width - (semantic?0:custom?Math.max(48,2*(padding+style.card.borderWidth)):48))) throw new Error(`layout_overflow: ${scene.id}/${box.id}`);
           const contentHeight=(scene.images?.some(b=>b.element_id===box.id)?192:0)+box.lines.length*box.fontSize*(semantic?1.35:style.typography.lineHeight)+(scene.type==='concept'?22*style.typography.lineHeight+style.typography.graphicGap:graphic?64+2*style.typography.graphicGap:0);
           if((semantic||custom||scene.type==='concept')&&contentHeight>box.height-(semantic?0:2*(padding+style.card.borderWidth)))throw new Error(`layout_overflow: ${scene.id}/${box.id}/height`);
@@ -115,10 +145,25 @@ export function Video({project, audioUrls, visualStyle,visualStyleSnapshot,draft
   let offset = 0;
   const assets = new Map(project.assets.map(a => [a.id, a]));
   const imageSources=Object.fromEntries(project.assets.filter(a=>a.type==='image').map(a=>[a.id,audioUrls?.[a.id]??staticFile(a.storage_key)]));
-  return <PaletteContext.Provider value={palettes[project.theme]}><VisualStyleContext.Provider value={style}><AbsoluteFill>{project.scenes.map((scene, i) => {
+  const paper=isPaperSlide(style);
+  const colors=paletteFor(style, project.theme);
+  const audioSrc=(scene: Scene)=>draftPreview?undefined:audioUrls?.[scene.narration.audio_asset_id] ?? staticFile(assets.get(scene.narration.audio_asset_id)!.storage_key);
+  return <PaletteContext.Provider value={colors}><VisualStyleContext.Provider value={style}><AbsoluteFill>{paper?<>
+    {project.scenes.map((scene, i) => {
+      const from = offset; offset += scene.duration_frames;
+      const src=audioSrc(scene);
+      return src?<Sequence key={scene.id} from={from+scene.narration.audio_start_frame} durationInFrames={scene.duration_frames-scene.narration.audio_start_frame} layout="none"><Audio src={src}/></Sequence>:null;
+    })}
+    <PaperFilm scenes={project.scenes} imageSources={imageSources} seriesTitle={seriesTitle}/>
+  </>:project.scenes.map((scene, i) => {
     const from = offset; offset += scene.duration_frames;
     return <Sequence key={scene.id} from={from} durationInFrames={scene.duration_frames}>
-      <SceneView scene={scene} imageSources={imageSources} seriesTitle={seriesTitle} audioSrc={draftPreview?undefined:audioUrls?.[scene.narration.audio_asset_id] ?? staticFile(assets.get(scene.narration.audio_asset_id)!.storage_key)} index={i} count={project.scenes.length}/>
+      <SequencedScene scene={scene} imageSources={imageSources} seriesTitle={seriesTitle} audioSrc={audioSrc(scene)} index={i} count={project.scenes.length}/>
     </Sequence>;
-  })}{draftPreview&&<div style={{position:'absolute',...(style.presentation?{top:112,padding:'4px 12px'}:{bottom:24,padding:'8px 16px'}),right:48,borderRadius:8,fontFamily:'"Noto Sans SC"',fontSize:24,color:palettes[project.theme].muted,background:palettes[project.theme].background}}>静音画面草稿 · 临时时序，非配音对齐</div>}</AbsoluteFill></VisualStyleContext.Provider></PaletteContext.Provider>;
+  })}{draftPreview&&<div style={{position:'absolute',...(style.presentation?{top:112,padding:'4px 12px'}:{bottom:24,padding:'8px 16px'}),right:48,borderRadius:8,fontFamily:'"Noto Sans SC"',fontSize:24,color:colors.muted,background:colors.background}}>静音画面草稿 · 临时时序，非配音对齐</div>}</AbsoluteFill></VisualStyleContext.Provider></PaletteContext.Provider>;
+}
+
+function PaperFilm({scenes, imageSources, seriesTitle}: {scenes: Scene[]; imageSources: Record<string, string>; seriesTitle?: string}) {
+  const frame = useCurrentFrame();
+  return <PaperStage scenes={scenes} imageSources={imageSources} seriesTitle={seriesTitle} frame={frame}/>;
 }

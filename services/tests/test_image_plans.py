@@ -89,6 +89,24 @@ class ImagePlanWorkerTests(unittest.TestCase):
             self.assertNotIn('compact_director',generate.call_args.kwargs)
             self.assertEqual(json.loads(output.getvalue()),{'draft':{'scenes':[]}})
 
+    def test_paper_slide_skips_raster_planning(self):
+        import io
+        from contextlib import redirect_stdout
+        from services.workflow.image_plans import image_planning_enabled, paper_vector_plan
+        from services.workflow.worker import child
+        self.assertFalse(image_planning_enabled('teaching-outline:9', 'paper_slide'))
+        self.assertTrue(image_planning_enabled('teaching-outline:8', None))
+        payload={'kind':'generate','source_text':TEXT,'model':'deepseek-flash','protocol_version':'teaching-outline:9','visual_style':'paper_slide'}
+        output=io.StringIO()
+        with patch('sys.stdin',io.StringIO(json.dumps(payload))), redirect_stdout(output), \
+             patch.dict('os.environ',{'DEEPSEEK_API_KEY':'test'}), \
+             patch('services.workflow.providers.deepseek_storyboard',return_value={'scenes':[{'id':'s1'}]}) as generate:
+            child()
+        self.assertFalse(generate.call_args.kwargs.get('image_planning', False))
+        scene=json.loads(output.getvalue())['draft']['scenes'][0]
+        self.assertEqual(scene['image_plan'], paper_vector_plan())
+        self.assertFalse(scene['image_plan']['needed'])
+
 
 @unittest.skipUnless(os.environ.get('TEST_DATABASE_URL'),'Use disposable PostgreSQL')
 class ImagePlanStoreTests(ProjectFixture,unittest.TestCase):

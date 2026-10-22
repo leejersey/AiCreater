@@ -10,6 +10,7 @@ import {conceptLabels} from '../../video-schema/src/concept';
 import {FunnelDiagram,isSemanticFunnel} from './FunnelDiagram';
 import {TeachingDiagram} from './TeachingDiagrams';
 import {demonstrationFor} from './demonstrations';
+import {VectorPrimitives} from './VectorPrimitives';
 
 // Shared by the actual video and static visual regression tests.
 export function SceneGraphics({scene:original,frame,imageSources={}}:{scene:Scene;frame:number;imageSources?:Record<string,string>}){
@@ -19,13 +20,14 @@ export function SceneGraphics({scene:original,frame,imageSources={}}:{scene:Scen
   const focus=actions.filter(a=>a.kind==='highlight'&&a.start_frame<=frame).at(-1);
   const focusProgress=focus?actionProgressAtFrame(focus,frame):0;
   const palette=usePalette(),style=useVisualStyle(),paper=isPaperSlide(style);
+  if(scene.vector)return <VectorPrimitives scene={original} frame={frame}/>;
   const demo=scene.images?undefined:demonstrationFor(original,style);
   if(demo){const View=demo.View;return <View scene={original} frame={frame}/>;}
   if(scene.dialogue||scene.process)return <TeachingDiagram scene={original} frame={frame}/>;
   const motif = typeof scene.motif === 'string' ? scene.motif : 'default';
   const boxes = motifLayout(scene, style.layout) ?? layoutElements(scene, style.layout);
   const animations=new Map(scene.animations.map(a=>[a.target,a]));
-  const state=(id:string)=>{const a=animations.get(id)!;return entranceAtFrame(frame,a.start_frame,a.duration_frames,style.entrance);};
+  const state=(id:string)=>{const a=animations.get(id)!;return entranceAtFrame(frame,a.start_frame,a.duration_frames,style.entrance,a.effect);};
   if(isSemanticFunnel(scene))return <FunnelDiagram scene={original} frame={frame}/>;
   const titleOutline=scene.type==='title_reveal';
   return <>
@@ -54,16 +56,21 @@ export function SceneGraphics({scene:original,frame,imageSources={}}:{scene:Scen
       })}
     </svg>}
     {boxes.map((box,i)=>{
-      const motion=state(box.id),element=scene.elements.find(e=>e.id===box.id)!,graphic=hasGraphicStyle(element);
+      const animation=animations.get(box.id)!,motion=state(box.id),element=scene.elements.find(e=>e.id===box.id)!,graphic=hasGraphicStyle(element);
       const image=scene.images?.find(b=>b.element_id===box.id);
       const accent=element.panel_style==='conclusion'?palette.accent:graphic&&element.icon==='warning'?palette.warning:graphic&&element.icon==='search'?palette.secondary:graphic?palette.source:scene.type==='comparison_panel'&&i%2?palette.secondary:palette.accent;
       const padding=scene.images?16:graphic?style.card.graphicPadding:scene.type==='flow_diagram'?style.card.flowPadding:style.card.padding;
       const outline=style.card.outline||titleOutline;
       const sticky = paper && !titleOutline && motif === 'default';
-      const background=outline?palette.background:element.panel_style==='conclusion'?palette.selected:palette.card;
+      const background=sticky?'#fff4cc':outline?palette.background:element.panel_style==='conclusion'?palette.selected:palette.card;
+      const reveal=animation.effect==='draw'?`inset(0 ${(1-(motion.draw??0))*100}% 0 0)`:motion.clipPath;
+      const serif=paper&&(titleOutline||element.role==='topic');
+      const scale=motion.scale??1,shiftX=motion.shiftX??0;
+      const motionTransform=scale===1&&shiftX===0?`translateY(${motion.translateY}px)`:`translate(${shiftX}px, ${motion.translateY}px) scale(${scale})`;
       const borderWidth=titleOutline?Math.max(style.card.borderWidth,2):style.card.borderWidth;
       const stamp = paper && (element.source_label || element.panel_style === 'conclusion');
-      return <div key={box.id} data-element={box.id} data-teaching-image={image?.element_id} data-action-highlight={focus?.target===box.id?box.id:undefined} data-entrance={style.entrance.kind} data-silhouette={scene.type} data-sticky={sticky||undefined} style={{position:'absolute',left:box.x,top:box.y,width:box.width,height:box.height,boxSizing:'border-box',padding,borderRadius:sticky?4:titleOutline?Math.max(style.card.radius,12):style.card.radius,border:`${borderWidth}px solid ${outline?accent:accent+'55'}`,background,outline:focus?.target===box.id?`3px solid ${palette.accent}`:undefined,outlineOffset:focus?.target===box.id?6:undefined,boxShadow:titleOutline?'none':sticky?'0 8px 0 rgba(0,0,0,0.08)':style.card.shadow,opacity:motion.opacity*(focus&&focus.target!==box.id?1-0.6*focusProgress:1),transform:`translateY(${motion.translateY}px) rotate(${sticky?(i%2?-0.6:0.5):0}deg)`,clipPath:motion.clipPath,display:'flex',flexDirection:image?'column':undefined,gap:image?12:undefined,alignItems:'center',justifyContent:'center'}}>
+      return <div key={box.id} data-element={box.id} data-effect={animation.effect} data-teaching-image={image?.element_id} data-action-highlight={focus?.target===box.id?box.id:undefined} data-entrance={style.entrance.kind} data-silhouette={scene.type} data-sticky={sticky||undefined} style={{position:'absolute',left:box.x,top:box.y,width:box.width,height:box.height,boxSizing:'border-box',padding,borderRadius:sticky?4:titleOutline?Math.max(style.card.radius,12):style.card.radius,border:`${borderWidth}px solid ${outline?accent:accent+'55'}`,background,outline:focus?.target===box.id?`3px solid ${palette.accent}`:undefined,outlineOffset:focus?.target===box.id?6:undefined,boxShadow:titleOutline?'none':sticky?'0 8px 0 rgba(0,0,0,0.08)':style.card.shadow,opacity:motion.opacity*(focus&&focus.target!==box.id?1-0.6*focusProgress:1),transform:`${motionTransform} rotate(${sticky?(i%2?-0.6:0.5):0}deg)`,clipPath:reveal,display:'flex',flexDirection:image?'column':undefined,gap:image?12:undefined,alignItems:'center',justifyContent:'center',fontFamily:serif?'"Noto Serif SC", "Noto Sans SC"':undefined,fontWeight:serif?600:undefined}}>
+        {animation.effect==='box'&&<div data-box-reveal={box.id} aria-hidden="true" style={{position:'absolute',inset:10,border:`3px solid ${accent}`,clipPath:`inset(0 ${(1-motion.box)*100}% 0 0)`,pointerEvents:'none'}}/>}
         {sticky&&<div data-tape aria-hidden="true" style={{position:'absolute',top:-10,left:'42%',width:64,height:18,background:'#f0d56c',opacity:0.85,transform:'rotate(-2deg)'}}/>}
         {stamp&&<div data-stamp={element.source_label||'结论'} style={{position:'absolute',top:12,right:16,padding:'2px 10px',border:`2px solid ${palette.warning}`,color:palette.warning,fontSize:18,transform:'rotate(8deg)',background:palette.background}}>{element.source_label||'结论'}</div>}
         {image&&<Img src={imageSources[image.asset_id]} alt={image.alt} style={{width:'100%',height:180,flexShrink:0,objectFit:'contain'}}/>}

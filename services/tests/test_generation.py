@@ -347,19 +347,41 @@ class TimingTests(unittest.TestCase):
         self.assertEqual(scene['animations'][0]['start_frame'], 6)
         self.assertEqual(segments[-1]['end_ms'], 1000)
 
-    def test_long_segment_wraps_without_empty_or_overlapping_captions(self):
+    def test_single_oversized_word_is_not_split_by_invented_times(self):
         text = '知识' * 35
         draft = outline(text)
         segment = {'text_start': 0, 'text_end': len(text), 'start_ms': 0, 'end_ms': 3000}
-        scene = time_scene(draft['scenes'][0], 'audio_1', 3000, [segment])
-        previous = 0
+        with self.assertRaises(ProviderError) as caught:
+            time_scene(draft['scenes'][0], 'audio_1', 3000, [segment])
+        self.assertEqual(caught.exception.code, 'caption_layout')
+
+    def test_long_phrase_splits_on_word_boundaries_with_real_times(self):
+        text = '知识' * 30
+        words = [{'word': '知识', 'startTime': i * 0.1, 'endTime': (i + 1) * 0.1} for i in range(30)]
+        scene = time_scene(outline(text)['scenes'][0], 'audio_1', 3000, align_words(text, words, 3000))
+        self.assertEqual([(c['start_frame'], c['end_frame']) for c in scene['captions']], [(6, 39), (39, 72), (72, 96)])
+        self.assertEqual(''.join(c['text'].replace('\n', '') for c in scene['captions']), text)
         for caption in scene['captions']:
             self.assertLessEqual(len(caption['text'].split('\n')), 2)
             self.assertTrue(all(0 < len(line) <= 22 for line in caption['text'].split('\n')))
-            self.assertGreaterEqual(caption['start_frame'], previous)
-            self.assertGreater(caption['end_frame'], caption['start_frame'])
-            previous = caption['end_frame']
-        self.assertEqual(''.join(c['text'].replace('\n', '') for c in scene['captions']), text)
+
+    def test_entrance_duration_follows_word_span(self):
+        draft = outline()['scenes'][0]
+        draft['elements'][0]['entrance'] = 'scale_pop'
+        scene = time_scene(draft, 'audio_1', 1000, [{'text_start': 0, 'text_end': 4, 'start_ms': 0, 'end_ms': 1000}])
+        self.assertEqual(scene['animations'][0]['effect'], 'scale_pop')
+        self.assertEqual(scene['animations'][0]['start_frame'], 6)
+        self.assertEqual(scene['animations'][0]['duration_frames'], 30)
+        draft['elements'][0]['entrance'] = 'not-an-effect'
+        self.assertEqual(time_scene(draft, 'audio_1', 1000, [{'text_start': 0, 'text_end': 4, 'start_ms': 0, 'end_ms': 1000}])['animations'][0]['effect'], 'fade_slide')
+
+    def test_model_wire_hides_renderer_only_fields(self):
+        from services.workflow.storyboard import DIRECTOR_REFERENCE_SCHEMA, DRAFT_SCHEMA, REFERENCE_SCHEMA
+        self.assertIn('entrance', DRAFT_SCHEMA['definitions']['Element']['properties'])
+        for schema in (REFERENCE_SCHEMA, DIRECTOR_REFERENCE_SCHEMA):
+            self.assertNotIn('entrance', schema['definitions']['Element']['properties'])
+        self.assertNotIn('camera', DRAFT_SCHEMA['definitions']['Scene']['properties'])
+        self.assertNotIn('vector', DRAFT_SCHEMA['definitions']['Scene']['properties'])
 
 
 if __name__ == '__main__':

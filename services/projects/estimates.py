@@ -6,6 +6,7 @@ import math
 
 from services.projects.jobs import Jobs
 from services.projects.store import StoreError, identifier, revision
+from services.workflow.image_plans import image_planning_enabled
 from services.workflow.providers import ProviderError, storyboard_request
 
 PRICES_CHECKED_ON = date(2026, 10, 15)
@@ -56,7 +57,7 @@ def estimate_payload(payload, *, reused=False, now=None):
             if director: original = Jobs._draft_scene(payload['scene'])
             original['narration'] = {'text': original['narration']['text']}
         text = payload['source_text'] if original is None else original['narration']['text']
-        body, _ = storyboard_request(text, payload['model'], original, cue_quotes=payload['protocol_version'].endswith((':2', ':3', ':4', ':5', ':6', ':7', ':8', ':9')), semantic_graphics=director, **({'compact_director':True,'role_director':payload['protocol_version'].endswith(':6')} if payload['protocol_version'].endswith((':5',':6')) else {}), teaching_style=payload.get('teaching_style') or 'popular', materials=payload.get('materials'), image_planning=payload['protocol_version'].endswith((':8', ':9')))
+        body, _ = storyboard_request(text, payload['model'], original, cue_quotes=payload['protocol_version'].endswith((':2', ':3', ':4', ':5', ':6', ':7', ':8', ':9')), semantic_graphics=director, **({'compact_director':True,'role_director':payload['protocol_version'].endswith(':6')} if payload['protocol_version'].endswith((':5',':6')) else {}), teaching_style=payload.get('teaching_style') or 'popular', materials=payload.get('materials'), image_planning=image_planning_enabled(payload['protocol_version'], payload.get('visual_style')))
         contents = [message['content'] for message in body['messages']]
         fallback=None
         if payload['protocol_version'].endswith((':5',':6')):
@@ -112,7 +113,7 @@ def estimate_project(store, model, project_id, expected_revision, operation, sce
             if project['scenes']: raise StoreError('conflict', 'Use scene regeneration for an existing outline')
             payloads.append({'kind': 'generate', 'project_id': project['id'], 'base_revision': expected_revision,
                 'source_text': project['source_text'], 'profile': store.profile, 'model': model, 'protocol_version': 'teaching-outline:9' if materials else 'teaching-outline:8', 'teaching_style':project['teaching_style'],
-                **({'materials':materials} if materials else {})})
+                **({'materials':materials} if materials else {}), **Jobs.paper_style_field(project)})
         selected = set()
         for item in scenes:
             if not isinstance(item, dict) or set(item) != {'scene_id', 'expected_revision'}: raise StoreError('validation', 'Invalid scene selection')
@@ -131,7 +132,7 @@ def estimate_project(store, model, project_id, expected_revision, operation, sce
             if not voice:
                 from services.workflow.manuscript_document import scene_materials
                 materials = scene_materials(project['config'].get('manuscript', {}), row['scene']['narration']['text'])
-                payload.update(model=model,teaching_style=project['teaching_style'])
+                payload.update(model=model,teaching_style=project['teaching_style'], **Jobs.paper_style_field(project))
                 if materials:
                     payload.update(materials=materials,protocol_version='scene-candidate:9')
             payloads.append(payload)

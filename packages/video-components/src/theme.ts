@@ -73,5 +73,12 @@ export const palettes = {
   color_infographic:{background:'#fff3db',card:'#fffdf7',text:'#242c42',muted:'#5e6073',accent:'#007569',secondary:'#8139b8',caption:'#242c42',captionText:'#ffffff',selected:'#dcf0e6',source:'#3158db',warning:'#a24807'},
 };
 export type Palette = typeof palettes.tech_explainer;
+/** Locked paper-slide colors. Project theme palettes are ignored for this style. */
+export const paperPalette: Palette = {
+  background:'#f6f1e7',card:'#fff4cc',text:'#1c1915',muted:'#5c5346',accent:'#c4272f',secondary:'#c4272f',caption:'#1c1915',captionText:'#ffffff',selected:'#fff4cc',source:'#c4272f',warning:'#c4272f',
+};
+export function paletteFor(style: StyleTokens, theme: keyof typeof palettes): Palette {
+  return isPaperSlide(style) ? paperPalette : palettes[theme];
+}
 export const PaletteContext=createContext<Palette>(palettes.tech_explainer);
 export const usePalette=()=>useContext(PaletteContext);

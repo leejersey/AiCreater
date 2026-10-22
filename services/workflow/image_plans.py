@@ -82,6 +82,28 @@ def plan_entry(scene, plan):
     return {'status': 'planned', 'scene_fingerprint': scene_fingerprint(scene), 'plan': plan}
 
 
+PAPER_VECTOR_REASON = '纸质幻灯使用矢量零件，不规划光栅图片'
+
+
+def image_planning_enabled(protocol, visual_style=None):
+    return isinstance(protocol, str) and protocol.endswith((':8', ':9')) and visual_style != 'paper_slide'
+
+
+def paper_vector_plan():
+    return {'needed': False, 'reason': PAPER_VECTOR_REASON, 'requirements': []}
+
+
+def stamp_paper_plans(draft):
+    if isinstance(draft, dict) and isinstance(draft.get('scenes'), list):
+        for scene in draft['scenes']:
+            if isinstance(scene, dict):
+                scene['image_plan'] = paper_vector_plan()
+        return draft
+    if isinstance(draft, dict):
+        draft['image_plan'] = paper_vector_plan()
+    return draft
+
+
 def invalidate_plan(config, scene):
     entry = config.get('image_plans', {}).get(scene['id'])
     if entry and entry['scene_fingerprint'] != scene_fingerprint(scene):

@@ -25,6 +25,7 @@
   },
   "dependencies": {
     "@fontsource/noto-sans-sc": "5.3.0",
+    "@fontsource/noto-serif-sc": "5.2.8",
     "@remotion/bundler": "4.0.534",
     "@remotion/cli": "4.0.534",
     "@remotion/player": "4.0.534",

@@ -145,7 +145,8 @@ class Jobs:
                                'source_text': project['source_text'], 'profile': copy.deepcopy(self.store.profile),
                                'model': self.model, 'protocol_version': protocol,
                                'teaching_style': project['teaching_style'],
-                               **({'materials': materials} if materials else {})}
+                               **({'materials': materials} if materials else {}),
+                               **self.paper_style_field(project)}
                     digest = self.input_hash(payload)
                     # Reopen same row (input_hash unique); refresh source if the manuscript changed.
                     conn.execute('DELETE FROM job_attempts WHERE job_id=%s', [job['id']])
@@ -162,8 +163,16 @@ class Jobs:
                        'source_text': project['source_text'], 'profile': copy.deepcopy(self.store.profile),
                        'model': self.model, 'protocol_version': protocol,
                        'teaching_style': project['teaching_style'],
-                       **({'materials': materials} if materials else {})}
+                       **({'materials': materials} if materials else {}),
+                       **self.paper_style_field(project)}
             return self._submit(conn, project['id'], None, base_revision, payload)
+
+    @staticmethod
+    def paper_style_field(project):
+        style = project.get('visual_style') or {}
+        if isinstance(style, dict) and style.get('id') == 'paper_slide':
+            return {'visual_style': 'paper_slide'}
+        return {}
 
     @staticmethod
     def input_hash(payload):
@@ -398,7 +407,8 @@ class Jobs:
                        'scene': copy.deepcopy(scene['scene']), 'profile': copy.deepcopy(self.store.profile),
                        'model': self.model, 'protocol_version': 'scene-candidate:9' if materials else 'scene-candidate:8',
                        'teaching_style': project['teaching_style'],
-                       **({'materials': materials} if materials else {})}
+                       **({'materials': materials} if materials else {}),
+                       **self.paper_style_field(project)}
             return self._submit(conn, project['id'], scene_id, base_revision, payload)
 
     @staticmethod

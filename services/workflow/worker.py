@@ -75,7 +75,8 @@ def child():
         options = {**({'compact_director':True} if payload.get('protocol_version') in ['teaching-outline:5','scene-candidate:5','teaching-outline:6','scene-candidate:6'] else {}), **({'role_director':True} if payload.get('protocol_version') in ['teaching-outline:6','scene-candidate:6'] else {}), **({'semantic_graphics':True} if director else {}), **usage_options, **({'cue_quotes': False} if payload.get('protocol_version') in ['teaching-outline:1', 'scene-candidate:1'] else {}), 'teaching_style': style}
         if payload.get('materials'):
             options['materials'] = payload['materials']
-        if payload.get('protocol_version') in ['teaching-outline:8','scene-candidate:8','teaching-outline:9','scene-candidate:9']:
+        from services.workflow.image_plans import image_planning_enabled, stamp_paper_plans
+        if image_planning_enabled(payload.get('protocol_version'), payload.get('visual_style')):
             options['image_planning'] = True
         with httpx.Client(timeout=120) as client:
             if payload['kind'] == 'generate':
@@ -85,6 +86,8 @@ def child():
                 if director: original = Jobs._draft_scene(payload['scene'])
                 original['narration'] = {'text': original['narration']['text']}
                 draft = deepseek_storyboard(original['narration']['text'], settings, client, original, **options)['scenes'][0]
+        if payload.get('visual_style') == 'paper_slide':
+            draft = stamp_paper_plans(draft)
         print(json.dumps({'draft': draft}, ensure_ascii=False))
     except ProviderError as exc:
         code = 'transport_error' if exc.code == 'transport_error' else 'validation'

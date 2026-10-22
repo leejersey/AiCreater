@@ -1,0 +1,304 @@
+{
+  "schema_version": "1.0",
+  "theme": "tech_explainer",
+  "video_config": {
+    "width": 1920,
+    "height": 1080,
+    "fps": 30,
+    "language": "zh-CN"
+  },
+  "assets": [
+    {
+      "id": "narration",
+      "type": "audio",
+      "storage_key": "paper-sample/narration.wav",
+      "checksum": "c31c2d156f62f1dc33a1e1a1f5af154588ee6d6d35a99190ecb33af1ffecc2b5",
+      "duration_ms": 1000
+    }
+  ],
+  "scenes": [
+    {
+      "id": "title",
+      "type": "title_reveal",
+      "narration": {
+        "text": "纸上的曲线。",
+        "audio_asset_id": "narration",
+        "audio_start_frame": 6
+      },
+      "duration_frames": 42,
+      "elements": [
+        {
+          "id": "title",
+          "content": "纸上的曲线",
+          "role": "topic",
+          "cue": {
+            "text_start": 0,
+            "text_end": 5
+          }
+        }
+      ],
+      "animations": [
+        {
+          "target": "title",
+          "effect": "scale_pop",
+          "start_frame": 6,
+          "duration_frames": 24
+        }
+      ],
+      "captions": [
+        {
+          "text": "纸上的曲线。",
+          "start_frame": 6,
+          "end_frame": 36
+        }
+      ],
+      "camera": {
+        "x": 960,
+        "y": 540,
+        "scale": 1
+      }
+    },
+    {
+      "id": "curve",
+      "type": "card_sequence",
+      "narration": {
+        "text": "曲线慢慢长出。",
+        "audio_asset_id": "narration",
+        "audio_start_frame": 6
+      },
+      "duration_frames": 42,
+      "elements": [
+        {
+          "id": "curve",
+          "content": "曲线",
+          "cue": {
+            "text_start": 0,
+            "text_end": 2
+          }
+        },
+        {
+          "id": "grow",
+          "content": "长出",
+          "cue": {
+            "text_start": 4,
+            "text_end": 6
+          }
+        }
+      ],
+      "animations": [
+        {
+          "target": "curve",
+          "effect": "draw",
+          "start_frame": 6,
+          "duration_frames": 28
+        },
+        {
+          "target": "grow",
+          "effect": "shake",
+          "start_frame": 18,
+          "duration_frames": 16
+        }
+      ],
+      "captions": [
+        {
+          "text": "曲线慢慢长出。",
+          "start_frame": 6,
+          "end_frame": 36
+        }
+      ],
+      "vector": {
+        "kind": "stroke_curve"
+      },
+      "camera": {
+        "x": 1280,
+        "y": 620,
+        "scale": 1.45
+      }
+    },
+    {
+      "id": "gauge",
+      "type": "card_sequence",
+      "narration": {
+        "text": "仪表进入红区。",
+        "audio_asset_id": "narration",
+        "audio_start_frame": 6
+      },
+      "duration_frames": 42,
+      "elements": [
+        {
+          "id": "meter",
+          "content": "仪表",
+          "cue": {
+            "text_start": 0,
+            "text_end": 2
+          }
+        },
+        {
+          "id": "zone",
+          "content": "红区",
+          "cue": {
+            "text_start": 4,
+            "text_end": 6
+          }
+        }
+      ],
+      "animations": [
+        {
+          "target": "meter",
+          "effect": "box",
+          "start_frame": 6,
+          "duration_frames": 20
+        },
+        {
+          "target": "zone",
+          "effect": "shake",
+          "start_frame": 16,
+          "duration_frames": 18
+        }
+      ],
+      "captions": [
+        {
+          "text": "仪表进入红区。",
+          "start_frame": 6,
+          "end_frame": 36
+        }
+      ],
+      "vector": {
+        "kind": "gauge"
+      },
+      "camera": {
+        "x": 760,
+        "y": 480,
+        "scale": 1.15
+      }
+    },
+    {
+      "id": "trade",
+      "type": "card_sequence",
+      "narration": {
+        "text": "三角权衡取舍。",
+        "audio_asset_id": "narration",
+        "audio_start_frame": 6
+      },
+      "duration_frames": 42,
+      "elements": [
+        {
+          "id": "left",
+          "content": "速度",
+          "cue": {
+            "text_start": 0,
+            "text_end": 2
+          }
+        },
+        {
+          "id": "right",
+          "content": "质量",
+          "cue": {
+            "text_start": 2,
+            "text_end": 4
+          }
+        },
+        {
+          "id": "top",
+          "content": "成本",
+          "cue": {
+            "text_start": 4,
+            "text_end": 6
+          }
+        }
+      ],
+      "animations": [
+        {
+          "target": "left",
+          "effect": "fade_slide",
+          "start_frame": 6,
+          "duration_frames": 12
+        },
+        {
+          "target": "right",
+          "effect": "scale_pop",
+          "start_frame": 12,
+          "duration_frames": 16
+        },
+        {
+          "target": "top",
+          "effect": "box",
+          "start_frame": 18,
+          "duration_frames": 16
+        }
+      ],
+      "captions": [
+        {
+          "text": "三角权衡取舍。",
+          "start_frame": 6,
+          "end_frame": 36
+        }
+      ],
+      "vector": {
+        "kind": "tradeoff_triangle"
+      },
+      "camera": {
+        "x": 960,
+        "y": 700,
+        "scale": 1.2
+      }
+    },
+    {
+      "id": "funnel",
+      "type": "card_sequence",
+      "narration": {
+        "text": "漏斗筛掉噪声。",
+        "audio_asset_id": "narration",
+        "audio_start_frame": 6
+      },
+      "duration_frames": 42,
+      "elements": [
+        {
+          "id": "wide",
+          "content": "噪声",
+          "cue": {
+            "text_start": 2,
+            "text_end": 4
+          }
+        },
+        {
+          "id": "narrow",
+          "content": "留下",
+          "cue": {
+            "text_start": 4,
+            "text_end": 6
+          }
+        }
+      ],
+      "animations": [
+        {
+          "target": "wide",
+          "effect": "draw",
+          "start_frame": 6,
+          "duration_frames": 24
+        },
+        {
+          "target": "narrow",
+          "effect": "scale_pop",
+          "start_frame": 18,
+          "duration_frames": 16
+        }
+      ],
+      "captions": [
+        {
+          "text": "漏斗筛掉噪声。",
+          "start_frame": 6,
+          "end_frame": 36
+        }
+      ],
+      "vector": {
+        "kind": "dot_funnel"
+      },
+      "camera": {
+        "x": 960,
+        "y": 540,
+        "scale": 1
+      }
+    }
+  ]
+}

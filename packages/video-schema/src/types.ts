@@ -68,13 +68,21 @@ export type Scene = {
    * @maxItems 12
    */
   visual_actions?: VisualAction[];
+  camera?: {
+    x: number;
+    y: number;
+    scale: number;
+  };
+  vector?: {
+    kind: "stroke_curve" | "gauge" | "tradeoff_triangle" | "dot_funnel";
+  };
   /**
    * @minItems 1
    * @maxItems 6
    */
   animations: {
     target: Id;
-    effect: "fade_slide";
+    effect: "fade_slide" | "draw" | "scale_pop" | "box" | "shake";
     start_frame: number;
     duration_frames: number;
   }[];
@@ -267,6 +275,7 @@ export interface Element {
   };
   input?: string;
   output?: string;
+  entrance?: "fade_slide" | "draw" | "scale_pop" | "box" | "shake";
   cue: {
     text_start: number;
     text_end: number;

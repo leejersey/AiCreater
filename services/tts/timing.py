@@ -41,6 +41,26 @@ def align_words(text, words, duration_ms):
     return segments
 
 
+EFFECTS = ('fade_slide', 'draw', 'scale_pop', 'box', 'shake')
+
+
+def _effect(element):
+    entrance = element.get('entrance')
+    return entrance if entrance in EFFECTS else 'fade_slide'
+
+
+def _display(text, left, right):
+    return re.sub(r'\s+', ' ', text[left:right]).strip()
+
+
+def _fit_caption(display):
+    if not display or len(display) > 44:
+        return None
+    if len(display) > 22:
+        return display[:22] + '\n' + display[22:]
+    return display
+
+
 def time_scene(draft, audio_id, duration_ms, segments):
     scene = copy.deepcopy(draft)
     text = scene['narration']['text']
@@ -58,9 +78,13 @@ def time_scene(draft, audio_id, duration_ms, segments):
             raise ProviderError('timing', 'frame_range', 'No audio frame remains for entrance')
         # Explicit topic preview is not a spoken execution/result cue; ordinary elements stay aligned.
         topic = element.get('role') == 'topic'
-        scene['animations'].append({'target': element['id'], 'effect': 'fade_slide',
-                                    'start_frame': 6 if topic else start,
-                                    'duration_frames': 1 if topic else min(12, available)})
+        if topic:
+            scene['animations'].append({'target': element['id'], 'effect': 'fade_slide', 'start_frame': 6, 'duration_frames': 1})
+        else:
+            end = 6 + math.ceil(matches[-1]['end_ms'] * 30 / 1000)
+            duration = min(max(1, end - start), scene['duration_frames'] - start)
+            scene['animations'].append({'target': element['id'], 'effect': _effect(element),
+                                        'start_frame': start, 'duration_frames': duration})
     for action in scene.get('visual_actions', []):
         cue = action['cue']
         matches = [s for s in segments if s['text_start'] < cue['text_end'] and s['text_end'] > cue['text_start']]
@@ -71,14 +95,15 @@ def time_scene(draft, audio_id, duration_ms, segments):
         if available < 1:
             raise ProviderError('timing', 'frame_range', 'No audio frame remains for visual action')
         action.update(start_frame=start, duration_frames=min(12, available))
-    # Group exact word times into readable phrases; entrance cues remain word-level.
+    # Group exact word times into readable phrases. Breaks stay on word boundaries.
     caption_segments, group = [], None
     for i, segment in enumerate(segments):
         if group is None:
-            group = dict(segment)
+            group = {**segment, 'words': [segment]}
             caption_segments.append(group)
         else:
             group.update(text_end=segment['text_end'], end_ms=segment['end_ms'])
+            group['words'].append(segment)
         right = segments[i + 1]['text_start'] if i + 1 < len(segments) else len(text)
         if (right - group['text_start'] >= 22 or
                 any(c in '，。！？；!?;,\n' for c in text[segment['text_end']:right])):
@@ -87,20 +112,34 @@ def time_scene(draft, audio_id, duration_ms, segments):
     for i, segment in enumerate(caption_segments):
         left = 0 if i == 0 else segment['text_start']
         right = caption_segments[i + 1]['text_start'] if i + 1 < len(caption_segments) else len(text)
-        display = re.sub(r'\s+', ' ', text[left:right]).strip()
-        parts = [display[p:p + 44] for p in range(0, len(display), 44)]
-        for j, part in enumerate(parts):
-            # ponytail: long provider phrases use interpolated caption splits, not invented word alignment.
-            span = segment['end_ms'] - segment['start_ms']
-            start_ms = segment['start_ms'] + span * j / len(parts)
-            end_ms = segment['start_ms'] + span * (j + 1) / len(parts)
+        words = segment['words']
+        bounds = []
+        for w, word in enumerate(words):
+            piece_left = left if w == 0 else word['text_start']
+            piece_right = words[w + 1]['text_start'] if w + 1 < len(words) else right
+            bounds.append((piece_left, piece_right, word['start_ms'], word['end_ms']))
+        start_w = 0
+        while start_w < len(bounds):
+            chosen = None
+            for end_w in range(start_w, len(bounds)):
+                if len(_display(text, bounds[start_w][0], bounds[end_w][1])) > 44:
+                    break
+                chosen = end_w
+            if chosen is None:
+                raise ProviderError('timing', 'caption_layout', 'A spoken word does not fit one caption')
+            fitted = _fit_caption(_display(text, bounds[start_w][0], bounds[chosen][1]))
+            if fitted is None:
+                raise ProviderError('timing', 'caption_layout', 'A spoken word does not fit one caption')
+            start_ms, end_ms = bounds[start_w][2], bounds[chosen][3]
             start = max(previous_end, 6 + math.floor(start_ms * 30 / 1000))
             end = min(scene['duration_frames'] - 6, 6 + math.ceil(end_ms * 30 / 1000))
             if end <= start:
                 raise ProviderError('timing', 'caption_density', 'Caption intervals cannot fit into nonoverlapping frames')
-            display_part = part[:22] + ('\n' + part[22:] if len(part) > 22 else '')
-            scene['captions'].append({'text': display_part, 'start_frame': start, 'end_frame': end})
+            scene['captions'].append({'text': fitted, 'start_frame': start, 'end_frame': end})
             previous_end = end
+            start_w = chosen + 1
+    if not scene['captions']:
+        raise ProviderError('timing', 'caption_density', 'Caption intervals cannot fit into nonoverlapping frames')
     # Provider word ends can precede audible speech; retain the last caption to the audio boundary.
     scene['captions'][-1]['end_frame'] = scene['duration_frames'] - 6
     return scene

@@ -36,6 +36,7 @@ test('paper_slide cards expose sticky/stamp chrome and yellow highlights', () =>
   const html = renderToStaticMarkup(React.createElement(PaletteContext.Provider, {value: palettes.light_teaching},
     React.createElement(VisualStyleContext.Provider, {value: style},
       React.createElement(SceneGraphics, {scene, frame: 60}))));
+  assert.match(html, /#fff4cc/);
   assert.match(html, /data-sticky/);
   assert.match(html, /data-tape/);
   assert.match(html, /data-stamp="规则"/);
