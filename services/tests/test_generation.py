@@ -85,6 +85,8 @@ class ProviderTests(unittest.TestCase):
             self.assertIn('at most 20 scenes', prompt)
             self.assertIn('separate cues for taking a value and adding it', prompt)
             self.assertIn('Preserve applicability conditions', prompt)
+            self.assertIn('Every element.content in EVERY scene type is limited to 40 Unicode code points', prompt)
+            self.assertIn('Do not remove applicability conditions', prompt)
             return httpx.Response(200, json={'choices': [{'finish_reason': 'stop', 'message': {'content': json.dumps(quoted_wire(expected))}}]})
         with httpx.Client(transport=httpx.MockTransport(handler)) as client:
             result = deepseek_storyboard(source, settings(), client)

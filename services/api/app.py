@@ -221,8 +221,10 @@ def create_app(store=None, *, authentication=True):
         return request.app.state.store.list_projects(getattr(request.state,'user',{}).get('id'))
 
     @app.get('/api/projects/{project_id}/assets/{asset_id}')
-    def audio(project_id: str, asset_id: str, request: Request):
-        return FileResponse(request.app.state.store.asset_file(project_id, asset_id), media_type='audio/wav')
+    def media(project_id: str, asset_id: str, request: Request):
+        file = request.app.state.store.asset_file(project_id, asset_id)
+        mime = {'.png':'image/png', '.jpg':'image/jpeg', '.jpeg':'image/jpeg', '.mp3':'audio/mpeg', '.m4a':'audio/mp4'}.get(file.suffix.lower(), 'audio/wav')
+        return FileResponse(file, media_type=mime, headers={'X-Content-Type-Options':'nosniff'})
 
     @app.get('/api/projects/{project_id}/usage')
     def project_usage(project_id: str, request: Request, response: Response):

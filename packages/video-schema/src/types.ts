@@ -1,5 +1,6 @@
 /* Generated from schema.json by npm run schema:types. Do not edit. */
 
+export type Asset = AudioAsset | ImageAsset;
 export type Id = string;
 export type Scene = {
   [k: string]: unknown;
@@ -15,6 +16,11 @@ export type Scene = {
     | "execution_timeline"
     | "data_chart"
     | "concept";
+  /**
+   * @minItems 1
+   * @maxItems 2
+   */
+  images?: ImageBinding[];
   motif?: "default" | "funnel" | "dialogue_split" | "means_row" | "schematic";
   chart?: Chart;
   dialogue?: Dialogue;
@@ -135,7 +141,7 @@ export interface VideoProject {
   };
   /**
    * @minItems 1
-   * @maxItems 20
+   * @maxItems 60
    */
   assets: Asset[];
   /**
@@ -144,12 +150,25 @@ export interface VideoProject {
    */
   scenes: Scene[];
 }
-export interface Asset {
+export interface AudioAsset {
   id: Id;
   type: "audio";
   storage_key: string;
   checksum: string;
   duration_ms: number;
+}
+export interface ImageAsset {
+  id: Id;
+  type: "image";
+  storage_key: string;
+  checksum: string;
+  width: number;
+  height: number;
+}
+export interface ImageBinding {
+  asset_id: Id;
+  element_id: Id;
+  alt: string;
 }
 export interface Dialogue {
   /**

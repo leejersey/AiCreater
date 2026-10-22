@@ -6,6 +6,7 @@ import {Player, type PlayerRef} from '@remotion/player';
 import {Video} from '../../../packages/video-components/src/Video';
 import {API, Job, Project, SceneRow, readyVideo, previewVideo, draftPreviewVideo, sceneStartFrame, request, estimateDuration, reviewKey, canRetime, canPreview, retryMessage, jobScene, cancellationPending, filterJobs, type JobFilter, jobResultNotice, selectedSceneId, sceneTitle, filterProjects, parseProjectSummaries, parseJobs, parseSceneJob, type ProjectSummary} from '../lib/editor';
 import {SceneEditor, PreviewSteps} from './SceneEditor';
+import {TeachingImagePlan} from './TeachingImagePlan';
 import {ChartEditor} from './ChartEditor';
 import {VersionHistory, parseCreatedVersion} from './VersionHistory';
 import {CandidateList} from './CandidateReview';
@@ -559,6 +560,7 @@ export default function Workbench({routeProjectId}:{routeProjectId?:string}) {
 
       <section className="editor">
         <h2>{row ? `场景内容 · ${sceneTitle(row.scene)}` : '教学内容'}</h2>
+        {row&&project&&<TeachingImagePlan entry={project.config.image_plans?.[row.scene.id]}/>}
         {row&&<PreviewSteps row={row} video={preview} draftPreview={!!draftPreview} busy={busy} dirty={dirty} onSeek={frame=>{player.current?.pause();player.current?.seekTo(frame);}}/>}
         {row && project ? <>{row.scene.type!=='data_chart'&&<SceneEditor key={row.id + ':' + row.revision + ':' + session.current} projectId={project.id} row={row} disabled={busy||chartEditing||addingScene||voiceEditing||styleEditing||teachingStyleEditing} onDirty={setEditorDirty} save={async changes => {
           applySavedProject(await request<Project>('/api/scenes/' + row.id, {expected_revision: row.revision, changes}, 'PATCH'));

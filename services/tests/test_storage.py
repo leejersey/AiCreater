@@ -34,6 +34,14 @@ class StorageTests(unittest.TestCase):
         self.file.write_bytes(b'corrupt')
         with self.assertRaises(StoreError): self.storage.ensure(self.file, self.checksum, 100)
         self.assertEqual(self.file.read_bytes(), b'corrupt')
+    def test_static_image_extensions_restore_immutable_objects(self):
+        for extension in ['png', 'jpg', 'jpeg']:
+            file = self.file.with_suffix('.' + extension); file.write_bytes(b'validated-image-bytes')
+            checksum = hashlib.sha256(file.read_bytes()).hexdigest()
+            self.storage.put(file, checksum, 100)
+            file.unlink(); self.storage.ensure(file, checksum, 100)
+            self.assertEqual(file.read_bytes(), b'validated-image-bytes')
+
     def test_bad_remote_data_never_publishes_a_file(self):
         self.storage.put(self.file, self.checksum, 100)
         self.file.unlink(); self.client.data[next(iter(self.client.data))] = b'wrong'
@@ -51,9 +59,11 @@ class StorageTests(unittest.TestCase):
     def test_storage_credentials_not_passed_to_node_verifier(self):
         from services.projects.store import Store
         store = object.__new__(Store); store.objects = None; store.public = self.file.parent
-        with patch.dict('os.environ', {'RUSTFS_SECRET_KEY': 'hidden-secret', 'RUSTFS_ACCESS_KEY': 'hidden-access'}), \
+        with patch.dict('os.environ', {'RUSTFS_SECRET_KEY': 'hidden-secret', 'RUSTFS_ACCESS_KEY': 'hidden-access', 'OPENAI_API_KEY': 'hidden-image-key', 'ACCOUNT_CREDENTIALS_KEY': 'hidden-encryption-key'}, clear=True), \
                 patch('services.projects.store.subprocess.run') as run:
             store._assets({'assets': []})
+        self.assertNotIn('OPENAI_API_KEY', run.call_args.kwargs['env'])
+        self.assertFalse('ACCOUNT_CREDENTIALS_KEY' in run.call_args.kwargs['env'], 'Encryption key reached Node')
         self.assertFalse('RUSTFS_SECRET_KEY' in run.call_args.kwargs['env'], 'Storage secret reached Node')
         self.assertFalse('RUSTFS_ACCESS_KEY' in run.call_args.kwargs['env'], 'Storage access key reached Node')
 

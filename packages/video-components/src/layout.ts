@@ -44,6 +44,15 @@ function cardStrip(elements: Element[], layout: StyleTokens['layout'], graphic: 
 }
 
 export function layoutElements(scene: Scene, layout: StyleTokens['layout'] = visualStyles.legacy.layout): ElementBox[] {
+  if(scene.images?.length){
+    const illustrated=scene.elements.filter(e=>scene.images!.some(b=>b.element_id===e.id));
+    const labels=scene.elements.filter(e=>!illustrated.includes(e));
+    return scene.elements.map(e=>{
+      const image=illustrated.includes(e),items=image?illustrated:labels,index=items.indexOf(e);
+      const width=image?(items.length===1?1000:860):(1760-(items.length-1)*24)/items.length;
+      return {id:e.id,x:image&&items.length===1?460:80+index*(width+(image?40:24)),y:image?150:620,width,height:image?440:270,fontSize:32,lines:wrapText(e.content,Math.floor((width-64)/32))};
+    });
+  }
   if (scene.type === 'code_walkthrough' || scene.type === 'state_diagram' || scene.type === 'execution_timeline' || scene.type === 'data_chart') return [];
   if (scene.type === 'concept') {
     const support = scene.elements.filter(e => e.concept_role !== 'definition'), columns = Math.min(3, Math.max(1, support.length));

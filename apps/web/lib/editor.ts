@@ -7,13 +7,15 @@ import {conceptLabels} from '../../../packages/video-schema/src/concept';
 import {visualActionErrors, type DraftVisualAction} from '../../../packages/video-schema/src/visual-actions';
 import {diagramErrors} from '../../../packages/video-schema/src/diagrams';
 
-export type DraftScene = Pick<Scene, 'id' | 'type' | 'elements' | 'code' | 'edges' | 'structure' | 'timeline' | 'chart' | 'motif' | 'dialogue' | 'process' | 'funnel'> & {
+export type DraftScene = Pick<Scene, 'id' | 'type' | 'elements' | 'code' | 'edges' | 'structure' | 'timeline' | 'chart' | 'motif' | 'dialogue' | 'process' | 'funnel' | 'images'> & {
   visual_actions?: DraftVisualAction[];
   narration: {text: string; audio_asset_id?: string}; duration_frames?: number;
 };
 export type SceneRow = {id: string; revision: number; state: string; scene: DraftScene};
+export type TeachingImagePlanEntry = {status:'planned'|'needs_review';scene_fingerprint:string;plan:{needed:boolean;reason:string;
+  requirements:{id:string;element_id:string;purpose:'object'|'metaphor'|'comparison'|'spatial';description:string;composition:string;alt:string;quote:string}[]}};
 export type Project = {id: string; title: string; revision: number; source_text: string;
-  config: Omit<VideoProject, 'scenes'> & {visual_style?:VisualStyleSnapshot; manuscript?:{markdown:string}}; scenes: SceneRow[];
+  config: Omit<VideoProject, 'scenes'> & {visual_style?:VisualStyleSnapshot; manuscript?:{markdown:string};image_plans?:Record<string,TeachingImagePlanEntry>}; scenes: SceneRow[];
   visual_style?:VisualStyleSnapshot;
   voice?: {resource_id: string; speaker: string}; voice_configured?: boolean;
   teaching_style?: TeachingStyle};
@@ -113,7 +115,7 @@ export function jobScene(project: Project|null, job: Job): SceneRow|null {
 }
 
 export function canRetime(row: SceneRow): boolean {
-  return ['ready', 'needs_timing'].includes(row.state) && !!row.scene.narration.audio_asset_id;
+  return !row.scene.images?.length && ['ready', 'needs_timing'].includes(row.state) && !!row.scene.narration.audio_asset_id;
 }
 export function canPreview(row: SceneRow): boolean {
   return row.state === 'ready' && !!row.scene.duration_frames && !!row.scene.narration.audio_asset_id;
@@ -124,7 +126,7 @@ export function retryMessage(kind: string): string {
 }
 
 export function videoDocument(project:Project):VideoProject{
-  const {visual_style:_,manuscript:_manuscript,...config}=project.config;
+  const {visual_style:_,manuscript:_manuscript,image_plans:_imagePlans,...config}=project.config;
   return {...config,scenes:project.scenes.map(s=>s.scene as Scene)};
 }
 export function readyVideo(project: Project): VideoProject | null {
@@ -161,7 +163,7 @@ export function draftPreviewVideo(project:Project,sceneId:string):VideoProject|n
     previousAction=start;
     return {...a,start_frame:start,duration_frames:12};
   });
-  const {visual_style:_,manuscript:_manuscript,...config}=project.config;
+  const {visual_style:_,manuscript:_manuscript,image_plans:_imagePlans,...config}=project.config;
   return {...config,assets:[],scenes:[{...row.scene,
     visual_actions:actions,
     narration:{text,audio_asset_id:'',audio_start_frame:6},

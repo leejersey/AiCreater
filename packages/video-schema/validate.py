@@ -273,6 +273,33 @@ def validate_scene_visuals(scene, path):
     return errors
 
 
+def validate_scene_images(scene, assets, path):
+    """Validate bindings independently of derived voice/timing fields."""
+    if 'images' not in scene:
+        return []
+    schema = {**SCHEMA['definitions']['Scene']['properties']['images'], 'definitions': SCHEMA['definitions']}
+    errors = [{'path': path + '/images', 'code': 'image_schema', 'message': e.message}
+              for e in Draft7Validator(schema).iter_errors(scene['images'])]
+    if errors:
+        return errors
+    def fail(suffix, code, message):
+        errors.append({'path': path + '/images' + suffix, 'code': code, 'message': message})
+    if (len(scene['elements']) > 4 or scene['type'] not in ['card_sequence', 'comparison_panel'] or scene.get('motif', 'default') != 'default'
+            or any(scene.get(k) for k in ['dialogue', 'process', 'funnel'])):
+        fail('', 'image_layout', 'Images need a supported default composition')
+    ids = [b['element_id'] for b in scene['images']]
+    if len(set(ids)) != len(ids):
+        fail('', 'duplicate_id', 'IDs must be unique')
+    for j, binding in enumerate(scene['images']):
+        if assets is not None and assets.get(binding['asset_id'], {}).get('type') != 'image':
+            fail(f'/{j}/asset_id', 'missing_image', 'Image asset does not exist')
+        if binding['element_id'] not in [e['id'] for e in scene['elements']]:
+            fail(f'/{j}/element_id', 'image_target', 'Image target must exist')
+        if not binding['alt'].strip(WHITESPACE) or any(unicodedata.category(c) in ['Cc', 'Cf', 'Zl', 'Zp'] for c in binding['alt']):
+            fail(f'/{j}/alt', 'image_alt', 'Image description must be visible text')
+    return errors
+
+
 def validate_project(value):
     errors = []
 
@@ -290,6 +317,9 @@ def validate_project(value):
 
     assets = {a['id']: a for a in value['assets']}
     unique([a['id'] for a in value['assets']], '/assets')
+    for i, asset in enumerate(value['assets']):
+        if asset['type'] == 'image' and asset['width'] * asset['height'] > 8388608:
+            fail(f'/assets/{i}', 'image_pixels', 'Image exceeds eight megapixels')
     unique([s['id'] for s in value['scenes']], '/scenes')
     if sum(s['duration_frames'] for s in value['scenes']) > 9000:
         fail('/scenes', 'duration_limit', 'Video exceeds five minutes')
@@ -299,12 +329,13 @@ def validate_project(value):
     for i, scene in enumerate(value['scenes']):
         path = f'/scenes/{i}'
         asset = assets.get(scene['narration']['audio_asset_id'])
-        if asset is None:
+        if asset is None or asset['type'] != 'audio':
             fail(path + '/narration/audio_asset_id', 'missing_asset', 'Audio asset does not exist')
         elif scene['duration_frames'] != 12 + math.ceil(asset['duration_ms'] * 30 / 1000):
             fail(path + '/duration_frames', 'audio_duration', 'Scene must contain audio plus six frames at each end')
         errors.extend(validate_scene_visuals(scene, path))
         ids = [e['id'] for e in scene['elements']]
+        errors.extend(validate_scene_images(scene, assets, path))
         targets = [a['target'] for a in scene['animations']]
         if len(set(targets)) != len(targets) or len(targets) != len(set(ids)) or any(t not in ids for t in targets):
             fail(path + '/animations', 'animation_targets', 'Each element needs exactly one entrance animation')

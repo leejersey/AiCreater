@@ -4,6 +4,12 @@ CREATE TABLE IF NOT EXISTS users (
     password_hash text NOT NULL,
     created_at timestamptz NOT NULL DEFAULT now()
 );
+CREATE TABLE IF NOT EXISTS user_image_settings (
+    user_id uuid PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE,
+    base_url text NOT NULL,
+    encrypted_api_key text NOT NULL,
+    updated_at timestamptz NOT NULL DEFAULT now()
+);
 CREATE TABLE IF NOT EXISTS user_sessions (
     token_hash text PRIMARY KEY CHECK (length(token_hash)=64),
     user_id uuid NOT NULL REFERENCES users(id),

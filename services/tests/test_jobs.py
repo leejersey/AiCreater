@@ -490,7 +490,7 @@ time.sleep(20)
         job = self.jobs.submit_generate(project['id'],1)
         self.assertEqual(job['input']['materials'],SECTIONS)
         self.assertEqual(job['input']['source_text'],SECTIONS[0]['narration'])
-        self.assertEqual(job['input']['protocol_version'],'teaching-outline:7')
+        self.assertEqual(job['input']['protocol_version'],'teaching-outline:9')
         self.assertEqual(self.jobs.submit_generate(project['id'],1)['id'],job['id'])
         self.assertEqual(estimate_project(self.store,self.jobs.model,project['id'],1,'generate',[])['status'],'no_new_call')
         attempt = self.jobs.claim()
@@ -500,12 +500,12 @@ time.sleep(20)
         saved = self.store.get_project(project['id']);row = saved['scenes'][0]
         candidate = self.jobs.submit_regenerate(row['id'],row['revision'])
         self.assertEqual(candidate['input']['materials'],SECTIONS)
-        self.assertEqual(candidate['input']['protocol_version'],'scene-candidate:7')
+        self.assertEqual(candidate['input']['protocol_version'],'scene-candidate:9')
         voice = self.jobs.submit_voice(row['id'],row['revision'])
         self.assertNotIn('manuscript',voice['input'])
         self.assertNotIn('uv add',voice['input']['scene']['narration']['text'])
 
-    def test_v5_compiled_provider_publishes_source_bound_graphics(self):
+    def test_frozen_v6_provider_publishes_source_bound_graphics(self):
         import io,json,httpx
         from contextlib import redirect_stdout
         from unittest.mock import patch
@@ -514,7 +514,7 @@ time.sleep(20)
         self.jobs.model='deepseek-flash'
         project=self.store.create_project('紧凑导演链','先识别，再校验。');self.project=project
         job=self.jobs.submit_generate(project['id'],1)
-        self.assertEqual(job['input']['protocol_version'],'teaching-outline:6')
+        self.assertEqual(job['input']['protocol_version'],'teaching-outline:8')
         quote=estimate_project(self.store,self.jobs.model,project['id'],1,'generate',[])
         self.assertEqual(quote['status'],'no_new_call')
         args={'p1':{'layout':'process','a':1,'b':2,'c':0,'d':0,'note_a':0,'note_b':0}}
@@ -524,7 +524,7 @@ time.sleep(20)
             return httpx.Response(200,json={'choices':[{'finish_reason':'tool_calls','message':{'tool_calls':[{'type':'function','function':{'name':'plan_lesson','arguments':json.dumps(value)}}]}}]})
         client=httpx.Client(transport=httpx.MockTransport(handler))
         output=io.StringIO()
-        with patch('httpx.Client',return_value=client),patch.dict('os.environ',{'DEEPSEEK_API_KEY':'test'}),patch('sys.stdin',io.StringIO(json.dumps(job['input']))),redirect_stdout(output):child()
+        with patch('httpx.Client',return_value=client),patch.dict('os.environ',{'DEEPSEEK_API_KEY':'test'}),patch('sys.stdin',io.StringIO(json.dumps({**job['input'],'protocol_version':'teaching-outline:6'}))),redirect_stdout(output):child()
         draft=json.loads(output.getvalue())['draft'];self.assertEqual(len(calls),2);attempt=self.jobs.claim()
         self.assertEqual(self.jobs.publish_outline(job['id'],attempt['attempt_id'],draft)['state'],'succeeded')
         saved=self.store.get_project(project['id']);self.assertIn('process',saved['scenes'][0]['scene'])
@@ -567,7 +567,7 @@ time.sleep(20)
         selected=saved['scenes'][1];candidate=self.jobs.submit_regenerate(selected['id'],selected['revision'])
         quote=estimate_project(self.store,self.jobs.model,project['id'],saved['revision'],'regenerate',[{'scene_id':selected['id'],'expected_revision':selected['revision']}])
         self.assertEqual(quote['status'],'no_new_call');self.assertEqual(quote['quantity']['reused_jobs'],1)
-        self.assertEqual(candidate['input']['protocol_version'],'scene-candidate:6')
+        self.assertEqual(candidate['input']['protocol_version'],'scene-candidate:8')
 
     def test_v5_generation_dedup_does_not_reuse_failed_legacy_jobs(self):
         project=self.store.create_project('protocol upgrade','规则匹配。');self.project=project;old_ids=[]
@@ -578,7 +578,7 @@ time.sleep(20)
             attempt=self.jobs.claim();self.assertEqual(attempt['id'],old['id'])
             self.jobs.fail(old['id'],attempt['attempt_id'],'storyboard_invalid_cue');old_ids.append(old['id'])
         current=self.jobs.submit_generate(project['id'],1)
-        self.assertNotIn(current['id'],old_ids);self.assertEqual(current['input']['protocol_version'],'teaching-outline:6')
+        self.assertNotIn(current['id'],old_ids);self.assertEqual(current['input']['protocol_version'],'teaching-outline:8')
         self.assertEqual(self.jobs.submit_generate(project['id'],1)['id'],current['id'])
         self.assertTrue(all(self.jobs.get(identifier)['state']=='failed' for identifier in old_ids))
         self.assertEqual(len(self.jobs.list_project(project['id'])),6)
@@ -589,7 +589,7 @@ time.sleep(20)
             payload=copy.deepcopy(current['input']);payload['protocol_version']=f'scene-candidate:{version}'
             with self.store.connection() as conn:old=self.jobs._submit(conn,current['project_id'],current['scene_id'],current['base_revision'],payload)
             old_ids.append(old['id']);self.assertEqual(self.jobs.get(old['id'])['input']['protocol_version'],payload['protocol_version'])
-        self.assertEqual(current['input']['protocol_version'],'scene-candidate:6');self.assertNotIn(current['id'],old_ids)
+        self.assertEqual(current['input']['protocol_version'],'scene-candidate:8');self.assertNotIn(current['id'],old_ids)
         self.assertEqual(len(set(old_ids+[current['id']])),6);self.assertEqual(self.submit()['id'],current['id'])
 
     def test_cancelled_or_failed_generate_resubmit_reopens_same_job(self):

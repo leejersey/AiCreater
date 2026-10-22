@@ -72,6 +72,8 @@ def draft_valid(document):
     unicode_valid(document)
     scenes = []
     for scene in document['scenes']:
+        image_errors = validator.validate_scene_images(scene, {a['id']: a for a in document['assets']} if 'assets' in document else None, '/scenes')
+        if image_errors: raise StoreError('validation', 'Invalid teaching images', image_errors)
         draft = {k: copy.deepcopy(v) for k, v in scene.items() if k in ['id', 'type', 'elements', 'edges', 'code', 'structure', 'timeline', 'chart', 'motif', 'visual_actions', 'dialogue', 'process', 'funnel']}
         for action in draft.get('visual_actions', []):
             action.pop('start_frame', None); action.pop('duration_frames', None)
@@ -114,23 +116,23 @@ class Store:
     def _asset_path(self, key):
         file = self.public / key
         if not file.resolve().is_relative_to(self.public) or file.resolve() != file.absolute():
-            raise StoreError('assets', 'Audio cache path must remain inside public root')
+            raise StoreError('assets', 'Media cache path must remain inside public root')
         return file
 
     def _assets(self, document, callback=None, local_only=False):
         if self.objects and not local_only:
             for asset in document['assets']:
-                self.objects.ensure(self._asset_path(asset['storage_key']), asset['checksum'], 50 * 1024**2, callback)
+                self.objects.ensure(self._asset_path(asset['storage_key']), asset['checksum'], (10 if asset['type'] == 'image' else 50) * 1024**2, callback)
         try:
             subprocess.run([str(ROOT / 'node_modules/.bin/tsx'), str(ROOT / 'scripts/verify-project.ts'), str(self.public)],
                 input=json.dumps(document, ensure_ascii=False), text=True, capture_output=True, check=True, timeout=120,
                 env={k: v for k, v in os.environ.items() if k not in ['DATABASE_URL', 'POSTGRES_PASSWORD',
-                     'PGPASSWORD', 'DEEPSEEK_API_KEY', 'VOLCENGINE_API_KEY', 'VOLCENGINE_ACCESS_KEY'] and not k.startswith(('MINIO_', 'RUSTFS_'))})
+                     'PGPASSWORD', 'DEEPSEEK_API_KEY', 'OPENAI_API_KEY', 'ACCOUNT_CREDENTIALS_KEY', 'VOLCENGINE_API_KEY', 'VOLCENGINE_ACCESS_KEY'] and not k.startswith(('MINIO_', 'RUSTFS_'))})
         except (subprocess.SubprocessError, OSError):
-            raise StoreError('assets', 'Local audio verification failed') from None
+            raise StoreError('assets', 'Local media verification failed') from None
         if self.objects and not local_only:
             for asset in document['assets']:
-                self.objects.put(self._asset_path(asset['storage_key']), asset['checksum'], 50 * 1024**2, callback)
+                self.objects.put(self._asset_path(asset['storage_key']), asset['checksum'], (10 if asset['type'] == 'image' else 50) * 1024**2, callback)
 
     def _read(self, conn, project_id, lock=False):
         row = conn.execute('SELECT * FROM projects WHERE id=%s' + (' FOR UPDATE' if lock else ''),
@@ -139,7 +141,9 @@ class Store:
         row.pop('owner_id',None)
         if row.get('updated_at') is not None:row['updated_at']=row['updated_at'].isoformat()
         scenes = conn.execute('SELECT * FROM scenes WHERE project_id=%s AND deleted_at IS NULL ORDER BY position', [row['id']]).fetchall()
+        from services.workflow.image_plans import invalidate_plan
         for scene in scenes:
+            invalidate_plan(row['config'], scene['scene'])
             scene.pop('deleted_at', None)
             scene['id'], scene['project_id'] = str(scene['id']), str(scene['project_id'])
         return {**row, 'id': str(row['id']), 'scenes': scenes,
@@ -156,7 +160,7 @@ class Store:
 
     @staticmethod
     def _dsl(project):
-        config={k:copy.deepcopy(v) for k,v in project['config'].items() if k not in ('visual_style', 'teaching_style', 'manuscript')}
+        config={k:copy.deepcopy(v) for k,v in project['config'].items() if k not in ('visual_style', 'teaching_style', 'manuscript', 'image_plans')}
         return {**config, 'scenes': [copy.deepcopy(s['scene']) for s in project['scenes']]}
 
     def list_projects(self, owner_id=None):
@@ -178,12 +182,13 @@ class Store:
     def asset_file(self, project_id, asset_id):
         project = self.get_project(project_id)
         asset = next((a for a in project['config']['assets'] if a['id'] == asset_id), None)
-        if asset is None: raise StoreError('not_found', 'Audio asset not found')
+        if asset is None: raise StoreError('not_found', 'Media asset not found')
         file = self._asset_path(asset['storage_key'])
-        if self.objects: self.objects.ensure(file, asset['checksum'], 50 * 1024**2)
-        if (not file.resolve().is_relative_to(self.public) or file.resolve() != file.absolute() or not file.is_file() or not 0 < file.stat().st_size <= 50 * 1024**2
+        limit = (10 if asset['type'] == 'image' else 50) * 1024**2
+        if self.objects: self.objects.ensure(file, asset['checksum'], limit)
+        if (not file.resolve().is_relative_to(self.public) or file.resolve() != file.absolute() or not file.is_file() or not 0 < file.stat().st_size <= limit
                 or hashlib.sha256(file.read_bytes()).hexdigest() != asset['checksum']):
-            raise StoreError('assets', 'Audio asset verification failed')
+            raise StoreError('assets', 'Media asset verification failed')
         return file
 
     def create_project(self, title, source_text, owner_id=None, teaching_style=None, manuscript_format='plain'):
@@ -294,6 +299,8 @@ class Store:
                         if key in row['scene']: scene[key] = copy.deepcopy(row['scene'][key])
                 elif state != 'needs_voice':
                     state = 'needs_timing'; scene.pop('animations', None)
+            if scene.get('images') and state != 'ready':
+                raise StoreError('validation', 'Image narration/timing changes require binding review; not yet supported')
             if scene == row['scene']: return project
             row['scene'], row['state'] = scene, state
             document = self._dsl(project)
@@ -479,6 +486,8 @@ class Store:
             profile = {**self.render_profile_for(project), 'render': copy.deepcopy(document['video_config'])}
             if 'manuscript' in project['config']:
                 profile['manuscript'] = copy.deepcopy(project['config']['manuscript'])
+            if 'image_plans' in project['config']:
+                profile['image_plans'] = copy.deepcopy(project['config']['image_plans'])
             conn.execute('INSERT INTO project_versions (id,project_id,revision,dsl,profile) VALUES (%s,%s,%s,%s,%s) '
                          'ON CONFLICT (project_id,revision) DO NOTHING',
                          [str(uuid.uuid4()), project_id, expected_revision, Jsonb(document), Jsonb(profile)])
@@ -561,7 +570,14 @@ class Store:
             if not candidate: raise StoreError('not_found', 'Candidate not found for this scene')
             if (row['revision'] != expected_revision or candidate['base_revision'] != expected_revision or candidate['accepted']):
                 raise StoreError('conflict', 'Scene or candidate revision changed')
+            if row['scene'].get('images'):
+                raise StoreError('validation', 'Image scene candidates require binding review; not yet supported')
             scene, old = copy.deepcopy(candidate['draft']), row['scene']
+            plan = scene.pop('image_plan', None)
+            config = copy.deepcopy(project['config'])
+            if plan is not None:
+                from services.workflow.image_plans import plan_entry
+                config.setdefault('image_plans', {})[scene['id']] = plan_entry(scene, plan)
             state = 'needs_voice'
             if scene['narration']['text'] == old['narration']['text'] and row['state'] != 'needs_voice':
                 scene['narration'] = copy.deepcopy(old['narration'])
@@ -577,7 +593,7 @@ class Store:
             if state == 'ready': final_valid({**document, 'scenes': [scene]})
             conn.execute('UPDATE scenes SET scene=%s,state=%s,revision=revision+1,generated_revision=generated_revision+1 WHERE id=%s',
                          [Jsonb(scene), state, scene_id])
-            conn.execute('UPDATE projects SET revision=revision+1 WHERE id=%s', [project['id']])
+            conn.execute('UPDATE projects SET config=%s,revision=revision+1 WHERE id=%s', [Jsonb(config), project['id']])
             conn.execute('UPDATE scene_candidates SET accepted=true WHERE id=%s', [candidate_id])
             return self._read(conn, project['id'])
 

@@ -129,7 +129,7 @@ class Jobs:
         with self.store.connection() as conn:
             project = self.store._read(conn, project_id, lock=True)
             materials = copy.deepcopy(project['config'].get('manuscript', {}).get('sections', []))
-            protocol = 'teaching-outline:7' if materials else 'teaching-outline:6'
+            protocol = 'teaching-outline:9' if materials else 'teaching-outline:8'
             existing = conn.execute('''SELECT id FROM jobs WHERE project_id=%s AND kind='generate'
                 AND base_revision=%s AND input->>'model'=%s AND input->'profile'=%s
                 AND input->>'protocol_version'=%s
@@ -182,6 +182,8 @@ class Jobs:
 
     @staticmethod
     def _draft_scene(scene):
+        # shortcut: image transformations await batch 2; never silently discard a binding.
+        if scene.get('images'): raise StoreError('validation', 'Teaching images currently support preview/export, not voice or timing changes')
         result = {k: copy.deepcopy(v) for k, v in scene.items() if k in ['id', 'type', 'elements', 'edges', 'code', 'structure', 'timeline', 'chart', 'motif', 'visual_actions', 'dialogue', 'process', 'funnel']}
         for action in result.get('visual_actions', []):
             action.pop('start_frame', None); action.pop('duration_frames', None)
@@ -201,7 +203,8 @@ class Jobs:
             document = self.store._dsl(project)
             document['scenes'] = [copy.deepcopy(row['scene'])]
             audio_id = row['scene']['narration'].get('audio_asset_id')
-            document['assets'] = [a for a in document['assets'] if a['id'] == audio_id]
+            used = {audio_id, *(b['asset_id'] for b in row['scene'].get('images', []))}
+            document['assets'] = [a for a in document['assets'] if a['id'] in used]
             final_valid(document); self.store._assets(document)
             frozen = {'project_id': project['id'], 'revision': project['revision'], 'dsl': document,
                       'profile': {**self.store.render_profile_for(project), 'render': copy.deepcopy(document['video_config'])}}
@@ -361,7 +364,7 @@ class Jobs:
         except ProviderError: raise StoreError('timing_cache', ERRORS['timing_cache']) from None
         return {'kind': 'timing', 'scene_id': row['id'], 'base_revision': row['revision'],
                 'scene': self._draft_scene(row['scene']), 'asset': copy.deepcopy(asset), 'words_checksum': checksum,
-                'config': {k: copy.deepcopy(v) for k, v in project['config'].items() if k not in ['assets','visual_style','teaching_style','manuscript']},
+                'config': {k: copy.deepcopy(v) for k, v in project['config'].items() if k not in ['assets','visual_style','teaching_style','manuscript','image_plans']},
                 'profile': self.store.profile_for(project), 'protocol_version': 'local-timing:1'}
 
     def submit_timing(self, scene_id, base_revision):
@@ -387,12 +390,13 @@ class Jobs:
             project = self.store._read(conn, str(owner['project_id']), lock=True)
             scene = self.store._scene(project, scene_id)
             if scene['revision'] != base_revision: raise StoreError('conflict', 'Scene revision changed')
+            if scene['scene'].get('images'): raise StoreError('validation', 'Image scene regeneration requires binding review; not yet supported')
             if scene['scene']['type'] == 'data_chart': raise StoreError('validation', 'Confirmed chart data cannot use model regeneration')
             from services.workflow.manuscript_document import scene_materials
             materials = scene_materials(project['config'].get('manuscript', {}), scene['scene']['narration']['text'])
             payload = {'kind': 'regenerate', 'scene_id': scene_id, 'base_revision': base_revision,
                        'scene': copy.deepcopy(scene['scene']), 'profile': copy.deepcopy(self.store.profile),
-                       'model': self.model, 'protocol_version': 'scene-candidate:7' if materials else 'scene-candidate:6',
+                       'model': self.model, 'protocol_version': 'scene-candidate:9' if materials else 'scene-candidate:8',
                        'teaching_style': project['teaching_style'],
                        **({'materials': materials} if materials else {})}
             return self._submit(conn, project['id'], scene_id, base_revision, payload)
@@ -413,7 +417,14 @@ class Jobs:
         if job.get('kind') == 'timing' and code == 'worker_lost':
             error['message'] = 'Local timing worker heartbeat expired; explicit retry does not call a provider'
         details = safe_schema_errors(schema_errors) if code == 'storyboard_schema_error' else []
-        if details: error['schema_errors'] = details
+        if details:
+            error['schema_errors'] = details
+            for detail in details:
+                label = re.fullmatch(r'/scenes/(\d+)/elements/(\d+)/content', detail['path'])
+                if label and detail['rule'] == 'maxLength':
+                    scene, element = (int(index) + 1 for index in label.groups())
+                    error['message'] = f'第{scene}个场景、第{element}个元素的画面文字超过40字，请使用短标签；完整口播无需删减。'
+                    break
         cue = safe_cue_error(cue_error) if code == 'storyboard_invalid_cue' else None
         if cue: error['cue_error'] = cue
         return error
@@ -531,11 +542,17 @@ class Jobs:
             except ProviderError: raise StoreError('validation', 'Invalid initial teaching outline') from None
             attached = not project['scenes'] and project['revision'] == job['base_revision']
             if attached:
-                for position, scene in enumerate(draft['scenes']):
+                from services.workflow.image_plans import plan_entry
+                config = copy.deepcopy(project['config'])
+                for position, original in enumerate(draft['scenes']):
+                    scene = copy.deepcopy(original)
+                    plan = scene.pop('image_plan', None)
+                    if plan is not None:
+                        config.setdefault('image_plans', {})[scene['id']] = plan_entry(scene, plan)
                     conn.execute('''INSERT INTO scenes (id,project_id,scene_key,position,state,scene,generated_revision)
                         VALUES (%s,%s,%s,%s,'needs_voice',%s,1)''',
                         [str(uuid.uuid4()), project['id'], scene['id'], position, Jsonb(scene)])
-                conn.execute('UPDATE projects SET revision=revision+1 WHERE id=%s', [project['id']])
+                conn.execute('UPDATE projects SET config=%s,revision=revision+1 WHERE id=%s', [Jsonb(config), project['id']])
             self._terminal(conn, job, 'succeeded')
             conn.execute('UPDATE jobs SET progress=100,result=%s WHERE id=%s',
                          [Jsonb({'attached': attached, 'draft': draft, 'project_id': project['id']}), job['id']])

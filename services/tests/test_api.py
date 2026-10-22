@@ -147,7 +147,7 @@ class ApiTests(ProjectFixture, unittest.TestCase):
         retry=self.client.get('/api/jobs/'+job['job_id']+'/estimate')
         self.assertEqual(retry.status_code,200);self.assertEqual(retry.json()['quantity']['calls'],1)
         regeneration={**body,'operation':'regenerate'}
-        self.assertEqual(self.client.post(url,json=regeneration).json()['quantity']['calls'],2)
+        self.assertEqual(self.client.post(url,json=regeneration).json()['quantity']['calls'],1)
         regenerated=self.client.post('/api/scenes/'+row['id']+'/regenerate',json={'expected_revision':1})
         self.assertEqual(regenerated.status_code,202);self.addCleanup(self.client.app.state.jobs.cancel,regenerated.json()['job_id'])
         self.assertEqual(self.client.post(url,json=regeneration).json()['status'],'no_new_call')
@@ -159,8 +159,8 @@ class ApiTests(ProjectFixture, unittest.TestCase):
     def test_cost_generation_and_batch_reuse_match_job_profile_policy(self):
         fresh=self.store.create_project('估价不触发生成','解释循环。');url='/api/projects/'+fresh['id']+'/estimate'
         body={'operation':'generate','expected_revision':1,'scenes':[]}
-        # V6 prices both layout and source-role requests, not only the first stage.
-        self.assertEqual(self.client.post(url,json=body).json()['quantity']['calls'],2)
+        # V8 combines the director and image plan in one quoted-source request.
+        self.assertEqual(self.client.post(url,json=body).json()['quantity']['calls'],1)
         generated=self.client.post('/api/projects/'+fresh['id']+'/generate',json={'expected_revision':1})
         self.assertEqual(generated.status_code,202);self.addCleanup(self.client.app.state.jobs.cancel,generated.json()['job_id'])
         self.assertEqual(self.client.post(url,json=body).json()['status'],'no_new_call')

@@ -45,18 +45,18 @@ def estimate_payload(payload, *, reused=False, now=None):
         cost = _amount(Decimal(len(text)) * Decimal(TTS_RATES['per_10000']) / Decimal(10000))
         return _result('estimated', ['seed-tts-2.0公开按量参考价：3元/万字符；含字母、标点、空格和换行，按Unicode码点参考。'],
                        cost, cost, [TTS_SOURCE], calls=1, characters=len(text))
-    protocols = {'generate': ['teaching-outline:1', 'teaching-outline:2', 'teaching-outline:3', 'teaching-outline:4', 'teaching-outline:5', 'teaching-outline:6', 'teaching-outline:7'], 'regenerate': ['scene-candidate:1', 'scene-candidate:2', 'scene-candidate:3', 'scene-candidate:4', 'scene-candidate:5', 'scene-candidate:6', 'scene-candidate:7']}
+    protocols = {'generate': ['teaching-outline:1', 'teaching-outline:2', 'teaching-outline:3', 'teaching-outline:4', 'teaching-outline:5', 'teaching-outline:6', 'teaching-outline:7', 'teaching-outline:8', 'teaching-outline:9'], 'regenerate': ['scene-candidate:1', 'scene-candidate:2', 'scene-candidate:3', 'scene-candidate:4', 'scene-candidate:5', 'scene-candidate:6', 'scene-candidate:7', 'scene-candidate:8', 'scene-candidate:9']}
     if kind not in protocols or payload.get('protocol_version') not in protocols[kind] or payload.get('model') != 'deepseek-flash':
         return _result('unknown', ['未核对当前模型/任务协议的价格，暂无法估算。'], calls=1)
     try:
-        director = payload['protocol_version'] in ['teaching-outline:4','scene-candidate:4','teaching-outline:5','scene-candidate:5','teaching-outline:6','scene-candidate:6','teaching-outline:7','scene-candidate:7']
+        director = payload['protocol_version'] in ['teaching-outline:4','scene-candidate:4','teaching-outline:5','scene-candidate:5','teaching-outline:6','scene-candidate:6','teaching-outline:7','scene-candidate:7','teaching-outline:8','scene-candidate:8','teaching-outline:9','scene-candidate:9']
         original = None
         if kind == 'regenerate':
             original = {k: copy.deepcopy(v) for k, v in payload['scene'].items() if k in ['id', 'type', 'narration', 'elements', 'edges', 'code', 'structure', 'timeline', 'chart']}
             if director: original = Jobs._draft_scene(payload['scene'])
             original['narration'] = {'text': original['narration']['text']}
         text = payload['source_text'] if original is None else original['narration']['text']
-        body, _ = storyboard_request(text, payload['model'], original, cue_quotes=payload['protocol_version'].endswith((':2', ':3', ':4', ':5', ':6', ':7')), semantic_graphics=director, **({'compact_director':True,'role_director':payload['protocol_version'].endswith(':6')} if payload['protocol_version'].endswith((':5',':6')) else {}), teaching_style=payload.get('teaching_style') or 'popular', materials=payload.get('materials'))
+        body, _ = storyboard_request(text, payload['model'], original, cue_quotes=payload['protocol_version'].endswith((':2', ':3', ':4', ':5', ':6', ':7', ':8', ':9')), semantic_graphics=director, **({'compact_director':True,'role_director':payload['protocol_version'].endswith(':6')} if payload['protocol_version'].endswith((':5',':6')) else {}), teaching_style=payload.get('teaching_style') or 'popular', materials=payload.get('materials'), image_planning=payload['protocol_version'].endswith((':8', ':9')))
         contents = [message['content'] for message in body['messages']]
         fallback=None
         if payload['protocol_version'].endswith((':5',':6')):
@@ -111,7 +111,7 @@ def estimate_project(store, model, project_id, expected_revision, operation, sce
             materials = project['config'].get('manuscript', {}).get('sections', [])
             if project['scenes']: raise StoreError('conflict', 'Use scene regeneration for an existing outline')
             payloads.append({'kind': 'generate', 'project_id': project['id'], 'base_revision': expected_revision,
-                'source_text': project['source_text'], 'profile': store.profile, 'model': model, 'protocol_version': 'teaching-outline:7' if materials else 'teaching-outline:6', 'teaching_style':project['teaching_style'],
+                'source_text': project['source_text'], 'profile': store.profile, 'model': model, 'protocol_version': 'teaching-outline:9' if materials else 'teaching-outline:8', 'teaching_style':project['teaching_style'],
                 **({'materials':materials} if materials else {})})
         selected = set()
         for item in scenes:
@@ -127,13 +127,13 @@ def estimate_project(store, model, project_id, expected_revision, operation, sce
             voice = operation in ['voice', 'batch_voice']
             payload = {'kind': 'voice' if voice else 'regenerate', 'scene_id': row['id'], 'base_revision': row['revision'],
                 'scene': Jobs._draft_scene(row['scene']) if voice else row['scene'], 'profile': store.profile_for(project) if voice else store.profile,
-                'protocol_version': 'native-voice:1' if voice else 'scene-candidate:6'}
+                'protocol_version': 'native-voice:1' if voice else 'scene-candidate:8'}
             if not voice:
                 from services.workflow.manuscript_document import scene_materials
                 materials = scene_materials(project['config'].get('manuscript', {}), row['scene']['narration']['text'])
                 payload.update(model=model,teaching_style=project['teaching_style'])
                 if materials:
-                    payload.update(materials=materials,protocol_version='scene-candidate:7')
+                    payload.update(materials=materials,protocol_version='scene-candidate:9')
             payloads.append(payload)
         quotes = []
         for payload in payloads:

@@ -1,4 +1,5 @@
 import React from 'react';
+import {Img} from 'remotion';
 import type {Scene} from '../../video-schema/src/types';
 import {layoutElements, flowPath, hasGraphicStyle} from './layout';
 import {usePalette, useVisualStyle, isPaperSlide} from './theme';
@@ -11,13 +12,14 @@ import {TeachingDiagram} from './TeachingDiagrams';
 import {demonstrationFor} from './demonstrations';
 
 // Shared by the actual video and static visual regression tests.
-export function SceneGraphics({scene:original,frame}:{scene:Scene;frame:number}){
+export function SceneGraphics({scene:original,frame,imageSources={}}:{scene:Scene;frame:number;imageSources?:Record<string,string>}){
+  if(original.images?.some(b=>!imageSources[b.asset_id]))throw new Error('image_source: missing private image URL');
   const scene=visualSceneAtFrame(original,frame);
   const actions=scene.visual_actions??[],connections=actions.filter(a=>a.kind==='connect');
   const focus=actions.filter(a=>a.kind==='highlight'&&a.start_frame<=frame).at(-1);
   const focusProgress=focus?actionProgressAtFrame(focus,frame):0;
   const palette=usePalette(),style=useVisualStyle(),paper=isPaperSlide(style);
-  const demo=demonstrationFor(original,style);
+  const demo=scene.images?undefined:demonstrationFor(original,style);
   if(demo){const View=demo.View;return <View scene={original} frame={frame}/>;}
   if(scene.dialogue||scene.process)return <TeachingDiagram scene={original} frame={frame}/>;
   const motif = typeof scene.motif === 'string' ? scene.motif : 'default';
@@ -53,16 +55,18 @@ export function SceneGraphics({scene:original,frame}:{scene:Scene;frame:number})
     </svg>}
     {boxes.map((box,i)=>{
       const motion=state(box.id),element=scene.elements.find(e=>e.id===box.id)!,graphic=hasGraphicStyle(element);
+      const image=scene.images?.find(b=>b.element_id===box.id);
       const accent=element.panel_style==='conclusion'?palette.accent:graphic&&element.icon==='warning'?palette.warning:graphic&&element.icon==='search'?palette.secondary:graphic?palette.source:scene.type==='comparison_panel'&&i%2?palette.secondary:palette.accent;
-      const padding=graphic?style.card.graphicPadding:scene.type==='flow_diagram'?style.card.flowPadding:style.card.padding;
+      const padding=scene.images?16:graphic?style.card.graphicPadding:scene.type==='flow_diagram'?style.card.flowPadding:style.card.padding;
       const outline=style.card.outline||titleOutline;
       const sticky = paper && !titleOutline && motif === 'default';
       const background=outline?palette.background:element.panel_style==='conclusion'?palette.selected:palette.card;
       const borderWidth=titleOutline?Math.max(style.card.borderWidth,2):style.card.borderWidth;
       const stamp = paper && (element.source_label || element.panel_style === 'conclusion');
-      return <div key={box.id} data-element={box.id} data-action-highlight={focus?.target===box.id?box.id:undefined} data-entrance={style.entrance.kind} data-silhouette={scene.type} data-sticky={sticky||undefined} style={{position:'absolute',left:box.x,top:box.y,width:box.width,height:box.height,boxSizing:'border-box',padding,borderRadius:sticky?4:titleOutline?Math.max(style.card.radius,12):style.card.radius,border:`${borderWidth}px solid ${outline?accent:accent+'55'}`,background,outline:focus?.target===box.id?`3px solid ${palette.accent}`:undefined,outlineOffset:focus?.target===box.id?6:undefined,boxShadow:titleOutline?'none':sticky?'0 8px 0 rgba(0,0,0,0.08)':style.card.shadow,opacity:motion.opacity*(focus&&focus.target!==box.id?1-0.6*focusProgress:1),transform:`translateY(${motion.translateY}px) rotate(${sticky?(i%2?-0.6:0.5):0}deg)`,clipPath:motion.clipPath,display:'flex',alignItems:'center',justifyContent:'center'}}>
+      return <div key={box.id} data-element={box.id} data-teaching-image={image?.element_id} data-action-highlight={focus?.target===box.id?box.id:undefined} data-entrance={style.entrance.kind} data-silhouette={scene.type} data-sticky={sticky||undefined} style={{position:'absolute',left:box.x,top:box.y,width:box.width,height:box.height,boxSizing:'border-box',padding,borderRadius:sticky?4:titleOutline?Math.max(style.card.radius,12):style.card.radius,border:`${borderWidth}px solid ${outline?accent:accent+'55'}`,background,outline:focus?.target===box.id?`3px solid ${palette.accent}`:undefined,outlineOffset:focus?.target===box.id?6:undefined,boxShadow:titleOutline?'none':sticky?'0 8px 0 rgba(0,0,0,0.08)':style.card.shadow,opacity:motion.opacity*(focus&&focus.target!==box.id?1-0.6*focusProgress:1),transform:`translateY(${motion.translateY}px) rotate(${sticky?(i%2?-0.6:0.5):0}deg)`,clipPath:motion.clipPath,display:'flex',flexDirection:image?'column':undefined,gap:image?12:undefined,alignItems:'center',justifyContent:'center'}}>
         {sticky&&<div data-tape aria-hidden="true" style={{position:'absolute',top:-10,left:'42%',width:64,height:18,background:'#f0d56c',opacity:0.85,transform:'rotate(-2deg)'}}/>}
         {stamp&&<div data-stamp={element.source_label||'结论'} style={{position:'absolute',top:12,right:16,padding:'2px 10px',border:`2px solid ${palette.warning}`,color:palette.warning,fontSize:18,transform:'rotate(8deg)',background:palette.background}}>{element.source_label||'结论'}</div>}
+        {image&&<Img src={imageSources[image.asset_id]} alt={image.alt} style={{width:'100%',height:180,flexShrink:0,objectFit:'contain'}}/>}
         {scene.type==='concept'?<div data-concept-role={element.concept_role} style={{display:'flex',flexDirection:'column',alignItems:'center',gap:style.typography.graphicGap,textAlign:'center',lineHeight:style.typography.lineHeight}}>
           <div style={{fontSize:22,color:palette.muted}}>{conceptLabels[element.concept_role!]}</div>
           <div style={{fontSize:box.fontSize,whiteSpace:'pre'}}>{box.lines.join('\n')}</div>

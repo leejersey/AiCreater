@@ -28,7 +28,7 @@ function paperBackground(base: string) {
   };
 }
 
-function SceneView({scene, audioSrc, index, count, seriesTitle}: {scene: Scene; audioSrc?: string; index: number; count: number; seriesTitle?: string}) {
+function SceneView({scene, audioSrc, imageSources, index, count, seriesTitle}: {scene: Scene; audioSrc?: string; imageSources:Record<string,string>; index: number; count: number; seriesTitle?: string}) {
   const frame = useCurrentFrame();
   const palette = usePalette();
   const style = useVisualStyle();
@@ -45,7 +45,7 @@ function SceneView({scene, audioSrc, index, count, seriesTitle}: {scene: Scene; 
     {scene.type === 'state_diagram' && <StateLesson scene={scene} frame={frame}/>}
     {scene.type === 'data_chart' && <DataChart scene={scene} frame={frame}/>}
     {scene.type === 'execution_timeline' && <TimelineLesson scene={scene} frame={frame}/>}
-    <SceneGraphics scene={scene} frame={frame}/>
+    <SceneGraphics scene={scene} frame={frame} imageSources={imageSources}/>
     {caption && <div style={{position: 'absolute', left: 96, right: 96, top: mechanism?930:920, height: 128, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: mechanism?36:44, lineHeight: 1.35, textAlign: 'center', whiteSpace: 'pre', background: mechanism?'transparent':palette.caption, color: mechanism?palette.text:palette.captionText, borderRadius: paper ? 8 : 16}}>{wrapText(caption.text, mechanism?30:22).join('\n')}</div>}
     {audioSrc&&<Sequence from={scene.narration.audio_start_frame} layout="none"><Audio src={audioSrc}/></Sequence>}
   </AbsoluteFill>;
@@ -63,14 +63,14 @@ export function Video({project, audioUrls, visualStyle,visualStyleSnapshot,draft
       const ctx = canvas.getContext('2d')!;
       const custom=style!==visualStyles.legacy;
       for (const scene of project?.scenes ?? []) {
-        const demo=demonstrationTextBoxes(scene,style),teaching=diagramBoxes(scene),funnel=isSemanticFunnel(scene),semantic=!!demo||!!teaching||funnel;
+        const demo=scene.images?undefined:demonstrationTextBoxes(scene,style),teaching=diagramBoxes(scene),funnel=isSemanticFunnel(scene),semantic=!!demo||!!teaching||funnel;
         const boxes=demo??teaching??(funnel?funnelTextBoxes(scene):(motifLayout(scene,style.layout)??layoutElements(scene,style.layout)));
         for (const box of boxes) {
           const graphic=!semantic&&hasGraphicStyle(scene.elements.find(e=>e.id===box.id)!);
-          const padding=graphic?style.card.graphicPadding:scene.type==='flow_diagram'?style.card.flowPadding:style.card.padding;
+          const padding=scene.images?16:graphic?style.card.graphicPadding:scene.type==='flow_diagram'?style.card.flowPadding:style.card.padding;
           ctx.font = `400 ${box.fontSize}px "Noto Sans SC"`;
           if (box.lines.some(line => ctx.measureText(line).width > box.width - (semantic?0:custom?Math.max(48,2*(padding+style.card.borderWidth)):48))) throw new Error(`layout_overflow: ${scene.id}/${box.id}`);
-          const contentHeight=box.lines.length*box.fontSize*(semantic?1.35:style.typography.lineHeight)+(scene.type==='concept'?22*style.typography.lineHeight+style.typography.graphicGap:graphic?64+2*style.typography.graphicGap:0);
+          const contentHeight=(scene.images?.some(b=>b.element_id===box.id)?192:0)+box.lines.length*box.fontSize*(semantic?1.35:style.typography.lineHeight)+(scene.type==='concept'?22*style.typography.lineHeight+style.typography.graphicGap:graphic?64+2*style.typography.graphicGap:0);
           if((semantic||custom||scene.type==='concept')&&contentHeight>box.height-(semantic?0:2*(padding+style.card.borderWidth)))throw new Error(`layout_overflow: ${scene.id}/${box.id}/height`);
         }
       }
@@ -114,10 +114,11 @@ export function Video({project, audioUrls, visualStyle,visualStyleSnapshot,draft
   if (!project) return <AbsoluteFill style={{background: palette.background, color: palette.text, fontSize: 48, justifyContent: 'center', alignItems: 'center', fontFamily: '"Noto Sans SC"'}}>先运行 npm run demo:create，再用示例 props 打开 Studio。</AbsoluteFill>;
   let offset = 0;
   const assets = new Map(project.assets.map(a => [a.id, a]));
+  const imageSources=Object.fromEntries(project.assets.filter(a=>a.type==='image').map(a=>[a.id,audioUrls?.[a.id]??staticFile(a.storage_key)]));
   return <PaletteContext.Provider value={palettes[project.theme]}><VisualStyleContext.Provider value={style}><AbsoluteFill>{project.scenes.map((scene, i) => {
     const from = offset; offset += scene.duration_frames;
     return <Sequence key={scene.id} from={from} durationInFrames={scene.duration_frames}>
-      <SceneView scene={scene} seriesTitle={seriesTitle} audioSrc={draftPreview?undefined:audioUrls?.[scene.narration.audio_asset_id] ?? staticFile(assets.get(scene.narration.audio_asset_id)!.storage_key)} index={i} count={project.scenes.length}/>
+      <SceneView scene={scene} imageSources={imageSources} seriesTitle={seriesTitle} audioSrc={draftPreview?undefined:audioUrls?.[scene.narration.audio_asset_id] ?? staticFile(assets.get(scene.narration.audio_asset_id)!.storage_key)} index={i} count={project.scenes.length}/>
     </Sequence>;
   })}{draftPreview&&<div style={{position:'absolute',...(style.presentation?{top:112,padding:'4px 12px'}:{bottom:24,padding:'8px 16px'}),right:48,borderRadius:8,fontFamily:'"Noto Sans SC"',fontSize:24,color:palettes[project.theme].muted,background:palettes[project.theme].background}}>静音画面草稿 · 临时时序，非配音对齐</div>}</AbsoluteFill></VisualStyleContext.Provider></PaletteContext.Provider>;
 }

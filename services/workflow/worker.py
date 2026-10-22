@@ -71,10 +71,12 @@ def child():
         style = payload.get('teaching_style') or 'popular'
         if style not in ('popular', 'technical'):
             style = 'popular'
-        director = payload.get('protocol_version') in ['teaching-outline:4','scene-candidate:4','teaching-outline:5','scene-candidate:5','teaching-outline:6','scene-candidate:6','teaching-outline:7','scene-candidate:7']
+        director = payload.get('protocol_version') in ['teaching-outline:4','scene-candidate:4','teaching-outline:5','scene-candidate:5','teaching-outline:6','scene-candidate:6','teaching-outline:7','scene-candidate:7','teaching-outline:8','scene-candidate:8','teaching-outline:9','scene-candidate:9']
         options = {**({'compact_director':True} if payload.get('protocol_version') in ['teaching-outline:5','scene-candidate:5','teaching-outline:6','scene-candidate:6'] else {}), **({'role_director':True} if payload.get('protocol_version') in ['teaching-outline:6','scene-candidate:6'] else {}), **({'semantic_graphics':True} if director else {}), **usage_options, **({'cue_quotes': False} if payload.get('protocol_version') in ['teaching-outline:1', 'scene-candidate:1'] else {}), 'teaching_style': style}
         if payload.get('materials'):
             options['materials'] = payload['materials']
+        if payload.get('protocol_version') in ['teaching-outline:8','scene-candidate:8','teaching-outline:9','scene-candidate:9']:
+            options['image_planning'] = True
         with httpx.Client(timeout=120) as client:
             if payload['kind'] == 'generate':
                 draft = deepseek_storyboard(payload['source_text'], settings, client, **options)

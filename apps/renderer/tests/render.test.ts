@@ -86,6 +86,7 @@ test('资产核验：合法音频、哈希/时长错误、穿越、外部软链�
     p.assets[0].storage_key = 'one.wav';
     p.assets[0].checksum = createHash('sha256').update(await readFile(file)).digest('hex');
     await verifyAssets(p, root);
+    assert.ok(p.assets[0].type === 'audio');
     const original = {...p.assets[0]};
     p.assets[0].checksum = 'b'.repeat(64);
     await assert.rejects(verifyAssets(p, root), /checksum/);

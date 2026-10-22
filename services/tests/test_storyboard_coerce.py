@@ -50,6 +50,42 @@ class StoryboardCoerceTests(unittest.TestCase):
         self.assertEqual(scene['elements'][1]['content'], '物体都有惯性')
         validate_storyboard(draft, text)
 
+    def test_long_verbatim_concept_label_uses_existing_excerpt_limit_without_changing_narration(self):
+        for content in ['依赖隔离机制'*9, '🙂'*41]:
+            with self.subTest(content=content):
+                draft = outline(content)
+                scene = draft['scenes'][0]
+                scene['type'] = 'concept'
+                scene['elements'] = [{'id': 'definition', 'content': content, 'concept_role': 'definition',
+                                      'cue': {'text_start': 0, 'text_end': len(content)}}]
+                coerce_storyboard_draft(draft)
+                self.assertEqual(scene['elements'][0]['content'], content[:40])
+                self.assertEqual(scene['narration']['text'], content)
+                self.assertEqual(scene['elements'][0]['cue'], {'text_start': 0, 'text_end': len(content)})
+                self.assertEqual(scene['type'], 'concept')
+                validate_storyboard(draft, content)
+
+    def test_existing_short_concept_excerpt_is_preserved(self):
+        text = '前缀' + '定义'*20 + '后缀'
+        draft = outline(text)
+        scene = draft['scenes'][0]
+        scene['type'] = 'concept'
+        scene['elements'] = [{'id': 'definition', 'content': '定义'*20, 'concept_role': 'definition',
+                              'cue': {'text_start': 0, 'text_end': len(text)}}]
+        coerce_storyboard_draft(draft)
+        self.assertEqual(scene['elements'][0]['content'], '定义'*20)
+        validate_storyboard(draft, text)
+
+    def test_other_long_labels_are_not_silently_truncated(self):
+        from services.workflow.providers import ProviderError
+        text = '条件必须完整保留'*6
+        draft = outline(text)
+        draft['scenes'][0]['type'] = 'card_sequence'
+        draft['scenes'][0]['elements'][0]['content'] = text
+        coerce_storyboard_draft(draft)
+        self.assertEqual(draft['scenes'][0]['elements'][0]['content'], text)
+        with self.assertRaises(ProviderError): validate_storyboard(draft, text)
+
     def test_foreign_code_fields_are_stripped_from_flow(self):
         draft = outline('流程。')
         scene = draft['scenes'][0]

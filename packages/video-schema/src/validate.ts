@@ -22,16 +22,26 @@ export function validateProject(input: unknown): ValidationError[] {
   if (project.scenes.reduce((sum, s) => sum + s.duration_frames, 0) > 9000) fail('/scenes', 'duration_limit', 'Video exceeds five minutes');
   if (project.scenes.reduce((sum, s) => sum + [...s.narration.text].length, 0) > 4000) fail('/scenes', 'text_limit', 'Narration exceeds 4000 code points');
   const assets = new Map(project.assets.map(a => [a.id, a]));
+  project.assets.forEach((a,i)=>{if(a.type==='image'&&a.width*a.height>8_388_608)fail(`/assets/${i}`,'image_pixels','Image exceeds eight megapixels');});
 
   project.scenes.forEach((scene, i) => {
     const path = `/scenes/${i}`;
     const asset = assets.get(scene.narration.audio_asset_id);
-    if (!asset) fail(`${path}/narration/audio_asset_id`, 'missing_asset', 'Audio asset does not exist');
+    if (!asset || asset.type !== 'audio') fail(`${path}/narration/audio_asset_id`, 'missing_asset', 'Audio asset does not exist');
     else if (scene.duration_frames !== 12 + Math.ceil(asset.duration_ms * 30 / 1000)) fail(`${path}/duration_frames`, 'audio_duration', 'Scene must contain audio plus six frames at each end');
     const text = [...scene.narration.text];
     if (!scene.narration.text.trim()) fail(`${path}/narration/text`, 'blank_text', 'Narration is blank');
     unique(scene.elements.map(e => e.id), `${path}/elements`);
     const ids = new Set(scene.elements.map(e => e.id));
+    if(scene.images){
+      if(scene.elements.length>4||!['card_sequence','comparison_panel'].includes(scene.type)||(scene.motif??'default')!=='default'||scene.dialogue||scene.process||scene.funnel)fail(`${path}/images`,'image_layout','Images need a supported default composition');
+      unique(scene.images.map(b=>b.element_id),`${path}/images`);
+      scene.images.forEach((b,j)=>{
+        if(assets.get(b.asset_id)?.type!=='image')fail(`${path}/images/${j}/asset_id`,'missing_image','Image asset does not exist');
+        if(!ids.has(b.element_id))fail(`${path}/images/${j}/element_id`,'image_target','Image target must exist');
+        if(!b.alt.trim()||/[\p{Cc}\p{Cf}\p{Zl}\p{Zp}]/u.test(b.alt))fail(`${path}/images/${j}/alt`,'image_alt','Image description must be visible text');
+      });
+    }
     if (scene.elements.filter(e => e.role === 'topic').length > 1) fail(`${path}/elements`, 'topic_count', 'Only one topic title is allowed per scene');
     scene.elements.forEach((element, j) => {
       if (!element.content.trim()) fail(`${path}/elements/${j}/content`, 'blank_text', 'Label is blank');

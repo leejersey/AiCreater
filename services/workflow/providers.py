@@ -56,7 +56,7 @@ def _status(response, stage):
         raise ProviderError(stage, 'http_error', f'HTTP {response.status_code}')
 
 
-def storyboard_request(text, model, original_scene=None, *, cue_quotes=True, teaching_style='popular', semantic_graphics=False, compact_director=False, role_director=False, materials=None):
+def storyboard_request(text, model, original_scene=None, *, cue_quotes=True, teaching_style='popular', semantic_graphics=False, compact_director=False, role_director=False, materials=None, image_planning=False):
     style = teaching_style if teaching_style in ('popular', 'technical') else 'popular'
     from services.workflow.storyboard import REFERENCE_SCHEMA, LEGACY_REFERENCE_SCHEMA, DIRECTOR_REFERENCE_SCHEMA, source_parts
     if semantic_graphics and not cue_quotes:
@@ -65,7 +65,9 @@ def storyboard_request(text, model, original_scene=None, *, cue_quotes=True, tea
         raise ProviderError('storyboard','schema_error','Confirmed chart data cannot use a model')
     if not text.strip() or len(text) > 4000:
         raise ProviderError('storyboard', 'input_limit', 'Use 1–4000 code points')
-    if compact_director and not materials:
+    if image_planning and not cue_quotes:
+        raise ProviderError('storyboard', 'schema_error', 'Image plans require quoted source anchors')
+    if compact_director and not materials and not image_planning:
         if not semantic_graphics or not cue_quotes:raise ProviderError('storyboard','schema_error','Compact director requires quoted graphics protocol')
         from services.workflow.director import request
         return request(text,model,original_scene,style,roles=role_director)
@@ -74,6 +76,12 @@ def storyboard_request(text, model, original_scene=None, *, cue_quotes=True, tea
                   'The program computes offsets; never return numerical cue offsets. ') if cue_quotes else (
                   'Use code-point (not UTF-16) cue offsets relative to the exact concatenation of that scene\'s source parts, including spaces and newlines. ')
     schema = DIRECTOR_REFERENCE_SCHEMA if semantic_graphics else REFERENCE_SCHEMA if cue_quotes else LEGACY_REFERENCE_SCHEMA
+    if image_planning:
+        import copy
+        from services.workflow.image_plans import PLAN_SCHEMA
+        schema = copy.deepcopy(schema)
+        schema['definitions']['Scene']['properties']['image_plan'] = copy.deepcopy(PLAN_SCHEMA)
+        schema['definitions']['Scene']['required'].append('image_plan')
     prompt = ('Never create data_chart or chart fields; numeric chart data requires explicit manual confirmation. '
               'Create a knowledge-teaching video in the source domain, not a marketing promo. '
               'For concept explanations across history, physics, biology or other subjects use concept. '
@@ -116,6 +124,12 @@ def storyboard_request(text, model, original_scene=None, *, cue_quotes=True, tea
               'All lanes need events. Overlapping tasks mean concurrency, not CPU parallelism. '
               'These illustrative milliseconds are independent of voice duration; never invent measured performance or speedups. '
               'Without timing data use code or flow diagrams. Reveal events only at their spoken-order cues. '
+              'Every element.content in EVERY scene type is limited to 40 Unicode code points, including punctuation and spaces. '
+              'This applies to card, flow, comparison, concept, code-step and timeline labels, not to full narration. '
+              'Use concise labels rather than copying a full narration sentence; keep full narration only via source_part_ids. '
+              'Do not remove applicability conditions to meet the limit: use more suitable source-bound scenes/elements within schema limits instead. '
+              'Code bodies belong in code.source, not in element.content. Obey any stricter type-specific label limit too. '
+              'Before returning JSON, check every content length and that flattened source_part_ids match all supplied IDs exactly once in order. '
               'Return JSON only, matching this schema. Group the supplied source parts into contiguous scenes, '
               'Explicit element.role=topic is allowed ONLY in title_reveal/card_sequence, at most one per scene. '
               'A topic is a neutral heading, never a computed answer, variable state, code step or process node. '
@@ -198,6 +212,9 @@ def storyboard_request(text, model, original_scene=None, *, cue_quotes=True, tea
             'do not force long unstructured flows when metaphors and concepts dominate. '
             'Still obey schema and the Template selection by teaching action rules above. '
         )
+    if image_planning:
+        from services.workflow.image_plans import PROMPT
+        prompt += PROMPT
     source = text
     parts = source_parts(source) if original_scene is None else [{'id': 1, 'text': source}]
     data = {'source_parts': parts}
@@ -231,12 +248,14 @@ def storyboard_request(text, model, original_scene=None, *, cue_quotes=True, tea
     return body, parts
 
 
-def deepseek_storyboard(text, settings, client, original_scene=None, *, cue_quotes=True, teaching_style='popular', on_usage=None, semantic_graphics=False, compact_director=False, role_director=False, _layouts=None, materials=None):
+def deepseek_storyboard(text, settings, client, original_scene=None, *, cue_quotes=True, teaching_style='popular', on_usage=None, semantic_graphics=False, compact_director=False, role_director=False, _layouts=None, materials=None, image_planning=False):
     from services.workflow.storyboard import restore_storyboard
-    if materials:
+    if materials or image_planning:
         compact_director = False
+    if image_planning and _layouts is not None:
+        raise ProviderError('storyboard', 'schema_error', 'Image planning uses one full quoted request')
     if _layouts is None:
-        body, parts = storyboard_request(text, settings.model, original_scene, cue_quotes=cue_quotes, teaching_style=teaching_style, semantic_graphics=semantic_graphics, compact_director=compact_director,role_director=role_director, materials=materials)
+        body, parts = storyboard_request(text, settings.model, original_scene, cue_quotes=cue_quotes, teaching_style=teaching_style, semantic_graphics=semantic_graphics, compact_director=compact_director,role_director=role_director, materials=materials, image_planning=image_planning)
     else:
         from services.workflow.director import request
         body,parts=request(text,settings.model,original_scene,teaching_style,layouts=_layouts,roles=role_director)
@@ -291,7 +310,7 @@ def deepseek_storyboard(text, settings, client, original_scene=None, *, cue_quot
                     on_usage({'state':'reported',**{k:sum(e[k] for e in reports) for k in quantities}})
         else:
             raw=json.loads(choice['message']['content'])
-            draft = restore_storyboard(raw, text, parts, require_quotes=cue_quotes, semantic_graphics=semantic_graphics)
+            draft = restore_storyboard(raw, text, parts, require_quotes=cue_quotes, semantic_graphics=semantic_graphics, image_planning=image_planning)
         if original_scene is not None and (len(draft['scenes']) != 1 or draft['scenes'][0]['id'] != original_scene['id']):
             raise ProviderError('storyboard', 'invalid_response', 'Regeneration must retain one target scene')
         return draft

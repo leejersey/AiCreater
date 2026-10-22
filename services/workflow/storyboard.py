@@ -21,6 +21,8 @@ _scene = DRAFT_SCHEMA['definitions']['Scene']
 _scene['required'] = ['id', 'type', 'narration', 'elements']
 _scene['properties'] = {k: v for k, v in _scene['properties'].items() if k in ['id', 'type', 'narration', 'elements', 'edges', 'code', 'structure', 'timeline', 'chart', 'motif', 'visual_actions', 'dialogue', 'process', 'funnel']}
 DRAFT_SCHEMA['definitions']['VisualAction']['required'] = ['kind', 'target', 'cue']
+from services.workflow.image_plans import PLAN_SCHEMA, validate_plan
+_scene['properties']['image_plan'] = copy.deepcopy(PLAN_SCHEMA)
 _scene['properties']['narration']['required'] = ['text']
 _scene['properties']['narration']['properties'] = {'text': _scene['properties']['narration']['properties']['text']}
 
@@ -31,6 +33,7 @@ _reference_scene = REFERENCE_SCHEMA['definitions']['Scene']
 _reference_scene['required'].remove('narration')
 _reference_scene['required'].append('source_part_ids')
 _reference_scene['properties'].pop('narration')
+_reference_scene['properties'].pop('image_plan')
 # T8 will expose source-quoted actions together with the director prompt/protocol.
 _reference_scene['properties'].pop('visual_actions')
 _reference_scene['properties'].pop('dialogue')
@@ -133,7 +136,7 @@ def coerce_storyboard_draft(draft):
                         continue
                     span = text[start:end]
                     content = element.get('content')
-                    if isinstance(content, str) and content in span:
+                    if isinstance(content, str) and len(content) <= 40 and content in span:
                         continue
                     excerpt = span.strip(validator.WHITESPACE)[:40]
                     if excerpt:
@@ -179,7 +182,9 @@ def coerce_storyboard_draft(draft):
     return draft
 
 
-def restore_storyboard(raw, source, parts, *, require_quotes=False, semantic_graphics=False):
+def restore_storyboard(raw, source, parts, *, require_quotes=False, semantic_graphics=False, image_planning=False):
+    if image_planning and not require_quotes:
+        raise ProviderError('storyboard', 'schema_error', 'Image plans require source quotes')
     if semantic_graphics and not require_quotes:
         raise ProviderError('storyboard', 'schema_error', 'Director protocol requires source quotes')
     if isinstance(raw, dict) and isinstance(raw.get('scenes'), list) and any(isinstance(s, dict) and (s.get('type') == 'data_chart' or 'chart' in s) for s in raw['scenes']):
@@ -190,7 +195,12 @@ def restore_storyboard(raw, source, parts, *, require_quotes=False, semantic_gra
         draft = coerce_storyboard_draft(copy.deepcopy(raw))
         validate_storyboard(draft, source)
         return draft
-    problems = schema_errors(DIRECTOR_REFERENCE_SCHEMA if semantic_graphics else REFERENCE_SCHEMA, raw)
+    reference = DIRECTOR_REFERENCE_SCHEMA if semantic_graphics else REFERENCE_SCHEMA
+    if image_planning:
+        reference = copy.deepcopy(reference)
+        reference['definitions']['Scene']['properties']['image_plan'] = copy.deepcopy(PLAN_SCHEMA)
+        reference['definitions']['Scene']['required'].append('image_plan')
+    problems = schema_errors(reference, raw)
     quoted = not problems
     if problems and not require_quotes:
         problems = schema_errors(LEGACY_REFERENCE_SCHEMA, raw)
@@ -229,6 +239,7 @@ def validate_storyboard(draft, source):
     if ''.join(s['narration']['text'] for s in scenes) != source or not source.strip() or len(source) > 4000:
         raise ProviderError('storyboard', 'source_mismatch', 'Narration must preserve the original 1–4000 code points')
     for i, scene in enumerate(scenes):
+        validate_plan(scene)
         errors = validator.validate_scene_visuals(scene, f'/scenes/{i}')
         if errors:
             error, details = errors[0], None

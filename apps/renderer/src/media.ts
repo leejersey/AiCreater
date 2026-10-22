@@ -24,10 +24,19 @@ export async function verifyAssets(project: VideoProject, publicDir: string) {
     inside(candidate);
     const file = await realpath(candidate); inside(file);
     const info = await stat(file);
-    if (!info.isFile() || info.size <= 0 || info.size > 50 * 1024 * 1024) throw new Error(`asset_size: ${asset.id}`);
+    if (!info.isFile() || info.size <= 0 || info.size > (asset.type==='image'?10:50) * 1024 * 1024) throw new Error(`asset_size: ${asset.id}`);
     const hash = createHash('sha256').update(await readFile(file)).digest('hex');
     if (hash !== asset.checksum) throw new Error(`asset_checksum: ${asset.id}`);
     const media = await probeMedia(file);
+    if(asset.type==='image'){
+      const stream=media.streams[0],extension=path.extname(asset.storage_key).toLowerCase();
+      if(media.streams.length!==1||stream.codec_type!=='video'||stream.codec_name!==(extension==='.png'?'png':['.jpg','.jpeg'].includes(extension)?'mjpeg':'unsupported'))throw new Error(`image_type: ${asset.id}`);
+      if(stream.width!==asset.width||stream.height!==asset.height||asset.width<1||asset.height<1||asset.width>4096||asset.height>4096||asset.width*asset.height>8_388_608)throw new Error(`image_dimensions: ${asset.id}`);
+      // Decode up to two frames: headers alone cannot prove an intact, static image.
+      const {stdout}=await run('ffmpeg',['-v','error','-xerror','-err_detect','explode','-threads','1','-i',file,'-map','0:v:0','-frames:v','2','-f','framehash','-'],{timeout:30000,maxBuffer:64*1024});
+      if(stdout.split('\n').filter(line=>line.trim()&&!line.startsWith('#')).length!==1)throw new Error(`image_frames: ${asset.id}`);
+      continue;
+    }
     if (!media.streams.some(s => s.codec_type === 'audio') || media.streams.some(s => s.codec_type === 'video')) throw new Error(`asset_type: ${asset.id} must be audio only`);
     const duration = Number(media.format.duration) * 1000;
     if (!Number.isFinite(duration) || Math.abs(duration - asset.duration_ms) > 1) throw new Error(`asset_duration: ${asset.id}`);

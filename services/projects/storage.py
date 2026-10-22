@@ -55,7 +55,7 @@ class ObjectStore:
 
     @staticmethod
     def key(path, checksum):
-        if not re.fullmatch(r'[a-f0-9]{64}', checksum) or path.suffix not in ['.wav', '.mp3', '.m4a', '.mp4', '.srt']:
+        if not re.fullmatch(r'[a-f0-9]{64}', checksum) or path.suffix not in ['.wav', '.mp3', '.m4a', '.mp4', '.srt', '.png', '.jpg', '.jpeg']:
             raise StoreError('assets', 'Invalid media checksum or extension')
         return 'sha256/' + checksum + path.suffix
 

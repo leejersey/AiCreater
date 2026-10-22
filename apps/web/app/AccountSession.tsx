@@ -69,7 +69,7 @@ export function AccountNav(){
     </div>
     <div className="account-nav-right">
       <span><User size={13} /> {user?.username}</span>
-      <Link href="/account" className="account-nav-link"><Key size={13} /> 修改密码</Link>
+      <Link href="/account" className="account-nav-link"><Key size={13} /> 个人中心</Link>
       <button disabled={busy} onClick={async()=>{
         const ok = await confirmDialog({
           title: '确定退出登录？',
