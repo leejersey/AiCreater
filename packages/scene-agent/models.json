@@ -1,0 +1,29 @@
+{
+  "deepseek-flash": {
+    "adapter": "openai-compatible",
+    "baseUrl": "https://api.deepseek.com",
+    "model": "deepseek-v4-flash",
+    "apiKeyEnv": "DEEPSEEK_API_KEY",
+    "extraBody": {"thinking": {"type": "disabled"}},
+    "capabilities": {"vision": false, "parallelToolCalls": true, "contextTokens": 128000, "maxOutputTokens": 8192, "promptCache": true, "appendOnlyHistory": false},
+    "budget": {"maxTurns": 15, "maxOutputTokensTotal": 120000}
+  },
+  "claude-sonnet": {
+    "adapter": "anthropic",
+    "model": "claude-sonnet-5-5",
+    "apiKeyEnv": "ANTHROPIC_API_KEY",
+    "effort": "medium",
+    "fallbacks": "default",
+    "capabilities": {"vision": true, "parallelToolCalls": true, "contextTokens": 1000000, "maxOutputTokens": 32000, "promptCache": true, "appendOnlyHistory": true},
+    "budget": {"maxTurns": 15, "maxOutputTokensTotal": 200000}
+  },
+  "claude-opus": {
+    "adapter": "anthropic",
+    "model": "claude-opus-5-5",
+    "apiKeyEnv": "ANTHROPIC_API_KEY",
+    "effort": "high",
+    "fallbacks": "default",
+    "capabilities": {"vision": true, "parallelToolCalls": true, "contextTokens": 1000000, "maxOutputTokens": 32000, "promptCache": true, "appendOnlyHistory": true},
+    "budget": {"maxTurns": 15, "maxOutputTokensTotal": 200000}
+  }
+}

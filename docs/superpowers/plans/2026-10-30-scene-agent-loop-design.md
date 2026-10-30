@@ -1,6 +1,6 @@
 # Scene Agent 循环：Provider 适配层与工具接口设计
 
-状态：设计稿，未实现。不调用付费模型。
+状态：M1（Provider 适配层）已实现，见 `packages/scene-agent/src/provider/`；M2 起未实现。不调用付费模型。
 
 ## 1. 目标与非目标
 
@@ -215,7 +215,7 @@ loop:
 **上下文管理**
 
 - 系统提示与 skill 摘要固定在前缀，便于 prompt cache。
-- 旧的 `read_file` / `audit_scene` 结果在超过 N 轮后折叠为一行摘要（“第 4 轮审计：3 high / 2 low，已过时”），只保留最近一次完整审计。
+- 旧的 `read_file` / `audit_scene` 结果在超过 N 轮后折叠为一行摘要（“第 4 轮审计：3 high / 2 low，已过时”），只保留最近一次完整审计。**仅当 `capabilities.appendOnlyHistory=false` 时允许**；Claude 等启用 preserved thinking 的模型禁止改写历史（会使思考块失效），改为依赖 prompt cache，并把单章轮数控制在上下文预算内。
 - 不在上下文中保留旧版本源码全文；需要时由模型重新 `read_file`。
 
 ## 6. 关卡与反馈的划分
