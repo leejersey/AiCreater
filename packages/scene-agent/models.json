@@ -2,7 +2,7 @@
   "deepseek-flash": {
     "adapter": "openai-compatible",
     "baseUrl": "https://api.deepseek.com",
-    "model": "deepseek-v4-flash",
+    "model": "deepseek-flash",
     "apiKeyEnv": "DEEPSEEK_API_KEY",
     "extraBody": {"thinking": {"type": "disabled"}},
     "capabilities": {"vision": false, "parallelToolCalls": true, "contextTokens": 128000, "maxOutputTokens": 8192, "promptCache": true, "appendOnlyHistory": false},

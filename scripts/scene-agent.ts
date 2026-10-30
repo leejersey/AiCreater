@@ -1,5 +1,6 @@
 // npm run scene-agent -- run <brief.json> --model=<name> --confirm-paid [--cues=cues.json] [--initial=Scene.tsx] [--out=dir] [--max-turns=n]
 // Calls a paid model API. Without --confirm-paid it only prepares the workspace and prints the plan.
+import {existsSync} from 'node:fs';
 import {readFile} from 'node:fs/promises';
 import path from 'node:path';
 import {repositoryRoot} from '../packages/custom-scenes/src/files';
@@ -25,6 +26,9 @@ function parseArgs(argv:string[]){
 
 async function main(){
  const {brief:briefFile,flags,model}=parseArgs(process.argv.slice(2));
+ // Same .env the services use; variables already set in the shell take precedence.
+ const envFile=path.join(repositoryRoot,'.env');
+ if(existsSync(envFile))process.loadEnvFile(envFile);
  const models=loadModels();
  const entry=models[model];
  if(!entry)throw Error(`unknown model "${model}"; configured: ${Object.keys(models).join(', ')}`);
