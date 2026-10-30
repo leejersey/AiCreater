@@ -1,6 +1,11 @@
 node_modules/
 output/
 .remotion/
+.assembly-preview-*/
+.assembly-render-*/
+.teaching-render-*/
+.workbench-render-*/
+.custom-render-*/
 .next/
 *.tsbuildinfo
 __pycache__/

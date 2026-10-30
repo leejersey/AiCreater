@@ -1,0 +1,10 @@
+services:
+  postgres:
+    ports: !override
+      - "127.0.0.1:25432:5432"
+  redis:
+    ports: !override
+      - "127.0.0.1:26379:6379"
+  rustfs:
+    ports: !override
+      - "127.0.0.1:29000:9000"

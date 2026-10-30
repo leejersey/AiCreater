@@ -1,0 +1,28 @@
+{
+  "extends": "./tsconfig.json",
+  "include": [
+    "packages/custom-scenes/**/*.ts",
+    "packages/custom-scenes/**/*.tsx",
+    "examples/custom-scenes/**/*.tsx",
+    "apps/renderer/src/custom-lab.tsx",
+    "scripts/custom-scene.ts",
+    "scripts/visual-agent.ts",
+    "scripts/check-motion-bindings.ts",
+    "scripts/assemble-motion-scene.ts",
+    "scripts/render-custom-scene.ts",
+    "scripts/assemble-scenes.ts",
+    "scripts/visual-workbench.ts",
+    "scripts/verify-source-recovery.ts",
+    "scripts/verify-layout-proposal.ts",
+    "scripts/verify-reviewed-import.ts",
+    "scripts/render-teaching-components.tsx",
+    "scripts/render-teaching-layouts.tsx",
+    "scripts/render-teaching-motion.tsx",
+    "scripts/render-teaching-scenes.ts",
+    "scripts/verify-teaching-browser-recovery.ts",
+    "scripts/teaching-plan-host.ts",
+    "scripts/teaching-render-host.ts",
+    "scripts/teaching-render-container.ts",
+    "scripts/teaching-render-isolated.ts"
+  ]
+}
