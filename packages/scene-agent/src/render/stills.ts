@@ -1,0 +1,108 @@
+// Renders sampled frames of a Scene.tsx and collects the in-browser geometry audit for each.
+// Adapted from scripts/render-custom-scene.ts; keeps one browser per run and re-bundles only when the source changes.
+import '../../../../scripts/loopback.cjs';
+import {bundle} from '@remotion/bundler';
+import {openBrowser,renderStill,selectComposition,makeCancelSignal} from '@remotion/renderer';
+import {copyFile,mkdir,mkdtemp,rm,writeFile} from 'node:fs/promises';
+import {existsSync} from 'node:fs';
+import {createHash} from 'node:crypto';
+import path from 'node:path';
+import {checkSource,sceneTheme,type SceneBrief} from '../../../custom-scenes/src/contract';
+import {repositoryRoot} from '../../../custom-scenes/src/files';
+import type {GeometryAudit} from '../../../custom-scenes/src/geometry-audit';
+
+export type FrameAudit=GeometryAudit&{unsupported?:true};
+export type RenderedFrame={frame:number;file:string;audit:FrameAudit};
+export type FrameFailure={frame:number;error:string};
+export type StillsResult={sourceSha256:string;frames:RenderedFrame[];failures:FrameFailure[]};
+
+export interface StillRenderer{
+ render(source:string,frames:number[],outDir:string):Promise<StillsResult>;
+ close():Promise<void>;
+}
+
+export const sourceSha256=(source:string)=>createHash('sha256').update(source).digest('hex');
+const STILL_SCALE=0.5; // 960×540 PNGs; geometry is measured in SVG user units, independent of scale
+const FRAME_TIMEOUT_MS=20000;
+
+function entrySource(brief:SceneBrief,source:string){
+ return `import React,{useEffect,useLayoutEffect,useState,useRef} from 'react';import {Composition,registerRoot,useCurrentFrame,delayRender,continueRender,cancelRender} from 'remotion';import '@fontsource/noto-sans-sc/400.css';import Scene from './Scene';import {measureScene,hasCompleteSvgCoverage} from './geometry-audit';
+function Wrapped(){
+ const frame=useCurrentFrame();const root=useRef<HTMLDivElement>(null);const released=useRef(false);
+ const [ready,setReady]=useState(false);const [handle]=useState(()=>delayRender('font and geometry'));
+ useEffect(()=>{let live=true;Promise.all([document.fonts.load('400 44px "Noto Sans SC"',${JSON.stringify(source)}),document.fonts.ready]).then(()=>{if(live)setReady(true)}).catch(cancelRender);return()=>{live=false}},[handle]);
+ useLayoutEffect(()=>{
+  if(!ready||!root.current)return;
+  const svg=root.current.querySelector('svg');const complete=hasCompleteSvgCoverage(root.current);
+  const audit={...(svg?measureScene(svg):{issues:[],labels:0,movers:0,routes:0,obstacles:0}),...(!complete?{unsupported:true}:{})};
+  console.debug('SCENE_GEOMETRY:'+JSON.stringify({frame,audit}));
+  if(!released.current){released.current=true;continueRender(handle)}
+ },[ready,frame,handle]);
+ return <div ref={root} style={{width:'100%',height:'100%',background:${JSON.stringify(sceneTheme.background)},fontFamily:'"Noto Sans SC"',overflow:'hidden'}}><Scene frame={frame} fps={30} width={1920} height={1080} theme={${JSON.stringify(sceneTheme)}}/></div>
+}
+registerRoot(()=> <Composition id="CustomScene" component={Wrapped} width={1920} height={1080} fps={30} durationInFrames={${brief.durationInFrames}}/>);`;
+}
+
+// Trim bundler/browser errors to the part a model can act on: the message and the first Scene.tsx frames.
+export function conciseError(error:unknown):string{
+ const text=error instanceof Error?`${error.message}\n${error.stack??''}`:String(error);
+ const lines=text.split('\n').map(l=>l.trim()).filter(Boolean);
+ const head=lines[0]??'unknown error';
+ const scene=lines.filter(l=>/Scene\.tsx/.test(l)&&l!==head).slice(0,3);
+ return [head,...scene].join('\n').slice(0,1500);
+}
+
+export class RemotionStillRenderer implements StillRenderer{
+ private browser?:Awaited<ReturnType<typeof openBrowser>>;
+ private bundled?:{sha:string;serveUrl:string;temp:string};
+ constructor(private readonly brief:SceneBrief){}
+
+ async render(source:string,frames:number[],outDir:string):Promise<StillsResult>{
+  checkSource(source); // local execution is guarded by the source contract, not sandboxed
+  const sha=sourceSha256(source);
+  const serveUrl=await this.bundle(sha,source);
+  this.browser??=await openBrowser('chrome',{logLevel:'error',browserExecutable:process.env.REMOTION_BROWSER_EXECUTABLE??(existsSync('/Applications/Google Chrome.app/Contents/MacOS/Google Chrome')?'/Applications/Google Chrome.app/Contents/MacOS/Google Chrome':undefined)});
+  const composition=await selectComposition({serveUrl,id:'CustomScene',puppeteerInstance:this.browser,logLevel:'error'});
+  await mkdir(outDir,{recursive:true});
+  const result:StillsResult={sourceSha256:sha,frames:[],failures:[]};
+  for(const frame of frames){
+   let audit:FrameAudit|undefined;
+   const file=path.join(outDir,`frame-${String(frame).padStart(4,'0')}.png`);
+   const {cancelSignal,cancel}=makeCancelSignal();
+   const timer=setTimeout(cancel,FRAME_TIMEOUT_MS+5000);
+   try{
+    await renderStill({serveUrl,composition,puppeteerInstance:this.browser,frame,imageFormat:'png',scale:STILL_SCALE,output:file,timeoutInMilliseconds:FRAME_TIMEOUT_MS,cancelSignal,logLevel:'error',onBrowserLog:log=>{
+     if(!log.text.startsWith('SCENE_GEOMETRY:'))return;
+     try{const item=JSON.parse(log.text.slice('SCENE_GEOMETRY:'.length));if(item.frame===frame&&Array.isArray(item.audit?.issues))audit=item.audit;}catch{}
+    }});
+    result.frames.push({frame,file,audit:audit??{issues:[{kind:'missing-audit',target:'scene',detail:'Geometry audit did not complete for this frame'}],labels:0,movers:0,routes:0,obstacles:0}});
+   }catch(error){result.failures.push({frame,error:conciseError(error)});}
+   finally{clearTimeout(timer);}
+  }
+  return result;
+ }
+
+ private async bundle(sha:string,source:string):Promise<string>{
+  if(this.bundled?.sha===sha)return this.bundled.serveUrl;
+  if(this.bundled)await rm(this.bundled.temp,{recursive:true,force:true});
+  this.bundled=undefined;
+  const temp=await mkdtemp(path.join(repositoryRoot,'.scene-agent-render-'));
+  try{
+   await writeFile(path.join(temp,'Scene.tsx'),source);
+   await copyFile(path.join(repositoryRoot,'packages/custom-scenes/src/geometry-audit.ts'),path.join(temp,'geometry-audit.ts'));
+   const entryPoint=path.join(temp,'index.tsx');
+   await writeFile(entryPoint,entrySource(this.brief,source));
+   const publicDir=path.join(temp,'public');await mkdir(publicDir);
+   const serveUrl=await bundle({entryPoint,publicDir,outDir:path.join(temp,'bundle')});
+   this.bundled={sha,serveUrl,temp};
+   return serveUrl;
+  }catch(error){await rm(temp,{recursive:true,force:true});throw error;}
+ }
+
+ async close(){
+  try{if(this.browser)await this.browser.close({silent:true});}catch{}
+  this.browser=undefined;
+  if(this.bundled)await rm(this.bundled.temp,{recursive:true,force:true});
+  this.bundled=undefined;
+ }
+}

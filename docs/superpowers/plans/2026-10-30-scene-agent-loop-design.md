@@ -1,6 +1,6 @@
 # Scene Agent 循环：Provider 适配层与工具接口设计
 
-状态：M1（Provider 适配层）已实现，见 `packages/scene-agent/src/provider/`；M2 起未实现。不调用付费模型。
+状态：M1（Provider 适配层）与 M2（工具）已实现，见 `packages/scene-agent/`；M3 起未实现。不调用付费模型。
 
 ## 1. 目标与非目标
 
@@ -43,7 +43,6 @@ output/scene-agent/<run-id>/
   brief.json          # 只读：口播、事实、实测 cue（帧级时间）、尺寸、时长
   skill/              # 只读：skill 文档与主题快照
   scene/Scene.tsx     # Agent 唯一可写的主文件
-  scene/*.tsx|*.ts    # Agent 可新增的同目录辅助文件
   stills/             # render_stills 产物
   transcript.jsonl    # 每轮请求/响应/工具结果的完整记录（脱敏）
   result.json         # 终态：passed | stopped(reason) | failed(reason)、轮数、usage
@@ -228,7 +227,7 @@ loop:
 | 可渲染 | 所有关键帧渲染成功，无运行时异常 |
 | 时长 | 合成时长 = brief 帧数；场景不依赖墙钟 / 随机数（确定性渲染） |
 | 安全区 | 主体元素不越出画布；不侵入字幕区 |
-| 严重遮挡 | `audit_scene` 中无 `high` 级重叠 / 越界 |
+| 严重遮挡 | `audit_scene` 中无 `high` 级发现（标签越出安全区、标签互相重叠、几何无效 / 未测量）。`label-obstacle` 只作反馈：实测已验收的 RAG 场景中，嵌套对象内的标签会被判为压住外层障碍物 |
 | 文件围栏 | 只引用允许的模块（React、Remotion、组件库、主题） |
 
 其余全部是**反馈**：标签微调、运动连续性、路线一致、构图留白、审美、反 AI 味、自检清单。不要求“必须用某个组件”或“必须是某种结构”，强模型可以自由写 `.tsx`。

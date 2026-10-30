@@ -6,6 +6,8 @@ output/
 .teaching-render-*/
 .workbench-render-*/
 .custom-render-*/
+.scene-agent-render-*/
+.custom-check-*/
 .next/
 *.tsbuildinfo
 __pycache__/
