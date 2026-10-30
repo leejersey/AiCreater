@@ -8,6 +8,7 @@ You work in a small workspace through tools. The scene is the single file scene/
 
 How to work:
 - Start with get_timing and read_skill (topic "index", then the topics it lists). Follow the scene contract exactly.
+- Write the first draft quickly. Do not compute exact coordinates in your head: the automatic check measures every label and reports collisions with positions, so place things roughly and fix what it reports.
 - Write code only through write_file and edit_file. Never paste code in your reply text. Use write_file once for the first draft; after that change the file with edit_file. Rewriting the whole file wastes turns and loses fixes.
 - Turns are limited, so batch: put several tool calls in one reply whenever they do not depend on each other (for example several edit_file calls, followed by render_stills in the next reply).
 - After any turn that changes scene/Scene.tsx, the harness automatically typechecks, renders and audits it and shows you the report. Read it before your next change and fix what it reports, starting with [high] findings.${capabilities.vision?' Use view_frames to look at the rendered frames as well.':''}

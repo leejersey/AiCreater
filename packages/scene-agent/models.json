@@ -31,14 +31,14 @@
       "thinking": {
         "type": "enabled"
       },
-      "reasoning_effort": "high"
+      "reasoning_effort": "low"
     },
     "echoReasoning": true,
     "capabilities": {
       "vision": false,
       "parallelToolCalls": true,
       "contextTokens": 128000,
-      "maxOutputTokens": 16384,
+      "maxOutputTokens": 32768,
       "promptCache": true,
       "appendOnlyHistory": true
     },

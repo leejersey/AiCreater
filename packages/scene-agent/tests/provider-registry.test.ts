@@ -47,6 +47,6 @@ test('the thinking config sends reasoning back on every assistant turn, with or 
  const assistants=bodies[0].messages.filter((m:any)=>m.role==='assistant');
  assert.deepEqual(assistants.map((m:any)=>m.reasoning_content),['r0','r1']);
  assert.deepEqual(bodies[0].thinking,{type:'enabled'});
- assert.equal(bodies[0].reasoning_effort,'high');
- assert.equal(bodies[0].max_tokens,16384);
+ assert.equal(bodies[0].reasoning_effort,'low');
+ assert.equal(bodies[0].max_tokens,32768);
 });

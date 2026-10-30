@@ -116,3 +116,8 @@ test('history round-trips: tool calls, errors, reasoning echo and tool images',(
  assert.equal(textOnly[2].reasoning_content,undefined);
  assert.equal(textOnly.length,6); // no image message for non-vision models
 });
+
+test('an assistant turn with no text and no tool calls is sent with placeholder content, reasoning kept',()=>{
+ const wire=toWire({...request,messages:[{role:'user',content:[{type:'text',text:'go'}]},{role:'assistant',content:[],toolCalls:[],providerState:{reasoning_content:'long thought'}},{role:'user',content:[{type:'text',text:'continue'}]}]},{echoReasoning:true,capabilities}) as any[];
+ assert.deepEqual(wire[2],{role:'assistant',content:'(no output: the reply was cut off)',reasoning_content:'long thought'});
+});

@@ -102,7 +102,9 @@ export function toWire(request:TurnRequest,config:Pick<OpenAICompatibleConfig,'e
   if(message.role!=='tool')flush();
   if(message.role==='user')out.push({role:'user',content:userContent(message.content)});
   else if(message.role==='assistant'){
-   const wire:Record<string,unknown>={role:'assistant',content:textOf(message.content)||null};
+   // Chat Completions rejects an assistant message with neither content nor tool calls; a turn cut off while
+   // reasoning produces exactly that, and its reasoning must still be echoed, so keep it with a placeholder.
+   const wire:Record<string,unknown>={role:'assistant',content:textOf(message.content)||(message.toolCalls.length?null:'(no output: the reply was cut off)')};
    if(message.toolCalls.length)wire.tool_calls=message.toolCalls.map(c=>({id:c.id,type:'function',function:{name:c.name,arguments:typeof c.arguments==='string'&&c.parseError?c.arguments:JSON.stringify(c.arguments)}}));
    const reasoning=(message.providerState as {reasoning_content?:unknown}|undefined)?.reasoning_content;
    if(config.echoReasoning&&typeof reasoning==='string')wire.reasoning_content=reasoning;
