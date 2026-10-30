@@ -27,7 +27,7 @@ const STILL_SCALE=0.5; // 960×540 PNGs; geometry is measured in SVG user units,
 const FRAME_TIMEOUT_MS=20000;
 
 function entrySource(brief:SceneBrief,source:string){
- return `import React,{useEffect,useLayoutEffect,useState,useRef} from 'react';import {Composition,registerRoot,useCurrentFrame,delayRender,continueRender,cancelRender} from 'remotion';import '@fontsource/noto-sans-sc/400.css';import Scene from './Scene';import {measureScene,hasCompleteSvgCoverage} from './geometry-audit';
+ return `import React,{useEffect,useLayoutEffect,useState,useRef} from 'react';import {Composition,registerRoot,useCurrentFrame,delayRender,continueRender,cancelRender} from 'remotion';import '@fontsource/noto-sans-sc/400.css';import Scene from './Scene';import {measureScene,hasCompleteSvgCoverage} from './geometry-audit';import {measurePanels} from './panels';
 function Wrapped(){
  const frame=useCurrentFrame();const root=useRef<HTMLDivElement>(null);const released=useRef(false);
  const [ready,setReady]=useState(false);const [handle]=useState(()=>delayRender('font and geometry'));
@@ -35,7 +35,7 @@ function Wrapped(){
  useLayoutEffect(()=>{
   if(!ready||!root.current)return;
   const svg=root.current.querySelector('svg');const complete=hasCompleteSvgCoverage(root.current);
-  const audit={...(svg?measureScene(svg):{issues:[],labels:0,movers:0,routes:0,obstacles:0}),...(!complete?{unsupported:true}:{})};
+  const base=svg?measureScene(svg):{issues:[],labels:0,movers:0,routes:0,obstacles:0};const audit={...base,issues:[...base.issues,...(svg?measurePanels(svg):[])],...(!complete?{unsupported:true}:{})};
   console.debug('SCENE_GEOMETRY:'+JSON.stringify({frame,audit}));
   if(!released.current){released.current=true;continueRender(handle)}
  },[ready,frame,handle]);
@@ -92,6 +92,7 @@ export class RemotionStillRenderer implements StillRenderer{
   try{
    await writeFile(path.join(temp,'Scene.tsx'),source);
    await copyFile(path.join(repositoryRoot,'packages/custom-scenes/src/geometry-audit.ts'),path.join(temp,'geometry-audit.ts'));
+   await copyFile(path.join(repositoryRoot,'packages/scene-agent/src/render/panels.ts'),path.join(temp,'panels.ts'));
    const entryPoint=path.join(temp,'index.tsx');
    await writeFile(entryPoint,entrySource(this.brief,source));
    const publicDir=path.join(temp,'public');await mkdir(publicDir);

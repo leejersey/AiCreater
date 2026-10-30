@@ -10,6 +10,7 @@ Practical rules learned from rendered runs. They keep the picture readable; they
 
 ## Layout
 
+- Cards and panels must not partly cover each other. Either place one fully inside the other, or keep a gap; the audit reports `panel-overlap` with the shapes' ids.
 - Keep at least 24 px between separate text labels. Stacked captions with no gap read as one blurred line.
 - Use the whole canvas above the caption area (y up to 980). A scene that fills only the top half looks unfinished.
 - One idea per cue should dominate the frame; secondary labels stay smaller and muted.

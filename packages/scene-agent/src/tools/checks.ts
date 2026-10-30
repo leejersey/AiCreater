@@ -74,7 +74,7 @@ export function inkFindings(render:StillsResult,cues:Cue[],duration:number):Audi
 // are reported against the outer obstacle, so the reviewed RAG scene would fail a hard gate on it.
 export const SEVERITY:Record<string,'high'|'medium'|'low'>={
  'label-out-of-bounds':'high','label-overlap':'high','invalid-geometry':'high','missing-audit':'high','measurement-failed':'high',
- 'label-obstacle':'medium','label-route':'medium','missing-route':'medium','path-deviation':'medium',
+ 'label-obstacle':'medium','label-route':'medium','panel-overlap':'medium','missing-route':'medium','path-deviation':'medium',
  'audit-limit':'low',
 };
 const RANK={high:0,medium:1,low:2};
