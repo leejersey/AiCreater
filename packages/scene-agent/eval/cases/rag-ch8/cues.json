@@ -1,0 +1,32 @@
+[
+  {
+    "id": "cue-1",
+    "text": "总结一下，RAG通过结合检索和生成，让大语言模型能够利用外部知识库，生成更准确、更可靠的回答。",
+    "startFrame": 6,
+    "endFrame": 285
+  },
+  {
+    "id": "cue-2",
+    "text": "它的工作流程包括检索、增强和生成三个步骤。",
+    "startFrame": 298,
+    "endFrame": 412
+  },
+  {
+    "id": "cue-3",
+    "text": "虽然RAG还面临一些挑战，但随着检索技术和大模型的发展，RAG正在成为构建智能问答系统的重要范式。",
+    "startFrame": 437,
+    "endFrame": 711
+  },
+  {
+    "id": "cue-4",
+    "text": "希望这个视频能帮助你理解RAG的基本概念和机制。",
+    "startFrame": 723,
+    "endFrame": 831
+  },
+  {
+    "id": "cue-5",
+    "text": "谢谢观看！",
+    "startFrame": 848,
+    "endFrame": 880
+  }
+]
