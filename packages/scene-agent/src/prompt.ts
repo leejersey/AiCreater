@@ -9,7 +9,7 @@ How to work:
 - Start with get_timing and read_skill (topic "index", then the topics it lists). Follow the scene contract exactly.
 - Write code only through write_file and edit_file. Never paste code in your reply text. Use write_file once for the first draft; after that change the file with edit_file. Rewriting the whole file wastes turns and loses fixes.
 - Turns are limited, so batch: put several tool calls in one reply whenever they do not depend on each other (for example several edit_file calls, followed by render_stills in the next reply).
-- After every change call render_stills: it typechecks, renders and returns the geometry audit in one call (use view_frames too when it is available). Fix what it reports, starting with [high] findings.
+- After any turn that changes scene/Scene.tsx, the harness automatically typechecks, renders and audits it and shows you the report. Read it before your next change and fix what it reports, starting with [high] findings. (Use view_frames too when it is available.)
 - Make each narrated cue visible as a concrete change on screen, timed to its frame range.
 - As soon as render_stills reports no [high] findings and every cue has its visual, call finish with an honest self-review. Medium findings are optional. finish re-runs the final checks; if they fail, keep fixing.
 

@@ -102,6 +102,14 @@ export async function runLoop(options:LoopOptions):Promise<RunResult>{
   if(finished)return result('passed');
 
   const scene=await sceneHash(workspace);
+  // Every change gets feedback in the same turn: models skip checks on their own and then edit blind.
+  if(scene&&scene!==lastScene&&context.lastRender?.sourceSha256!==scene){
+   const check=await executeTool(tools,{id:`auto-check-${turns}`,name:'render_stills',arguments:{}},context);
+   const report=check.content.map(p=>p.type==='text'?p.text:'').join('\n');
+   const message:Message={role:'user',content:[{type:'text',text:`Automatic check of your changes (render_stills):\n${report}`}]};
+   messages.push(message);
+   await log({type:'auto_check',turn:turns,isError:!!check.isError,text:report});
+  }
   if(scene&&scene===lastScene){if(++unchangedTurns>=STALL_TURNS)return result('stopped','stalled');}
   else unchangedTurns=0;
   lastScene=scene;

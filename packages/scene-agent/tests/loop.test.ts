@@ -190,3 +190,19 @@ test('a run that stops after a clean render reports the clean checkpoint',async(
  assert.equal(result.cleanCheckpoint?.sourceSha256,sourceSha256(scene(140)));
  assert.equal(await readFile(result.cleanCheckpoint!.file,'utf8'),scene(140));
 });
+
+test('edits are checked automatically in the same turn, and an explicit re-render reuses that result',async()=>{
+ const {workspace,renderer}=await setup();
+ const provider=new ScriptedProvider([
+  [call('write_file',{path:SCENE_FILE,content:scene(1040)})],
+  [call('render_stills')], // same source as the automatic check: no second render
+  [call('get_timing')],    // no change: no automatic check
+ ]);
+ const result=await runLoop({provider,workspace,renderer,budget:{maxTurns:3,maxOutputTokensTotal:100000}});
+ assert.equal(result.turns,3);
+ const afterWrite=provider.requests[1].messages.find(m=>m.role==='user'&&textOf(m.content).startsWith('Automatic check'))!;
+ assert.match(textOf(afterWrite.content),/^Automatic check of your changes \(render_stills\):\ntypecheck passed[\s\S]*\[high\] label-out-of-bounds title/);
+ assert.equal(renderer.renders,1);
+ const autoChecks=(i:number)=>provider.requests[i].messages.filter(m=>m.role==='user'&&textOf(m.content).startsWith('Automatic check')).length;
+ assert.equal(autoChecks(2),1); // the explicit render_stills turn did not add another automatic check
+});

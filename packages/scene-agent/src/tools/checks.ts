@@ -103,8 +103,13 @@ export const renderStills:Tool={
   const checked=await typecheck.run({},context); // a render of code that does not compile only produces a bundler stack trace
   if(checked.isError)return checked;
   let render:StillsResult;
-  try{render=await context.renderer.render(source,frames,path.join(context.workspace.stillsDir,sourceSha256(source).slice(0,12)));}
-  catch(error){context.lastRender=undefined;return failure(`render failed before any frame: ${conciseError(error)}`);}
+  const previous=context.lastRender;
+  // The loop's automatic check may already have rendered exactly this; do not pay for it twice.
+  if(previous&&previous.sourceSha256===sourceSha256(source)&&previous.frames.length+previous.failures.length===frames.length&&frames.every(f=>previous.frames.some(r=>r.frame===f)||previous.failures.some(r=>r.frame===f)))render=previous;
+  else{
+   try{render=await context.renderer.render(source,frames,path.join(context.workspace.stillsDir,sourceSha256(source).slice(0,12)));}
+   catch(error){context.lastRender=undefined;return failure(`render failed before any frame: ${conciseError(error)}`);}
+  }
   context.lastRender=render;
   const lines=['typecheck passed',`rendered ${render.frames.length}/${frames.length} frames: ${render.frames.map(f=>f.frame).join(', ')||'none'}`];
   for(const f of render.failures)lines.push(`frame ${f.frame} failed: ${f.error}`);
