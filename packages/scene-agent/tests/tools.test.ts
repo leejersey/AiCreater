@@ -85,7 +85,7 @@ test('list_files shows only the workspace surface; skill and timing tools',async
  assert.match(listing,/brief\.json/);assert.match(listing,/skill\/scene-contract\.md/);assert.match(listing,/scene\/Scene\.tsx/);
  assert.doesNotMatch(listing,/stills/);
  assert.match(out(await call('read_skill',{topic:'scene-contract'})),/# Scene contract/);
- assert.match(out(await call('read_skill',{topic:'nope'})),/Available: craft, index, scene-contract/);
+ assert.match(out(await call('read_skill',{topic:'nope'})),/Available: craft, index, patterns, scene-contract/);
  const timing=out(await call('get_timing'));
  assert.match(timing,/120 frames at 30 fps \(4\.00s\)/);
  assert.match(timing,/- b 60–120 \(2\.0s\): 第二句。/);
