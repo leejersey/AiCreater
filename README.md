@@ -149,7 +149,7 @@ python3 -m celery -A services.workflow.queue:app beat \
 
 **fish：**
 
-```fish
+```bash
 cd /path/to/AiCreater
 
 # 终端 1：Workflow 消费者
@@ -278,6 +278,12 @@ docs/                      项目文档
 ---
 
 ## 📚 文档索引
+
+定制场景实验：[本地 Agent 自由画面生成与同稿对照](docs/custom-scene-lab.md)。独立入口 `npm run custom:studio`；保留现有模板和生产 DSL，不自动调用付费模型、不执行未经审核的生成源码。
+
+两阶段生成：[视觉设计与场景代码 Agent](docs/visual-agent.md)。`npm run visual:agent` 支持实测音频时间导入、视觉设计、场景代码生成、截图审核及修订提示；新增 `GeneratedContext` / `GeneratedLoop` 两个真实生成后经本地修订的实验案例。
+
+主工作台现使用[定制视觉完整工作流](docs/visual-workbench.md)：实测配音 → 视觉设计 → 场景源码 → 精确哈希批准 → 几何与人工验收 → 统一 MP4/SRT 导出。旧模板工作台仅通过课程的 `/legacy` 入口访问，不作为失败回退。每次付费生成、修复和本地执行分别确认。
 
 | 文档 | 说明 |
 |:---|:---|
