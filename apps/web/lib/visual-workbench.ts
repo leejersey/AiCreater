@@ -6,7 +6,8 @@ export const isVisualDataMode=(mode?:VisualGenerationMode)=>mode==='host-motion'
 type LayoutPoint={x:number;y:number};
 type LayoutResult={original_design_sha256:string;layout_sha256:string;layout_preflight:'passed'|'failed';moves:{objectId:string;from:LayoutPoint;to:LayoutPoint}[];unresolved:{kind:string;objects:string[];detail:string}[]};
 export type VisualJob = {
-  id:string; project_id:string; scene_id:string|null; kind:'generate'|'repair'|'preview'|'export'|'prepare-transfer'|'preview-transfer'|'recover-source'|'propose-layout';
+  id:string; project_id:string; scene_id:string|null; kind:'generate'|'repair'|'preview'|'export'|'prepare-transfer'|'preview-transfer'|'recover-source'|'propose-layout'|'agent';
+  agent?:{model:string;max_turns:number};
   state:'queued'|'running'|'succeeded'|'failed'|'cancelled';
   stage?:string|null; error?:string|null;current?:boolean;
   created_at?:string;
@@ -15,8 +16,10 @@ export type VisualJob = {
   operation?:'retime'|'quality-repair';
   repair_preview_id?:string;
   design_revision_of?:string;
-  result: (Partial<LayoutResult>&{sha256?:string;design_sha256?:string;recovery_sha256?:string;generation_mode?:VisualGenerationMode;assembly_sha256?:string;intent_sha256?:string;binding_sha256?:string;execution?:'not_run';technical?:'passed';visual?:'pending';production_adopted?:false;diagnostic?:true;preset?:'rag-augmentation:1';origin_sha256?:string;source?:string;design?:unknown;geometry?:{status:string};frames?:string[];video?:string;srt?:string;accepted?:boolean;requests_dispatched?:number|null})|null;
+  result: (Partial<LayoutResult>&{sha256?:string;design_sha256?:string;recovery_sha256?:string;generation_mode?:VisualGenerationMode;assembly_sha256?:string;intent_sha256?:string;binding_sha256?:string;execution?:'not_run';technical?:'passed';visual?:'pending';production_adopted?:false;diagnostic?:true;preset?:'rag-augmentation:1';origin_sha256?:string;source?:string;design?:unknown;geometry?:{status:string};frames?:string[];video?:string;srt?:string;accepted?:boolean;requests_dispatched?:number|null;
+   agent?:{status:'passed';turns:number;finish_by:'model'|'harness';output_tokens:number}})|null;
 };
+export const AGENT_MAX_TURNS=25;
 const object=(v:unknown):v is Record<string,unknown>=>!!v&&typeof v==='object'&&!Array.isArray(v);
 const identifier=(v:unknown):v is string=>typeof v==='string'&&/^[A-Za-z0-9_-]+$/.test(v);
 const file=(v:unknown):v is string=>typeof v==='string'&&/^(?:source\.txt|design\.json|video\.mp4|video\.srt|stills\/frame-\d+\.png)$/.test(v);
@@ -46,7 +49,7 @@ export function parseVisualJobs(value:unknown,projectId:string):VisualJob[] {
   const ids=new Set<string>();
   return value.jobs.map((v:unknown)=>{
     if(!object(v)||!identifier(v.id)||ids.has(v.id)||v.project_id!==projectId||
-      (v.scene_id!=null&&!identifier(v.scene_id))||typeof v.kind!=='string'||!['generate','repair','preview','export','prepare-transfer','preview-transfer','recover-source','propose-layout'].includes(v.kind)||
+      (v.scene_id!=null&&!identifier(v.scene_id))||typeof v.kind!=='string'||!['generate','repair','preview','export','prepare-transfer','preview-transfer','recover-source','propose-layout','agent'].includes(v.kind)||
       typeof v.state!=='string'||!['queued','running','succeeded','failed','cancelled'].includes(v.state)||
       (v.stage!=null&&(typeof v.stage!=='string'||v.stage.length>120))||
       (v.current!==undefined&&typeof v.current!=='boolean')||
@@ -68,6 +71,22 @@ export function parseVisualJobs(value:unknown,projectId:string):VisualJob[] {
     const resultMode=object(v.result)?v.result.generation_mode:undefined;
     const mode=summary.generation_mode??resultMode??'source';
     if(!['source','host-motion','host-intent','host-components'].includes(mode as string)||(resultMode!==undefined&&resultMode!==mode))throw invalid();
+    let agent:VisualJob['agent'];
+    if(v.kind==='agent'){
+      if(summary.model!=='deepseek-flash-thinking'||!Number.isInteger(summary.max_turns)||Number(summary.max_turns)<1||Number(summary.max_turns)>AGENT_MAX_TURNS)throw invalid();
+      agent={model:summary.model,max_turns:Number(summary.max_turns)};
+    }else if(Object.hasOwn(summary,'max_turns'))throw invalid();
+    const r0=object(v.result)?v.result:undefined;
+    let agentResult:NonNullable<VisualJob['result']>['agent'];
+    if(v.kind==='agent'&&v.state==='succeeded'){
+      const usage=r0?.usage;
+      if(!r0||r0.status!=='passed'||!['model','harness'].includes(r0.finish_by as string)||!Number.isInteger(r0.turns)||Number(r0.turns)<1||Number(r0.turns)>agent!.max_turns||
+        r0.requests_dispatched!==r0.turns||!object(usage)||!Number.isInteger(usage.outputTokens)||Number(usage.outputTokens)<0||
+        r0.video!=='video.mp4'||r0.srt!=='video.srt'||!Array.isArray(r0.frames)||!r0.frames.length)throw invalid();
+      agentResult={status:'passed',turns:Number(r0.turns),finish_by:r0.finish_by as 'model'|'harness',output_tokens:Number(usage.outputTokens)};
+    }
+    // Agent runs report paid turns, which may exceed the two-request cap of the older generators.
+    const maxRequests=v.kind==='agent'?(agent?.max_turns??0):2;
     let result:VisualJob['result']=null;
     if(v.result!=null){
       const r=v.result;if(!object(r))throw invalid();
@@ -90,7 +109,7 @@ export function parseVisualJobs(value:unknown,projectId:string):VisualJob[] {
         (r.video!==undefined&&r.video!=='video.mp4')||(r.srt!==undefined&&r.srt!=='video.srt')||
         (r.geometry!==undefined&&(!object(r.geometry)||typeof r.geometry.status!=='string'))||
         (r.accepted!==undefined&&typeof r.accepted!=='boolean')||
-        (r.requests_dispatched!=null&&(!Number.isInteger(r.requests_dispatched)||Number(r.requests_dispatched)<0||Number(r.requests_dispatched)>2)))throw invalid();
+        (r.requests_dispatched!=null&&(!Number.isInteger(r.requests_dispatched)||Number(r.requests_dispatched)<0||Number(r.requests_dispatched)>maxRequests)))throw invalid();
       result={...(r.sha256!==undefined?{sha256:r.sha256 as string}:{}),...(r.design_sha256!==undefined?{design_sha256:r.design_sha256 as string}:{}),...(r.source!==undefined?{source:r.source as string}:{}),
         ...(v.kind==='propose-layout'&&validLayoutResult(r)?{original_design_sha256:r.original_design_sha256,layout_sha256:r.layout_sha256,layout_preflight:r.layout_preflight,moves:r.moves,unresolved:r.unresolved,execution:'not_run',technical:'passed',visual:'pending',production_adopted:false,diagnostic:true}:{}),
         ...(resultMode!==undefined?{generation_mode:resultMode as VisualGenerationMode}:{}),...(r.assembly_sha256!==undefined?{assembly_sha256:r.assembly_sha256 as string}:{}),
@@ -101,11 +120,11 @@ export function parseVisualJobs(value:unknown,projectId:string):VisualJob[] {
         ...(v.state==='succeeded'&&r.preset==='rag-augmentation:1'?{preset:'rag-augmentation:1',origin_sha256:r.origin_sha256 as string}:{}),
         ...(r.design!==undefined?{design:r.design}:{}),...(r.frames!==undefined?{frames:r.frames as string[]}:{}),
         ...(r.video?{video:'video.mp4'}:{}),...(r.srt?{srt:'video.srt'}:{}),
-        ...(r.geometry?{geometry:{status:(r.geometry as {status:string}).status}}:{}),...(r.accepted!==undefined?{accepted:r.accepted as boolean}:{}),...(r.requests_dispatched!==undefined?{requests_dispatched:r.requests_dispatched as number|null}:{})};
+        ...(r.geometry?{geometry:{status:(r.geometry as {status:string}).status}}:{}),...(r.accepted!==undefined?{accepted:r.accepted as boolean}:{}),...(r.requests_dispatched!==undefined?{requests_dispatched:r.requests_dispatched as number|null}:{}),...(agentResult?{agent:agentResult}:{})};
     }
     if(['generate','repair'].includes(v.kind)&&v.state==='succeeded'&&(mode==='host-intent'||mode==='host-components')&&
       (resultMode!==mode||!result?.assembly_sha256||!result.intent_sha256))throw invalid();
-    return {id:v.id,project_id:projectId,...(summary.design_revision_of?{design_revision_of:summary.design_revision_of as string}:{}),scene_id:(v.scene_id??null) as string|null,kind:v.kind as VisualJob['kind'],state:v.state as VisualJob['state'],stage:v.stage as string|null|undefined,error:v.error as string|null|undefined,...(typeof v.created_at==='string'?{created_at:v.created_at}:{}),...(summary.repair_preview_id?{repair_preview_id:summary.repair_preview_id as string}:{}),...(summary.timing_mode==='draft'?{timing_mode:'draft' as const}:{}),...(summary.operation?{operation:summary.operation as VisualJob['operation']}:{}),...(v.current!==undefined?{current:v.current as boolean}:{}),...(['generate','repair','recover-source','propose-layout'].includes(v.kind)?{generation_mode:mode as VisualGenerationMode}:{}),result};
+    return {id:v.id,project_id:projectId,...(summary.design_revision_of?{design_revision_of:summary.design_revision_of as string}:{}),scene_id:(v.scene_id??null) as string|null,kind:v.kind as VisualJob['kind'],state:v.state as VisualJob['state'],stage:v.stage as string|null|undefined,error:v.error as string|null|undefined,...(typeof v.created_at==='string'?{created_at:v.created_at}:{}),...(summary.repair_preview_id?{repair_preview_id:summary.repair_preview_id as string}:{}),...(summary.timing_mode==='draft'?{timing_mode:'draft' as const}:{}),...(summary.operation?{operation:summary.operation as VisualJob['operation']}:{}),...(agent?{agent}:{}),...(v.current!==undefined?{current:v.current as boolean}:{}),...(['generate','repair','recover-source','propose-layout'].includes(v.kind)?{generation_mode:mode as VisualGenerationMode}:{}),result};
   });
 }
 export function visualGenerateBody(sceneId:string,revision:number,mode:VisualGenerationMode){
@@ -169,7 +188,7 @@ export function videoProgress(job:VisualJob,now=0){
  const active=job.state==='queued'||job.state==='running';
  const failureText=job.error||'任务执行失败。';
  const failureDetail=/未自动重试|未追加模型调用/.test(failureText)?failureText:failureText+' 未自动重试。';
- const rendering=['preview','preview-transfer','export'].includes(job.kind);
+ const rendering=['preview','preview-transfer','export','agent'].includes(job.kind);
  const step=rendering?(job.state==='succeeded'&&job.result?.video?4:3):job.state==='succeeded'&&job.result?.source?2:1;
  const label=job.design_revision_of&&(job.state==='queued'||job.state==='running')?(job.state==='queued'?'设计修复已排队':'程序正在修订设计'):job.state==='queued'?(job.operation==='quality-repair'?'程序修复已排队':'等待执行'):job.state==='running'?(rendering?'检查画面与渲染视频':job.operation==='retime'?'同步配音时间':job.operation==='quality-repair'?'程序正在修复画面':job.kind==='repair'?'修改画面':'设计画面与生成动画'):job.kind==='preview'&&job.state==='succeeded'&&job.result?.geometry?.status==='failed'?'画面需要程序修复':videoTaskStatus(job);
  const detail=job.state==='queued'?'任务已提交，等待执行器领取。':job.state==='running'?(rendering?'正在检查画面并生成 MP4，视频文件尚未就绪。':job.design_revision_of?'程序正依据已保存诊断修订设计，通过后继续生成视频；未通过则停止。':job.operation==='retime'?'正在使用实测字幕调整画面时间，不调用模型或配音。':job.operation==='quality-repair'?'程序已读取检查报告，正在修复具体画面问题；本轮最多一次模型请求，失败后停止。':'正在处理画面设计和动画代码，尚未进入视频渲染。'):job.state==='failed'?failureDetail:job.state==='cancelled'?'任务已取消，不会自动重新提交。':step===2?'画面已准备，下一步将自动检查并生成视频。':job.result?.video?'可播放视频已就绪。':job.result?.geometry?.status==='failed'?'程序已保留问题报告，可根据报告修复画面，不必手动填写诊断或重复检查。':'没有生成可播放视频，请检查失败详情或修改画面。';
@@ -184,6 +203,7 @@ export function videoTaskStatus(job:VisualJob):string{
  if(job.state==='cancelled')return '视频任务已取消';
  if(job.kind==='preview')return job.result?.video?'视频已生成':job.result?.geometry?.status==='failed'?'视频未生成：画面检查未通过':'视频未生成：检查结束但没有可播放文件';
  if(job.kind==='export')return job.result?.video?'整课视频已导出':'整课视频未生成';
+ if(job.kind==='agent')return job.result?.video?'Agent 视频已生成':'Agent 未生成视频';
  if((job.kind==='generate'||job.kind==='repair')&&job.result?.source)return '画面已准备，待生成视频';
  return '准备任务已完成，尚未生成视频';
 }
@@ -213,4 +233,13 @@ export function visualError(error:unknown):string {
   if(cause===401)return '登录已失效，请重新登录。';
   if(cause===409)return '版本冲突或产物已失效，请刷新并重新核对；不要重复提交。';
   return '操作未完成，请刷新项目与任务状态；不要重复提交。';
+}
+
+/** The latest Agent job of a scene that is still current, for the chapter's Agent panel. */
+export function latestAgentJob(jobs:VisualJob[]):VisualJob|undefined{
+ return jobs.find(j=>j.kind==='agent'&&j.current!==false);
+}
+export function visualAgentBody(sceneId:string,revision:number){
+ if(!identifier(sceneId)||!Number.isInteger(revision)||revision<1)throw invalid();
+ return {scene_id:sceneId,expected_revision:revision,confirmed:true,max_turns:AGENT_MAX_TURNS};
 }

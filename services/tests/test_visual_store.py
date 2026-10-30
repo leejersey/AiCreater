@@ -242,7 +242,7 @@ class VisualStoreTests(unittest.TestCase):
         original=self.generate();claimed=self.jobs.claim('workflow')
         self.jobs.finish(original['id'],claimed['attempt_id'],{'requests_dispatched':2},error='execution_failed')
         with self.store.connection() as conn:
-            conn.execute('ALTER TABLE visual_jobs DROP CONSTRAINT visual_jobs_kind_v5_check')
+            conn.execute('ALTER TABLE visual_jobs DROP CONSTRAINT visual_jobs_kind_v6_check')
             conn.execute("ALTER TABLE visual_jobs ADD CONSTRAINT visual_jobs_kind_v3_check CHECK (kind IN ('generate','repair','preview','export','prepare-transfer','preview-transfer'))")
             conn.execute(Path(__file__).parents[1].joinpath('visual/schema.sql').read_text())
         recovery=self.jobs.recover_source(self.pid,original['id'],True)
@@ -268,7 +268,7 @@ class VisualStoreTests(unittest.TestCase):
         original=self.generate();claimed=self.jobs.claim('workflow')
         self.jobs.finish(original['id'],claimed['attempt_id'],{'requests_dispatched':1},error='layout_preflight')
         with self.store.connection() as conn:
-            conn.execute('ALTER TABLE visual_jobs DROP CONSTRAINT visual_jobs_kind_v5_check')
+            conn.execute('ALTER TABLE visual_jobs DROP CONSTRAINT visual_jobs_kind_v6_check')
             conn.execute("ALTER TABLE visual_jobs ADD CONSTRAINT visual_jobs_kind_v4_check CHECK (kind IN ('generate','repair','preview','export','prepare-transfer','preview-transfer','recover-source'))")
             conn.execute(Path(__file__).parents[1].joinpath('visual/schema.sql').read_text())
         proposal=self.jobs.propose_layout(self.pid,original['id'],True)

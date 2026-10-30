@@ -14,10 +14,14 @@ from services.visual.quality import quality_feedback
 RESULT_FIELDS = frozenset({'sha256', 'design_sha256', 'source', 'rationale', 'design',
     'requests_dispatched', 'geometry', 'frames', 'frame_hashes', 'video', 'srt', 'durationInFrames',
     'generation_mode','assembly_sha256','intent_sha256','binding_sha256','execution','technical','visual','production_adopted','diagnostic','preset','origin_sha256','recovery_sha256',
-    'original_design_sha256','layout_sha256','moves','unresolved','layout_preflight'})
+    'original_design_sha256','layout_sha256','moves','unresolved','layout_preflight',
+    'status','reason','turns','usage','model','finish_by'})
 FILE_NAME = re.compile(r'(?:source\.txt|design\.json|video\.mp4|video\.srt|stills/frame-\d+\.png)')
 HASH = re.compile(r'[a-f0-9]{64}')
 FAILURE = '视频生成未完成，程序已保存诊断和已有产物；未自动重试。'
+AGENT_STOPPED = 'Agent 未在轮数上限内完成通过检查的画面；运行记录已保留，未自动重试。'
+AGENT_MODEL = 'deepseek-flash-thinking'
+AGENT_MAX_TURNS = 25
 SOURCE_FAILURE = '动画代码未通过编译检查，程序已保存源码和诊断，尚未开始渲染。未追加模型调用。'
 LAYOUT_FAILURE = '设计布局检查未通过，程序已保存诊断，本次尚未生成视频。'
 STALE = 'stale: 章节版本或冻结素材已改变，请重新生成并确认当前预览。'
@@ -45,6 +49,7 @@ class VisualJobs:
         if row['kind'] in ('generate', 'repair'): summary['generation_mode'] = data.get('generation_mode','source')
         if row['kind'] in ('recover-source','propose-layout'):summary.update(max_requests=0,generation_mode='source')
         if row['kind'] == 'export': summary['chapter_count'] = len(data.get('chapters', []))
+        if row['kind'] == 'agent': summary.update(model=data.get('model'), max_turns=data.get('max_turns'))
         if data.get('timing_mode')=='draft':summary['timing_mode']='draft'
         if data.get('operation')=='retime':summary.update(operation='retime',max_requests=0)
         if data.get('operation')=='quality-repair':summary.update(operation='quality-repair',max_requests=1)
@@ -130,6 +135,19 @@ class VisualJobs:
             if generation_mode!='source':data['generation_mode']=generation_mode
             if auto_render:data.update(auto_render=True,auto_repair_requests=auto_repair_requests)
             return self._submit(conn, project, scene['id'], 'generate', data)
+
+    def agent(self, project_id, scene_id, expected_revision, confirmed, max_turns):
+        # One job: the scene-agent loop (paid model turns, capped) and, if it passes, the voiced chapter video.
+        if confirmed is not True or type(max_turns) is not int or not 1 <= max_turns <= AGENT_MAX_TURNS:
+            raise StoreError('validation', f'必须明确确认本次 Agent 轮数上限（1–{AGENT_MAX_TURNS}）；失败不自动重试')
+        revision(expected_revision)
+        with self.store.connection() as conn:
+            project = self.store._read(conn, project_id, lock=True)
+            scene = self.store._scene(project, scene_id)
+            if project['revision'] != expected_revision: raise StoreError('conflict', 'Project revision changed')
+            data = measured_input(project, scene)
+            data.update(model=AGENT_MODEL, max_turns=max_turns)
+            return self._submit(conn, project, scene['id'], 'agent', data)
 
     def align_draft(self,project_id,job_id,confirmed,sha256):
         self._approval(confirmed,sha256)
@@ -487,12 +505,12 @@ class VisualJobs:
         conn.execute("""UPDATE visual_jobs SET state='failed',stage='failed',ended_at=now(),
             error='工作进程租约或执行时限已过期，未自动重试。' WHERE state='running' AND
             (heartbeat_at <= now()-interval '60 seconds' OR started_at <= now() -
-             CASE kind WHEN 'export' THEN interval '1800 seconds' WHEN 'preview' THEN interval '900 seconds' WHEN 'preview-transfer' THEN interval '900 seconds'
+             CASE kind WHEN 'export' THEN interval '1800 seconds' WHEN 'agent' THEN interval '1800 seconds' WHEN 'preview' THEN interval '900 seconds' WHEN 'preview-transfer' THEN interval '900 seconds'
              ELSE interval '240 seconds' END)""")
 
     def claim(self, lane):
         if lane not in ('workflow', 'render'): raise StoreError('validation', 'Expected workflow or render lane')
-        kinds = ['generate', 'repair', 'prepare-transfer','recover-source','propose-layout'] if lane == 'workflow' else ['preview', 'preview-transfer', 'export']
+        kinds = ['generate', 'repair', 'prepare-transfer','recover-source','propose-layout','agent'] if lane == 'workflow' else ['preview', 'preview-transfer', 'export']
         with self.store.connection() as conn:
             conn.execute("SELECT pg_advisory_xact_lock(hashtext('aicreater.visual.' || %s))", [lane])
             self._recover(conn)
@@ -535,6 +553,16 @@ class VisualJobs:
                     all(isinstance(result.get(k),str) and HASH.fullmatch(result[k]) for k in ('design_sha256','original_design_sha256','layout_sha256')) and
                     isinstance(result.get('design'),dict) and isinstance(result.get('moves'),list) and len(result['moves'])<=20 and isinstance(result.get('unresolved'),list) and len(result['unresolved'])<=400 and
                     result.get('layout_preflight') in ('passed','failed') and (result['layout_preflight']!='passed' or not result['unresolved']) and set(files)=={'design.json'})
+        if kind=='agent':
+            # Only a gated, rendered scene is published as a success; stopped runs fail with AGENT_STOPPED.
+            usage=result.get('usage')
+            return (result.get('status')=='passed' and result.get('finish_by') in ('model','harness') and
+                    isinstance(result.get('sha256'),str) and HASH.fullmatch(result['sha256']) is not None and
+                    type(result.get('turns')) is int and 1<=result['turns']<=row['input']['max_turns'] and result.get('requests_dispatched')==result['turns'] and
+                    isinstance(usage,dict) and all(type(usage.get(k)) is int and usage[k]>=0 for k in ('inputTokens','outputTokens','cachedInputTokens')) and
+                    result.get('model')==row['input']['model'] and result.get('video')=='video.mp4' and result.get('srt')=='video.srt' and
+                    isinstance(result.get('frames'),list) and 0<len(result['frames'])<=50 and
+                    set(files)=={'source.txt','video.mp4','video.srt',*result['frames']})
         if kind=='recover-source':
             return (result.get('generation_mode')=='source' and type(result.get('requests_dispatched')) is int and result['requests_dispatched']==0 and
                     result.get('execution')=='not_run' and result.get('technical')=='passed' and result.get('visual')=='pending' and
@@ -596,7 +624,7 @@ class VisualJobs:
             row = self._active(conn, job_id, token)
             if row is None: raise StoreError('conflict', 'Visual attempt is terminal or expired')
             current = self._current(conn, project, row)
-            failure = STALE if not current else (LAYOUT_FAILURE if error=='layout_preflight' else SOURCE_FAILURE if error=='source_typecheck' else FAILURE) if error is not None else None
+            failure = STALE if not current else (LAYOUT_FAILURE if error=='layout_preflight' else SOURCE_FAILURE if error=='source_typecheck' else AGENT_STOPPED if error=='agent_stopped' else FAILURE) if error is not None else None
             if failure is None and (not self._valid_result(row, result) or
                     (row['kind'] in ('preview','preview-transfer') and not self._parent_matches(conn, project, row['input'], result))):
                 failure = 'validation: 视觉结果未通过校验，未自动重试。'

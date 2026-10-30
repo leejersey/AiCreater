@@ -12,7 +12,8 @@ import {canRecoverSource,canRepairRecoveredSource} from '../lib/visual-workbench
 import {visualRecoverSourceAction,visualRepairSourceAction,type VisualAction} from '../lib/visual-workbench-actions';
 import {canProposeLayout,canApplyLayout} from '../lib/visual-workbench';
 import {visualProposeLayoutAction,visualApplyLayoutAction} from '../lib/visual-workbench-actions';
-import {chapterPresentation,videoTaskStatus,videoProgress} from '../lib/visual-workbench';
+import {chapterPresentation,videoTaskStatus,videoProgress,latestAgentJob} from '../lib/visual-workbench';
+import {visualAgentAction} from '../lib/visual-workbench-actions';
 
 export function VisualLayoutProposal({job,disabled,onAction}:{job:VisualJob;disabled:boolean;onAction:(action:VisualAction)=>void}){
  return <>{canProposeLayout(job)&&<button disabled={disabled} onClick={()=>onAction(visualProposeLayoutAction(job))}><Code size={14}/>标签布局建议（免费）</button>}
@@ -65,7 +66,7 @@ export function VisualSourceRecovery({job,disabled,feedback,onFeedback,onAction}
   </>}</>;
 }
 const states:Record<string,string>={queued:'排队中',running:'执行中',succeeded:'已完成',failed:'失败，未自动重试',cancelled:'已取消'};
-const kinds:Record<string,string>={generate:'视觉生成',repair:'显式修复',preview:'预览',export:'整课导出','prepare-transfer':'机构候选','preview-transfer':'机构诊断预览','recover-source':'源码离线诊断','propose-layout':'标签布局建议'};
+const kinds:Record<string,string>={agent:'Agent 生成',generate:'视觉生成',repair:'显式修复',preview:'预览',export:'整课导出','prepare-transfer':'机构候选','preview-transfer':'机构诊断预览','recover-source':'源码离线诊断','propose-layout':'标签布局建议'};
 export function VisualHistoryEntry({job,children}:{job:VisualJob;children?:React.ReactNode}){
  const [open,setOpen]=useState(false);
  return <details className="vw-history-entry" onToggle={e=>setOpen(e.currentTarget.open)}><summary>{kinds[job.kind]} · {videoTaskStatus(job)}{job.current===false?' · 历史版本':''}</summary>{open&&children}</details>;
@@ -79,6 +80,19 @@ export function VisualTaskProgress({job,now,updatedAt,disabled,onCancel,onRefres
   <p>{progress.detail}</p>
   <div className="vw-task-meta" aria-live="off">{progress.elapsed&&<span>{progress.elapsed}</span>}{updatedAt>0&&<span>最近更新 {new Date(updatedAt).toLocaleTimeString('zh-CN',{hour12:false})}</span>}{progress.active&&now-updatedAt>15000&&updatedAt>0&&<span className="vw-warning">状态超过15秒未更新，请刷新检查</span>}</div>
   <div className="vw-toolbar"><button disabled={disabled} onClick={onRefresh}><RefreshCw size={14}/>刷新状态</button>{progress.active&&<button disabled={disabled} onClick={onCancel}><X size={14}/>取消任务</button>}</div>
+ </div>;
+}
+/** Agent path: one paid job designs, checks and renders the chapter; shown beside the existing video. */
+export function VisualAgentPanel({projectId,job,now,updatedAt,disabled,canStart,onStart,onRefresh,onCancel}:{projectId:string;job?:VisualJob;now:number;updatedAt:number;disabled:boolean;canStart:boolean;onStart:()=>void;onRefresh:()=>void;onCancel:()=>void}){
+ const running=!!job&&['queued','running'].includes(job.state);
+ return <div aria-label="Agent 视频" className="vw-current-video"><h3>Agent 视频</h3>
+  {!job&&<p>由 Agent 自行设计画面并检查，通过后直接生成本章视频（使用当前配音与字幕）。</p>}
+  {job&&job.state==='succeeded'&&job.result?.agent&&<p>{job.result.agent.finish_by==='model'?'Agent 已自检并通过检查':'Agent 未自行收尾，已采用最后一个通过检查的版本'} · {job.result.agent.turns} 轮 · 输出 {job.result.agent.output_tokens.toLocaleString('zh-CN')} token</p>}
+  {job&&job.state==='succeeded'&&<VisualMedia projectId={projectId} job={job} diagnostics/>}
+  {job&&job.state!=='succeeded'&&<VisualTaskProgress job={job} now={now} updatedAt={updatedAt} disabled={disabled} onRefresh={onRefresh} onCancel={onCancel}/>}
+  {job?.state==='failed'&&typeof job.result?.requests_dispatched==='number'&&<p>本次已用 {job.result.requests_dispatched} 轮模型调用。</p>}
+  <div className="vw-toolbar"><button disabled={disabled||running||!canStart} onClick={onStart}><Film size={14}/>{job?'Agent 重新生成（付费）':'Agent 生成视频（付费）'}</button></div>
+  {!canStart&&!running&&<p>需要先完成本章配音与实测对齐，且项目内没有进行中的任务。</p>}
  </div>;
 }
 export default function VisualWorkbench({routeProjectId}:{routeProjectId:string}) {
@@ -156,6 +170,9 @@ export default function VisualWorkbench({routeProjectId}:{routeProjectId:string}
             {presentation.video?<><p>{presentation.video.timing_mode==='draft'?'无声草稿':'视频已生成'}{presentation.video.result?.accepted?' · 已确认':''}</p><VisualMedia projectId={project.id} job={presentation.video}/></>:<p>本章暂无可播放视频</p>}
             {presentation.latest&&presentation.latest.id!==presentation.video?.id&&<><VisualTaskProgress job={presentation.latest} now={now} updatedAt={updatedAt} disabled={busy} onRefresh={()=>void act(refresh)} onCancel={()=>cancelVisual(presentation.latest!)}/>{presentation.video&&<p>保留上次可播放版本。</p>}</>}
           </div>
+          <VisualAgentPanel projectId={project.id} job={latestAgentJob(sceneJobs)} now={now} updatedAt={updatedAt} disabled={disabled} canStart={!active&&measuredReady(row)}
+            onStart={()=>void act(()=>confirmVisualAction(visualAgentAction(row.id,project.revision),confirm,submit))}
+            onRefresh={()=>void act(refresh)} onCancel={()=>{const job=latestAgentJob(sceneJobs);if(job)cancelVisual(job);}}/>
           <div className="vw-toolbar"><button disabled={disabled||audioActions!.voiceBlocked} onClick={()=>void act(async()=>{
             const revision=project.revision;
             if(!await confirmEstimate(audioActions!.retry?'显式重试当前章节付费配音':'为当前章节付费配音',audioActions!.estimatePath??base+'/estimate',audioActions!.retry?undefined:{operation:'voice',expected_revision:revision,scenes:[{scene_id:row.id,expected_revision:row.revision}]},()=>alive.current,{
@@ -223,6 +240,7 @@ export default function VisualWorkbench({routeProjectId}:{routeProjectId:string}
             <button disabled={disabled||!canAcceptPreview(job)} onClick={()=>void act(async()=>{
               if(await confirm({title:'人工验收当前预览',message:'确认已检查视频及首／中／末帧，画面、口播同步和几何表现符合要求？旧版本或媒体变化后本次验收将失效。',detail:'SHA-256: '+job.result!.sha256,confirmText:'确认人工验收'}))await submit('/'+job.id+'/accept',{confirmed:true,sha256:job.result!.sha256});
             })}><Check size={14}/>人工验收</button>{job.result.accepted===true&&<p>服务端已登记验收</p>}</>}
+          {job.kind==='agent'&&job.state==='succeeded'&&<><p>{videoTaskStatus(job)} · {job.result?.agent?.turns} 轮</p><VisualMedia projectId={project.id} job={job} diagnostics/><VisualArtifact job={job}/></>}
           {job.kind==='preview-transfer'&&job.result&&<><p>诊断预览 · 几何：{job.result.geometry?.status??'待检查'} · 未采用</p><VisualMedia projectId={project.id} job={job} diagnostics/></>}
         </section></VisualHistoryEntry>)}</details>}
         <details className="vw-history"><summary>整课导出记录</summary>{jobs.filter(j=>j.kind==='export').map(j=><VisualHistoryEntry key={j.id} job={j}><VisualJobStatus job={j}/>{j.state==='succeeded'&&<VisualMedia projectId={project.id} job={j}/>}</VisualHistoryEntry>)}</details>

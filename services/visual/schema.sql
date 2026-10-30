@@ -19,11 +19,18 @@ CREATE INDEX IF NOT EXISTS visual_jobs_project_idx ON visual_jobs(project_id,cre
 CREATE INDEX IF NOT EXISTS visual_jobs_claim_idx ON visual_jobs(state,created_at,id);
 
 DO $$ BEGIN
-    IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conrelid='visual_jobs'::regclass AND conname='visual_jobs_kind_v5_check') THEN
+    IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conrelid='visual_jobs'::regclass AND conname IN ('visual_jobs_kind_v5_check','visual_jobs_kind_v6_check')) THEN
         ALTER TABLE visual_jobs DROP CONSTRAINT IF EXISTS visual_jobs_kind_check;
         ALTER TABLE visual_jobs DROP CONSTRAINT IF EXISTS visual_jobs_kind_v2_check;
         ALTER TABLE visual_jobs DROP CONSTRAINT IF EXISTS visual_jobs_kind_v3_check;
         ALTER TABLE visual_jobs DROP CONSTRAINT IF EXISTS visual_jobs_kind_v4_check;
         ALTER TABLE visual_jobs ADD CONSTRAINT visual_jobs_kind_v5_check CHECK (kind IN ('generate','repair','preview','export','prepare-transfer','preview-transfer','recover-source','propose-layout'));
+    END IF;
+END $$;
+
+DO $$ BEGIN
+    IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conrelid='visual_jobs'::regclass AND conname='visual_jobs_kind_v6_check') THEN
+        ALTER TABLE visual_jobs DROP CONSTRAINT IF EXISTS visual_jobs_kind_v5_check;
+        ALTER TABLE visual_jobs ADD CONSTRAINT visual_jobs_kind_v6_check CHECK (kind IN ('generate','repair','preview','export','prepare-transfer','preview-transfer','recover-source','propose-layout','agent'));
     END IF;
 END $$;

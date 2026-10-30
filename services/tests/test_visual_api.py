@@ -60,6 +60,93 @@ class VisualApiTests(unittest.TestCase):
     def test_components_mode_survives_api_queue_and_published_result(self):
         self.check_queue_executor('host-components')
 
+    def ready_scene(self,project=None):
+        """A prepared scene with real measured audio on disk, as voicing and alignment would leave it."""
+        import hashlib
+        project=project or self.client.post(self.path+'/prepare',json={'expected_revision':1}).json()
+        row=project['scenes'][0];scene=row['scene'];text=scene['narration']['text']
+        scene.update(duration_frames=60,captions=[{'text':text,'start_frame':0,'end_frame':60}])
+        scene['narration'].update(audio_asset_id='voice',audio_start_frame=0)
+        audio=b'RIFF-test-audio';(self.store.public/'generated').mkdir(parents=True,exist_ok=True);(self.store.public/'generated'/'voice.wav').write_bytes(audio)
+        config=project['config'];config['assets']=[{'id':'voice','type':'audio','checksum':hashlib.sha256(audio).hexdigest(),'storage_key':'generated/voice.wav','duration_ms':2000}]
+        with self.store.connection() as conn:
+            conn.execute("UPDATE scenes SET scene=%s,state='ready' WHERE id=%s",[Jsonb(scene),row['id']])
+            conn.execute('UPDATE projects SET config=%s WHERE id=%s',[Jsonb(config),self.pid])
+        return project,row,text
+
+    def test_agent_request_requires_confirmed_turn_limit_and_measured_audio(self):
+        project=self.client.post(self.path+'/prepare',json={'expected_revision':1}).json()
+        body={'scene_id':project['scenes'][0]['id'],'expected_revision':project['revision'],'confirmed':True,'max_turns':25}
+        self.assertEqual(self.client.post(self.path+'/agent',json=body).status_code,409)  # no voice yet
+        project,row,_=self.ready_scene(project)
+        body.update(scene_id=row['id'],expected_revision=project['revision'])
+        for change in [{'confirmed':False},{'max_turns':0},{'max_turns':26},{'max_turns':True}]:
+            response=self.client.post(self.path+'/agent',json={**body,**change})
+            self.assertIn(response.status_code,(400,422),change)
+        self.assertEqual(self.client.get(self.path).json(),{'jobs':[]})
+        job=self.client.post(self.path+'/agent',json=body).json()
+        self.assertEqual((job['kind'],job['state'],job['input_summary']['model'],job['input_summary']['max_turns']),('agent','queued','deepseek-flash-thinking',25))
+        self.assertEqual(self.client.post(self.path+'/agent',json=body).json()['id'],job['id'])  # identical request reuses the job
+        # Leave no queued job behind: workers in other tests claim the oldest queued job of their lane.
+        self.assertEqual(self.client.post(self.path+'/'+job['id']+'/cancel',json={}).json()['state'],'cancelled')
+
+    def run_agent_job(self,write,check=lambda job:None):
+        from services.visual import worker
+        project,row,text=self.ready_scene()
+        job=self.client.post(self.path+'/agent',json={'scene_id':row['id'],'expected_revision':project['revision'],'confirmed':True,'max_turns':25}).json()
+        seen={}
+        def launcher(command,**options):
+            seen.update(command=command,env=options['env'],input=json.loads(Path(command[-2]).read_text()))
+            output=Path(command[-1]);output.mkdir();write(output)
+            process=Mock();process.poll.return_value=0;process.returncode=0
+            return process
+        root=self.store.public.resolve()/'visual'
+        with patch.dict(os.environ,{'DEEPSEEK_API_KEY':'sk-test','DATABASE_URL':'postgresql://secret'}),patch.object(worker,'WORK_ROOT',root),patch.object(worker,'_stop'):
+            done=worker.run_once(self.client.app.state.visual,launcher=launcher)
+            check(job)  # files live under the patched work root
+        return job,done,seen,text
+
+    def test_agent_job_runs_the_scene_agent_and_publishes_a_voiced_video(self):
+        source='export default function Scene(){return null;}'
+        def write(output):
+            (output/'source.txt').write_text(source);(output/'video.mp4').write_bytes(b'mp4');(output/'video.srt').write_text('1\n')
+            (output/'stills').mkdir();(output/'stills'/'frame-30.png').write_bytes(b'png')
+            (output/'result.json').write_text(json.dumps({'status':'passed','model':'deepseek-flash-thinking','turns':6,'requests_dispatched':6,
+                'usage':{'inputTokens':70000,'outputTokens':19000,'cachedInputTokens':66000},'sha256':'c'*64,'finish_by':'model',
+                'frames':['stills/frame-30.png'],'video':'video.mp4','srt':'video.srt'}))
+        def files(job):
+            video=self.client.get(self.path+'/'+job['id']+'/files/video.mp4')
+            self.assertEqual((video.status_code,video.content),(200,b'mp4'))
+            self.assertIn('captions.srt',self.client.get(self.path+'/'+job['id']+'/files/video.srt').headers['content-disposition'])
+            self.assertEqual(self.client.get(self.path+'/'+job['id']+'/files/source.txt').text,source)
+            self.assertEqual(self.client.get(self.path+'/'+job['id']+'/files/stills/frame-30.png').content,b'png')
+        job,done,seen,text=self.run_agent_job(write,files)
+        self.assertEqual(done['state'],'succeeded',done.get('error'))
+        self.assertTrue(seen['command'][1].endswith('scripts/scene-agent-job.ts'))
+        self.assertEqual(seen['env'].get('DEEPSEEK_API_KEY'),'sk-test');self.assertNotIn('DATABASE_URL',seen['env'])
+        self.assertEqual((seen['input']['model'],seen['input']['max_turns'],seen['input']['brief']['narration']),('deepseek-flash-thinking',25,text))
+        self.assertTrue(Path(seen['input']['audio_file']).is_file())
+        public=self.client.get(self.path).json()['jobs'][0]
+        self.assertEqual((public['result']['status'],public['result']['turns'],public['result']['finish_by']),('passed',6,'model'))
+        self.assertNotIn('_files',public['result'])
+
+    def test_agent_run_that_stops_fails_honestly_and_reports_paid_turns(self):
+        def write(output):
+            (output/'result.json').write_text(json.dumps({'status':'stopped','reason':'budget_turns','model':'deepseek-flash-thinking','turns':25,'requests_dispatched':25,
+                'usage':{'inputTokens':1,'outputTokens':1,'cachedInputTokens':0}}))
+        _,done,_,_=self.run_agent_job(write)
+        self.assertEqual(done['state'],'failed')
+        self.assertIn('Agent 未在轮数上限内完成',done['error'])
+        self.assertEqual(done['result']['requests_dispatched'],25)
+
+    def test_agent_result_claiming_success_without_video_is_rejected(self):
+        def write(output):
+            (output/'source.txt').write_text('x')
+            (output/'result.json').write_text(json.dumps({'status':'passed','model':'deepseek-flash-thinking','turns':3,'requests_dispatched':3,
+                'usage':{'inputTokens':1,'outputTokens':1,'cachedInputTokens':0},'sha256':'c'*64,'finish_by':'model','frames':[],'video':'video.mp4','srt':'video.srt'}))
+        _,done,_,_=self.run_agent_job(write)
+        self.assertEqual(done['state'],'failed')
+
     def check_queue_executor(self,mode):
         from services.visual import worker
         project=self.client.post(self.path+'/prepare',json={'expected_revision':1}).json()

@@ -30,6 +30,12 @@ class Generate(Revision):
     timing_mode:Literal['draft','measured']='measured'
 
 
+class AgentRun(Revision):
+    scene_id:str=Field(min_length=1,max_length=80)
+    confirmed:bool
+    max_turns:int
+
+
 class Repair(Body):
     confirmed:bool
     max_requests:int
@@ -110,6 +116,11 @@ def prepare(project_id:str,body:Revision,request:Request):
 @router.post('/generate',status_code=202)
 def generate(project_id:str,body:Generate,request:Request):
     return request.app.state.visual.generate(project_id,body.scene_id,body.expected_revision,body.confirmed,body.max_requests,body.generation_mode,timing_mode=body.timing_mode)
+
+
+@router.post('/agent',status_code=202)
+def agent(project_id:str,body:AgentRun,request:Request):
+    return request.app.state.visual.agent(project_id,body.scene_id,body.expected_revision,body.confirmed,body.max_turns)
 
 
 @router.post('/{visual_id}/align',status_code=202)

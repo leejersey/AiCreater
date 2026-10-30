@@ -5,6 +5,7 @@ import os
 from pathlib import Path
 import re
 import signal
+import sys
 import subprocess
 import time
 
@@ -12,6 +13,10 @@ from services.projects.store import ROOT, StoreError, identifier
 
 WORK_ROOT=ROOT/'output/visual-workbench'
 PUBLIC_FILE=re.compile(r'(?:source\.txt|design\.json|video\.mp4|video\.srt|stills/frame-\d+\.png)')
+
+
+class AgentStopped(Exception):
+    """The scene-agent run ended without a gated scene; a normal outcome, reported as a failed job."""
 
 
 def job_directory(job_id):
@@ -35,6 +40,7 @@ def checked_file(directory,name):
 def child_environment(kind):
     keys=['PATH','HOME','TMPDIR','TMP','TEMP','LANG','LC_ALL','TZ','SYSTEMROOT','REMOTION_BROWSER_EXECUTABLE']
     if kind in ('generate','repair'):keys+=['DEEPSEEK_API_KEY','DEEPSEEK_MODEL']
+    if kind=='agent':keys+=['DEEPSEEK_API_KEY']
     return {key:os.environ[key] for key in keys if key in os.environ}
 
 
@@ -206,6 +212,11 @@ def command_input(jobs,job):
         if parent['input'].get('generation_mode','source')!=mode:raise ValueError('Repair mode mismatch')
         directory=job_directory(parent['id']);_check_frozen_mode(directory,mode)
         return {'previous_directory':str(directory),'feedback':data['feedback']}
+    if kind=='agent':
+        audio=jobs.store.asset_file(job['project_id'],data['asset']['id'])
+        if _hash(audio)!=data['asset']['checksum']:raise StoreError('assets','配音已改变')
+        return {'brief':data['brief'],'cues':data['cues'],'scene':data['scene'],'audio_file':str(audio),
+                'model':data['model'],'max_turns':data['max_turns']}
     if kind=='preview':
         chapter=_chapter(jobs,job['project_id'],data)
         if data.get('isolated_render') is True:chapter['isolated_render']=True
@@ -283,6 +294,13 @@ def publishable_result(job,directory):
         result['_files']={name:_hash(checked_file(directory,name)) for name in ('source.txt','design.json')}
         if result['sha256']!=source_hash or not VisualJobs._valid_result(job,result):raise ValueError('Invalid offline transfer result')
         return result
+    if job['kind']=='agent':
+        if result.get('status')!='passed':raise AgentStopped()
+        frames=result.get('frames')
+        if not isinstance(frames,list) or not frames or len(frames)>50:raise ValueError('Missing review frames')
+        files=['source.txt','video.mp4','video.srt',*frames]
+        result['_files']={name:_hash(checked_file(directory,name)) for name in files}
+        return result
     if job['kind'] in ('generate','repair'):
         mode=job['input'].get('generation_mode','source')
         if mode not in ('source','host-motion','host-intent','host-components') or result.get('generation_mode','source')!=mode:
@@ -340,14 +358,15 @@ def run_once(jobs,lane='workflow',*,timeout=None,heartbeat_interval=5,launcher=N
         input_path=WORK_ROOT/(job['id']+'.input.json')
         with input_path.open('x',encoding='utf-8') as stream:
             os.chmod(input_path,0o600);json.dump(data,stream,ensure_ascii=False)
-        command=[str(ROOT/'node_modules/.bin/tsx'),str(ROOT/'scripts/visual-workbench.ts'),job['kind'],str(input_path),str(directory)]
+        command=([str(ROOT/'node_modules/.bin/tsx'),str(ROOT/'scripts/scene-agent-job.ts'),str(input_path),str(directory)] if job['kind']=='agent' else
+                 [str(ROOT/'node_modules/.bin/tsx'),str(ROOT/'scripts/visual-workbench.ts'),job['kind'],str(input_path),str(directory)])
         # Logs remain private; generated output and provider diagnostics never cross the API.
         log_path=WORK_ROOT/(job['id']+'.log')
         with log_path.open('xb') as log:
             os.chmod(log_path,0o600)
             process=(launcher or subprocess.Popen)(command,cwd=ROOT,env=child_environment('recover-source' if job['input'].get('operation')=='retime' else job['kind']),stdin=subprocess.DEVNULL,stdout=log,stderr=log,start_new_session=True)
             started=time.monotonic();beat=0
-            limit=timeout or {'generate':240,'repair':240,'prepare-transfer':240,'recover-source':60,'propose-layout':60,'preview':900,'preview-transfer':900,'export':1800}[job['kind']]
+            limit=timeout or {'agent':1740,'generate':240,'repair':240,'prepare-transfer':240,'recover-source':60,'propose-layout':60,'preview':900,'preview-transfer':900,'export':1800}[job['kind']]
             while process.poll() is None:
                 now=time.monotonic()
                 if now-started>limit or log.tell()>2*1024**2:raise RuntimeError('Execution limit')
@@ -360,6 +379,13 @@ def run_once(jobs,lane='workflow',*,timeout=None,heartbeat_interval=5,launcher=N
     except (Exception,KeyboardInterrupt):
         if process:_stop(process)
         count=0 if job['kind'] in ('prepare-transfer','preview-transfer','recover-source','propose-layout') else None;failure_code=None
+        if job['kind']=='agent':
+            # Paid turns are reported whether the run passed, stopped or crashed after some turns.
+            try:
+                turns=_json(directory/'result.json',65536).get('turns')
+                if type(turns) is int and 0<=turns<=job['input']['max_turns']:count=turns
+            except (ValueError,OSError):pass
+            if isinstance(sys.exc_info()[1],AgentStopped):failure_code='agent_stopped'
         try:
             if job['kind'] in ('generate','repair'):
                 record=_json(directory/'request-count.json',4096);value=record.get('requests_dispatched')
