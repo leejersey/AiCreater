@@ -5,5 +5,5 @@ export function parseAccount(value:unknown):Account {
   return {id:value.id,username:value.username};
 }
 export function safeReturn(path:string|null):string {
-  return path&&/^(?:\/courses(?:\/(?:new|[a-f0-9-]{36}))?(?:\?[^#\\]*)?|\/account)$/i.test(path)?path:'/courses';
+  return path&&/^(?:\/courses(?:\/(?:new|[a-f0-9-]{36}(?:\/teaching)?))?(?:\?[^#\\]*)?|\/account)$/i.test(path)?path:'/courses';
 }
