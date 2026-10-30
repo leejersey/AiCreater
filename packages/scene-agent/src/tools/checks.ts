@@ -115,6 +115,8 @@ function whereLabels(render:StillsResult,finding:AuditFinding):string{
 }
 
 export function formatAudit(render:StillsResult,cues:Cue[],duration:number):string{
+ // With nothing rendered, "0 findings" would read as a clean scene. Say plainly that there is nothing to audit.
+ if(!render.frames.length)return 'audit: not available, no frame rendered. Fix the render errors above first.';
  const {findings,unsupportedFrames}=summarizeAudit(render,cues,duration);
  const counts=(['high','medium','low'] as const).map(s=>`${findings.filter(f=>f.severity===s).length} ${s}`).join(' / ');
  const lines=[`audit of frames ${render.frames.map(f=>f.frame).join(', ')}: ${counts}`];

@@ -221,3 +221,13 @@ test('label findings carry the measured text and position, and how far a label i
  assert.match(report,/label-overlap text\[5\][^\n]*\n    measured at frame 0: text\[5\] "BM25 稀疏检索" at x 300–520, y 960–1000; text\[7\] "稠密检索" at x 400–580, y 950–990/);
  assert.match(report,/label-out-of-bounds text\[5\][^\n]*\n    measured at frame 0: text\[5\] "BM25 稀疏检索" at x 300–520, y 960–1000; out bottom by 20px \(the caption band starts at y 980\)/);
 });
+
+test('when every frame fails the report says the audit is unavailable, not clean',async()=>{
+ const renderer:StillRenderer={async render(source,frames){return{sourceSha256:sourceSha256(source),frames:[],failures:frames.map(frame=>({frame,error:'inputRange must be strictly monotonically increasing'}))};},async close(){}};
+ const {call,context}=await setup({initialSource:MINIMAL,renderer});
+ const result=await call('render_stills');
+ assert.equal(result.isError,true);
+ assert.match(out(result),/audit: not available, no frame rendered/);
+ assert.doesNotMatch(out(result),/0 high|no geometry findings|passes the final gates/);
+ assert.equal(context.cleanCheckpoint,undefined);
+});
