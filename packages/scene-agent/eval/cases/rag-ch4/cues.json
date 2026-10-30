@@ -1,0 +1,38 @@
+[
+  {
+    "id": "cue-1",
+    "text": "检索模块是RAG的关键组成部分。",
+    "startFrame": 6,
+    "endFrame": 92
+  },
+  {
+    "id": "cue-2",
+    "text": "它的任务是从海量文档中快速找到与用户问题相关的片段。",
+    "startFrame": 105,
+    "endFrame": 236
+  },
+  {
+    "id": "cue-3",
+    "text": "常用的方法包括基于关键词的稀疏检索（如BM25）和基于语义的稠密检索（如使用嵌入模型）。",
+    "startFrame": 249,
+    "endFrame": 499
+  },
+  {
+    "id": "cue-4",
+    "text": "稠密检索将问题和文档都映射到向量空间，通过计算向量相似度来找到最相关的文档。",
+    "startFrame": 517,
+    "endFrame": 738
+  },
+  {
+    "id": "cue-5",
+    "text": "为了提高检索效率，通常会使用近似最近邻搜索算法，如FAISS或HNSW。",
+    "startFrame": 749,
+    "endFrame": 945
+  },
+  {
+    "id": "cue-6",
+    "text": "检索模块的质量直接影响最终答案的准确性。\n\n",
+    "startFrame": 994,
+    "endFrame": 1101
+  }
+]
