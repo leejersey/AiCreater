@@ -838,6 +838,7 @@ time.sleep(20)
             self.assertEqual(response.status_code, 200)
             self.assertEqual(response.content, subtitle.read_bytes())
             self.assertIn('attachment', response.headers['content-disposition'])
+            self.assertIn('teaching-captions.srt', response.headers['content-disposition'])
         import subprocess
         subprocess.run(['ffmpeg', '-v', 'error', '-i', str(video), '-f', 'null', '-'], check=True, capture_output=True, timeout=60)
         subtitle.write_text('tampered')

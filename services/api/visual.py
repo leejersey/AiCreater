@@ -224,5 +224,6 @@ def file(project_id:str,visual_id:str,name:str,request:Request):
     if digest.hexdigest()!=checksum:
         raise StoreError('assets','Visual file integrity check failed')
     media='text/plain; charset=utf-8' if name.endswith(('.txt','.srt')) else 'application/json' if name.endswith('.json') else 'image/png' if name.endswith('.png') else 'video/mp4'
-    return FileResponse(path,media_type=media,filename=Path(name).name if name in ('video.mp4','video.srt') else None,
+    # Captions are burned into video.mp4; a same-stem .srt next to it makes players show them twice.
+    return FileResponse(path,media_type=media,filename={'video.mp4':'video.mp4','video.srt':'captions.srt'}.get(name),
                         headers={'Cache-Control':'private, no-store','X-Content-Type-Options':'nosniff','Content-Security-Policy':"default-src 'none'; sandbox"})

@@ -392,7 +392,8 @@ def create_app(store=None, *, authentication=True, teaching_plan=False, teaching
     @app.get('/api/jobs/{job_id}/files/{extension}')
     def download(job_id: str, extension: Literal['mp4', 'srt'], request: Request):
         file = request.app.state.jobs.render_file(job_id, extension)
-        return FileResponse(file, filename='teaching.' + extension,
+        # Captions are burned into the MP4; a same-stem .srt in the download folder makes players show them twice.
+        return FileResponse(file, filename='teaching.mp4' if extension == 'mp4' else 'teaching-captions.srt',
                             media_type='video/mp4' if extension == 'mp4' else 'application/x-subrip')
 
     @app.get('/api/jobs/{job_id}')
