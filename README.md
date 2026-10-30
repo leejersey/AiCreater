@@ -26,6 +26,8 @@ AI Creater 是一个面向**中文知识教学**的 AI 视频生成系统。用�
 
 已用真实 DeepSeek + 火山 TTS 2.0 跑通完整链路，产出多门完整课程。
 
+**新路线 · Scene Agent**：像 Codex 一样，给 Agent 一份分镜稿（口播 + 实测时间轴）和一套 skill，它在工作目录里自己写场景代码、渲染、看审计报告、修改，直到通过客观检查，再用现有配音和字幕出片。换模型只改配置；设计目标是模型越强、画面越好（尚未用更强模型对照验证）。RAG 课程 8 章已全部由 DeepSeek（开启思考）独立完成，详见下文 [Scene Agent](#-scene-agent分镜稿--skill--视频)。
+
 ---
 
 ## ✨ 核心特性
@@ -64,6 +66,21 @@ Markdown 使用固定格式：每段 `## [s1] 标题`（ID 唯一），依次包
 
 **教学图片开发中**：新分镜会判断是否需要图片、说明教学理由，并为适用的默认卡片/对比场景规划最多两张独立对象素材（最多四个教学元素）。需求绑定已有元素与唯一口播原文，不是背景图；标签、命令和精确数据仍由组件绘制。工作台显示已接受分镜的只读图片计划；改变教学内容/锚点后标记需复核。图片计划与稳定需求ID保存在项目配置及版本profile，不进入视频DSL、配音或字幕；规划复用同一次分镜请求，不新增生图调用。当前没有GPT Image 2接入、图片收费确认或候选选择入口；代码组合模板及已绑定图片的重配音/重生成仍待完成，不能把本阶段称为全自动生图功能。
 - **讲解风格选择**：通俗科普 vs 知识干货，可视化卡片切换
+
+### 🤖 Scene Agent：分镜稿 + skill → 视频
+
+```
+口播 + 实测 cue ─▶ Agent 循环（写 Scene.tsx → 自动类型检查 / 渲染 / 审计 → 修改 → finish）─▶ 客观关卡 ─▶ 配音 + 字幕出片
+```
+
+- **原生工具调用**：代码只通过 `write_file` / `edit_file` 交付，不再把源码塞进 JSON；参数错误、截断都回给模型自行修正。
+- **每次修改自动检查**：类型检查、关键帧渲染、几何审计（文字重叠、越出字幕安全区）、卡片互相遮挡、像素级空白帧检测，结果带文字内容与坐标交还模型。
+- **客观关卡**：编译、可渲染、无 high 级问题（含空白帧）；模型自评只作记录。达标后未收尾时，框架回退到最后一个达标版本并标记为 `harness`。
+- **skill**（`packages/scene-agent/skill/`）：场景约定、工艺规则、按内容类型（问题、机制、对比、列举、总结）的画面套路；只用 brief 中的事实。
+- **模型适配层**：OpenAI 兼容（DeepSeek / Qwen / Kimi / GLM / GPT）与 Claude 官方 SDK，`packages/scene-agent/models.json` 切换。默认 `deepseek-flash-thinking`（思考 effort low）。
+- **实测**：RAG 课程 8/8 章通过，每章 4–8 轮、由模型自行收尾；整课合计输出约 14.8 万 token。逐次记录见 [`packages/scene-agent/eval/runs.md`](packages/scene-agent/eval/runs.md)。
+
+工作台中选中已完成配音与实测对齐的章节，点 **「Agent 生成视频（付费）」**：一次确认最多 25 轮模型调用，通过后直接生成本章 MP4 / SRT；未通过则停止并显示实际用掉的轮数，不自动重试。命令行用法见 [路径 D](#路径-dscene-agent-命令行)。
 
 ### 🔒 账号与权限
 - 注册 / 登录 / 退出 / 修改密码
@@ -206,6 +223,27 @@ npm run render -- output/cloud.json output/cloud.mp4
 
 ---
 
+### 路径 D：Scene Agent 命令行
+
+```bash
+# 预演：只打印模型与预算，不调用模型
+npm run scene-agent -- run packages/scene-agent/eval/cases/rag-ch4/brief.json \
+  --cues=packages/scene-agent/eval/cases/rag-ch4/cues.json
+
+# 真正运行：必须显式加 --confirm-paid（DeepSeek 计费；默认最多 25 轮）
+npm run scene-agent -- run <brief.json> --cues=<cues.json> --confirm-paid [--model=deepseek-flash] [--max-turns=15]
+
+# 本地出片（不调用模型 / TTS）：单章带配音预览、或多章拼整课
+npm run scene-agent:preview -- <运行目录> <单章配音参照目录>
+npm run scene-agent:course -- <输出目录> <整课导出目录> <第1章运行目录> <第2章运行目录> …
+```
+
+每次运行写入 `output/scene-agent/<id>-<model>-<时间>/`：`scene/Scene.tsx`、`stills/`、`checkpoints/`（达标版本）、`transcript.jsonl`（每轮请求与工具结果）、`result.json`。密钥读取项目 `.env` 中的 `DEEPSEEK_API_KEY`（Claude 用 `ANTHROPIC_API_KEY`）。
+
+工作台的「Agent 生成视频」由 Workflow 队列执行（与上文 Celery Worker + Beat 相同，无需新进程）；单个任务通常几分钟，租约上限 30 分钟。
+
+---
+
 ### 运行测试
 
 ```bash
@@ -260,6 +298,8 @@ apps/
 packages/
   video-schema/            视频项目 JSON Schema 与类型定义
   video-components/        9 种教学场景 React 组件 + 5 种视觉风格
+  custom-scenes/           自由画面场景：源码约定、几何审计、Remotion 渲染与整课导出
+  scene-agent/             Scene Agent：模型适配层、工具、循环与关卡、skill、评测用例
 
 services/
   api/                     FastAPI 后端服务
@@ -287,6 +327,8 @@ docs/                      项目文档
 
 | 文档 | 说明 |
 |:---|:---|
+| [Scene Agent 设计](docs/superpowers/plans/2026-10-30-scene-agent-loop-design.md) | 适配层、工具接口、关卡与反馈划分、里程碑 |
+| [Scene Agent 运行记录](packages/scene-agent/eval/runs.md) | 每次真实模型运行的结果、用量与问题 |
 | [快速上手](docs/getting-started.md) | 环境要求、安装、各路径详细指南 |
 | [教学模板](docs/teaching-templates.md) | 9 种教学表达场景的字段约束与使用说明 |
 | [API 参考](docs/api-reference.md) | HTTP 接口文档、任务管理、导出下载 |
@@ -317,6 +359,10 @@ docs/                      项目文档
 
 - 本项目为**个人使用**；Remotion / Player 4.0.534 符合个人免费资格
 - 分镜生成与配音会调用 DeepSeek 与火山引擎 API，**会产生费用**
+- Scene Agent 每轮都是一次付费模型调用；命令行须 `--confirm-paid`，工作台须逐次确认轮数上限
+- Agent 生成的场景代码在本机渲染，有源码约定检查，但**不是安全沙箱**
+- 工作台「Agent 生成视频」：接口、Worker 与前端各自有测试，完整网页链路（浏览器 → API → Celery → Agent → 视频）尚在实测中
+- Agent 画面质量参差：机制、对比类章节较好，列举、总结类章节偏空（已补 skill，待重跑验证）；所有结果仍需人工观看确认
 - 本地渲染与缓存对齐不产生额外 API 费用
 - Redis 保留本机使用；若转为公司/第三方服务需重新核对[许可](docs/dependency-license-review.md)
 - 字体使用 `@fontsource/noto-sans-sc`（OFL 许可）
