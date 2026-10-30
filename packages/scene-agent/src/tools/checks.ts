@@ -34,12 +34,40 @@ export const typecheck:Tool={
  },
 };
 
-/** Cue starts, midpoints and last frames, so every narrated beat is sampled; evenly spaced without cues. */
+/** Every cue midpoint first (where a beat must be visible), then cue starts and ends up to the cap; evenly spaced without cues. */
 export function defaultFrames(duration:number,cues:Cue[]):number[]{
- const picks=cues.length?cues.flatMap(c=>[c.startFrame,Math.floor((c.startFrame+c.endFrame)/2),c.endFrame-1]):[0,.25,.5,.75,1].map(t=>Math.round((duration-1)*t));
- let frames=[...new Set(picks.map(f=>Math.max(0,Math.min(duration-1,f))))].sort((a,b)=>a-b);
- if(frames.length>MAX_FRAMES)frames=Array.from({length:MAX_FRAMES},(_,i)=>frames[Math.round(i*(frames.length-1)/(MAX_FRAMES-1))]);
- return [...new Set(frames)];
+ const clamp=(f:number)=>Math.max(0,Math.min(duration-1,f));
+ const spread=(list:number[],n:number)=>n<=0?[]:list.length<=n?list:Array.from({length:n},(_,i)=>list[Math.round(i*(list.length-1)/Math.max(1,n-1))]);
+ if(!cues.length)return [...new Set([0,.25,.5,.75,1].map(t=>clamp(Math.round((duration-1)*t))))];
+ const mids=[...new Set(cues.map(c=>clamp(Math.floor((c.startFrame+c.endFrame)/2))))];
+ const edges=[...new Set(cues.flatMap(c=>[clamp(c.startFrame),clamp(c.endFrame-1)]))].filter(f=>!mids.includes(f));
+ return [...new Set([...spread(mids,MAX_FRAMES),...spread(edges,MAX_FRAMES-Math.min(mids.length,MAX_FRAMES))])].sort((a,b)=>a-b);
+}
+
+// Below BLANK_INK a frame shows essentially nothing; below SPARSE_INK it shows a stray label at most.
+// Measured on rag-ch1: an empty-looking passing scene had 0.00% on 9 of 12 frames; a readable one had 1.7–14.8%.
+const BLANK_INK=0.001,SPARSE_INK=0.01,EDGE_FRAMES=15;
+function insideCue(frame:number,cues:Cue[],duration:number):boolean{
+ if(!cues.length)return frame>=EDGE_FRAMES&&frame<duration-EDGE_FRAMES;
+ return cues.some(c=>frame>=c.startFrame+EDGE_FRAMES&&frame<c.endFrame-EDGE_FRAMES);
+}
+
+/** Findings from the rendered pixels: frames that show nothing while a cue is being narrated. */
+export function inkFindings(render:StillsResult,cues:Cue[],duration:number):AuditFinding[]{
+ const out:AuditFinding[]=[];
+ const add=(severity:AuditFinding['severity'],kind:string,detail:string,frame:number)=>{
+  const existing=out.find(f=>f.kind===kind&&f.severity===severity);
+  if(existing)existing.frames.push(frame);else out.push({severity,kind,target:'frame',detail,frames:[frame]});
+ };
+ for(const {frame,ink} of render.frames){
+  if(ink===undefined)continue;
+  const inside=insideCue(frame,cues,duration);
+  if(ink<BLANK_INK)add(inside?'high':'low','blank-frame',inside
+   ?'Nothing visible while this cue is narrated (under 0.1% of the canvas differs from the background). Check opacity, fade timing and positions.'
+   :'Nothing visible at a cue edge; fine only if it is the middle of a deliberate fade.',frame);
+  else if(ink<SPARSE_INK&&inside)add('medium','sparse-frame','Under 1% of the canvas is drawn while this cue is narrated; the beat is barely visible.',frame);
+ }
+ return out;
 }
 
 // label-obstacle is feedback only: labels drawn inside a nested object (a "?" on a card inside a sleeve)
@@ -52,8 +80,8 @@ export const SEVERITY:Record<string,'high'|'medium'|'low'>={
 const RANK={high:0,medium:1,low:2};
 export type AuditFinding={severity:'high'|'medium'|'low';kind:string;target:string;detail:string;frames:number[]};
 
-/** Merges identical findings across frames, most severe first. */
-export function summarizeAudit(render:StillsResult):{findings:AuditFinding[];unsupportedFrames:number[]}{
+/** Merges identical findings across frames, most severe first. Pass cues and duration to include pixel findings. */
+export function summarizeAudit(render:StillsResult,cues:Cue[]=[],duration?:number):{findings:AuditFinding[];unsupportedFrames:number[]}{
  const byKey=new Map<string,AuditFinding>();
  for(const {frame,audit} of render.frames)for(const issue of audit.issues){
   const key=`${issue.kind}\u0000${issue.target}\u0000${issue.detail}`;
@@ -61,7 +89,7 @@ export function summarizeAudit(render:StillsResult):{findings:AuditFinding[];uns
   if(existing)existing.frames.push(frame);
   else byKey.set(key,{severity:SEVERITY[issue.kind]??'medium',kind:issue.kind,target:issue.target,detail:issue.detail,frames:[frame]});
  }
- const findings=[...byKey.values()].sort((a,b)=>RANK[a.severity]-RANK[b.severity]||a.frames[0]-b.frames[0]);
+ const findings=[...byKey.values(),...(duration?inkFindings(render,cues,duration):[])].sort((a,b)=>RANK[a.severity]-RANK[b.severity]||a.frames[0]-b.frames[0]);
  return{findings,unsupportedFrames:render.frames.filter(f=>f.audit.unsupported).map(f=>f.frame)};
 }
 
@@ -72,8 +100,8 @@ function atCueChange(frames:number[],cues:Cue[]):boolean{
  return changes.length>0&&frames.every(f=>changes.some(([from,to])=>f>=from&&f<=to));
 }
 
-export function formatAudit(render:StillsResult,cues:Cue[]):string{
- const {findings,unsupportedFrames}=summarizeAudit(render);
+export function formatAudit(render:StillsResult,cues:Cue[],duration:number):string{
+ const {findings,unsupportedFrames}=summarizeAudit(render,cues,duration);
  const counts=(['high','medium','low'] as const).map(s=>`${findings.filter(f=>f.severity===s).length} ${s}`).join(' / ');
  const lines=[`audit of frames ${render.frames.map(f=>f.frame).join(', ')}: ${counts}`];
  let transitions=0;
@@ -113,8 +141,8 @@ export const renderStills:Tool={
   context.lastRender=render;
   const lines=['typecheck passed',`rendered ${render.frames.length}/${frames.length} frames: ${render.frames.map(f=>f.frame).join(', ')||'none'}`];
   for(const f of render.failures)lines.push(`frame ${f.frame} failed: ${f.error}`);
-  lines.push(formatAudit(render,cues));
-  const clean=!render.failures.length&&!summarizeAudit(render).findings.some(f=>f.severity==='high');
+  lines.push(formatAudit(render,cues,brief.durationInFrames));
+  const clean=!render.failures.length&&!summarizeAudit(render,cues,brief.durationInFrames).findings.some(f=>f.severity==='high');
   const fullSample=defaultFrames(brief.durationInFrames,cues).every(f=>frames.includes(f));
   if(clean&&fullSample){
    // Keep every gate-clean version outside the model's reach, so a later regression cannot lose it.
@@ -137,10 +165,10 @@ async function freshRender(context:ToolContext):Promise<StillsResult>{
 
 export const auditScene:Tool={
  readOnly:true,
- spec:{name:'audit_scene',description:'Repeat the geometry audit of the last render (render_stills already includes it): label overlaps, labels leaving the 1920×980 caption-safe area, labels over obstacles or routes, movers off their routes. Each line names the element id and frames.',
+ spec:{name:'audit_scene',description:'Repeat the audit of the last render (render_stills already includes it): blank frames during a cue, label overlaps, labels leaving the 1920×980 caption-safe area, labels over obstacles or routes, movers off their routes. Each line names the element id and frames.',
   inputSchema:{type:'object',properties:{},additionalProperties:false}},
  async run(_input,context){
-  return text(formatAudit(await freshRender(context),context.workspace.cues));
+  return text(formatAudit(await freshRender(context),context.workspace.cues,context.workspace.brief.durationInFrames));
  },
 };
 

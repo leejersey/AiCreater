@@ -27,7 +27,8 @@ class FakeRenderer implements StillRenderer{
   await mkdir(outDir,{recursive:true});
   const file=path.join(outDir,'f.png');await writeFile(file,'png');
   const issues=source.includes('y={1040}')?[{kind:'label-out-of-bounds',target:'title',detail:'Label exceeds 0..1920 x 0..980 caption-safe area'}]:[];
-  return{sourceSha256:sourceSha256(source),failures:[],frames:frames.map(frame=>({frame,file,audit:{issues,labels:1,movers:0,routes:0,obstacles:0}}))};
+  const ink=source.includes('opacity={0}')?0:0.05; // a scene drawn fully transparent renders as background only
+  return{sourceSha256:sourceSha256(source),failures:[],frames:frames.map(frame=>({frame,file,ink,audit:{issues,labels:1,movers:0,routes:0,obstacles:0}}))};
  }
  async close(){}
 }
@@ -79,12 +80,12 @@ test('full loop: write a broken scene, see the audit, fix it, finish passes the 
  assert.equal(result.turns,8);
  assert.deepEqual(result.usage,{inputTokens:8000,outputTokens:800,cachedInputTokens:4800});
  assert.equal(result.finish?.summary,'title inside the safe area');
- assert.deepEqual(result.finish?.gates.checks.map(c=>[c.gate,c.passed]),[['scene-exists',true],['contract',true],['typecheck',true],['render',true],['geometry',true]]);
+ assert.deepEqual(result.finish?.gates.checks.map(c=>[c.gate,c.passed]),[['scene-exists',true],['contract',true],['typecheck',true],['render',true],['audit',true]]);
  assert.equal(result.sceneSha256,sourceSha256(scene(140)));
  // What the model saw along the way.
  const seen=provider.requests.map(r=>r.messages.filter(m=>m.role==='tool').at(-1)).map(m=>m?textOf(m.content):'');
  assert.match(seen[4],/\[high\] label-out-of-bounds title/);
- assert.match(seen[5],/finish rejected[\s\S]*✗ geometry: label-out-of-bounds title/);
+ assert.match(seen[5],/finish rejected[\s\S]*✗ audit: label-out-of-bounds title/);
  assert.equal(provider.requests[0].tools.at(-1)!.name,'finish');
  assert.ok(!provider.requests[0].tools.some(t=>t.name==='view_frames'));
  assert.match(textOf(provider.requests[0].messages[0].content),/Narration \(fixed, do not change it\): 第一句。第二句。/);
@@ -205,4 +206,13 @@ test('edits are checked automatically in the same turn, and an explicit re-rende
  assert.equal(renderer.renders,1);
  const autoChecks=(i:number)=>provider.requests[i].messages.filter(m=>m.role==='user'&&textOf(m.content).startsWith('Automatic check')).length;
  assert.equal(autoChecks(2),1); // the explicit render_stills turn did not add another automatic check
+});
+
+test('a scene that renders nothing cannot finish, even with no geometry findings',async()=>{
+ const {workspace,renderer}=await setup(scene(140).replace('<svg width={width} height={height}>','<svg width={width} height={height} opacity={0}>'));
+ const provider=new ScriptedProvider([[call('finish',{summary:'rich animation',selfReview:review})],[call('get_timing')]]);
+ const result=await runLoop({provider,workspace,renderer,budget:{maxTurns:2,maxOutputTokensTotal:100000}});
+ assert.equal(result.status,'stopped');
+ const rejection=textOf(provider.requests[1].messages.filter(m=>m.role==='tool').at(-1)!.content);
+ assert.match(rejection,/finish rejected[\s\S]*✗ audit: blank-frame frame \(frames 30, 90\)/);
 });

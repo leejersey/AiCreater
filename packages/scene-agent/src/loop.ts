@@ -5,7 +5,7 @@ import {ProviderError,type Message,type Provider,type ToolCall,type ToolMessage,
 import type {Budget} from './provider/registry';
 import type {StillRenderer} from './render/stills';
 import {sourceSha256} from './render/stills';
-import {initialMessage,SYSTEM_PROMPT} from './prompt';
+import {initialMessage,systemPrompt} from './prompt';
 import {finishTool,type FinishRecord} from './tools/finish';
 import {buildTools,executeTool,toolSpecs} from './tools/index';
 import type {Tool,ToolContext} from './tools/types';
@@ -45,6 +45,7 @@ export async function runLoop(options:LoopOptions):Promise<RunResult>{
  const context:ToolContext={workspace,renderer,capabilities:provider.capabilities};
  const tools:Tool[]=[...buildTools(provider.capabilities),finishTool(record=>{finished=record;})];
  const specs=toolSpecs(tools);
+ const system=systemPrompt(provider.capabilities);
  const messages:Message[]=[{role:'user',content:[{type:'text',text:initialMessage(workspace.brief)}]}];
  const usage:Usage={inputTokens:0,outputTokens:0,cachedInputTokens:0};
  let turns=0,nudges=0,truncations=0,unchangedTurns=0;
@@ -57,14 +58,14 @@ export async function runLoop(options:LoopOptions):Promise<RunResult>{
   return value;
  };
 
- await log({type:'start',model:provider.name,capabilities:provider.capabilities,budget,system:SYSTEM_PROMPT,tools:specs.map(s=>s.name),message:messages[0]});
+ await log({type:'start',model:provider.name,capabilities:provider.capabilities,budget,system,tools:specs.map(s=>s.name),message:messages[0]});
  while(true){
   if(signal?.aborted)return result('stopped','aborted');
   if(turns>=budget.maxTurns)return result('stopped','budget_turns');
   if(usage.outputTokens>=budget.maxOutputTokensTotal)return result('stopped','budget_tokens');
   turns++;
   let turn;
-  try{turn=await provider.turn({system:SYSTEM_PROMPT,messages,tools:specs,signal});}
+  try{turn=await provider.turn({system,messages,tools:specs,signal});}
   catch(error){
    await log({type:'provider_error',turn:turns,error:error instanceof Error?{name:error.name,message:error.message,...(error instanceof ProviderError?{code:error.code,status:error.status}:{})}:String(error)});
    if(error instanceof ProviderError){

@@ -32,7 +32,7 @@ export async function runGates(context:ToolContext):Promise<GateResult>{
   catch(error){add('render',false,conciseError(error));return{passed:false,sourceSha256:sha,checks};}
  }
  add('render',render.failures.length===0,render.failures.length?render.failures.map(f=>`frame ${f.frame}: ${f.error}`).join('; '):`${frames.length} frames rendered`);
- const high=summarizeAudit(render).findings.filter(f=>f.severity==='high');
- add('geometry',high.length===0,high.length?high.map(f=>`${f.kind} ${f.target} (frames ${f.frames.join(', ')})`).join('; '):'no high findings');
+ const high=summarizeAudit(render,cues,brief.durationInFrames).findings.filter(f=>f.severity==='high');
+ add('audit',high.length===0,high.length?high.map(f=>`${f.kind} ${f.target} (frames ${f.frames.join(', ')})`).join('; '):'no high findings (geometry and blank frames)');
  return{passed:checks.every(c=>c.passed),sourceSha256:sha,checks};
 }
