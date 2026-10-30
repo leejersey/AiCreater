@@ -1,4 +1,4 @@
-// npm run scene-agent -- run <brief.json> --model=<name> --confirm-paid [--cues=cues.json] [--initial=Scene.tsx] [--out=dir] [--max-turns=n]
+// npm run scene-agent -- run <brief.json> [--model=<name>] --confirm-paid [--cues=cues.json] [--initial=Scene.tsx] [--out=dir] [--max-turns=n]
 // Calls a paid model API. Without --confirm-paid it only prepares the workspace and prints the plan.
 import {existsSync} from 'node:fs';
 import {readFile} from 'node:fs/promises';
@@ -9,7 +9,9 @@ import {createProvider,loadModels} from '../packages/scene-agent/src/provider/re
 import {RemotionStillRenderer} from '../packages/scene-agent/src/render/stills';
 import {createWorkspace} from '../packages/scene-agent/src/workspace';
 
-const USAGE='Usage: npm run scene-agent -- run <brief.json> --model=<name> [--confirm-paid] [--cues=cues.json] [--initial=Scene.tsx] [--out=dir] [--max-turns=n]';
+// Thinking at low effort passed all eight RAG chapters; thinking off failed chapter 4 twice (eval/runs.md).
+export const DEFAULT_MODEL='deepseek-flash-thinking';
+const USAGE='Usage: npm run scene-agent -- run <brief.json> [--model=<name>, default '+DEFAULT_MODEL+'] [--confirm-paid] [--cues=cues.json] [--initial=Scene.tsx] [--out=dir] [--max-turns=n]';
 
 function parseArgs(argv:string[]){
  const [command,brief,...rest]=argv;
@@ -20,8 +22,8 @@ function parseArgs(argv:string[]){
   if(!match||!['model','confirm-paid','cues','initial','out','max-turns'].includes(match[1]))throw Error(`unknown argument ${arg}\n${USAGE}`);
   flags[match[1]]=match[2]??true;
  }
- if(typeof flags.model!=='string')throw Error(`--model is required\n${USAGE}`);
- return{brief,flags,model:flags.model};
+ if(flags.model===true)throw Error(`--model needs a name\n${USAGE}`);
+ return{brief,flags,model:typeof flags.model==='string'?flags.model:DEFAULT_MODEL};
 }
 
 async function main(){
