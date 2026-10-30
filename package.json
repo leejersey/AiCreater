@@ -26,6 +26,7 @@
     "custom:typecheck": "tsc --noEmit -p tsconfig.custom-scenes.json",
     "custom:studio": "node --require ./scripts/loopback.cjs node_modules/@remotion/cli/remotion-cli.js studio apps/renderer/src/custom-lab.tsx --public-dir=apps/renderer/public --no-open --port=3100",
     "scene-agent": "tsx scripts/scene-agent.ts",
+    "scene-agent:preview": "tsx scripts/scene-agent-preview.ts",
     "web": "next dev apps/web --hostname 127.0.0.1 --port 3000 --webpack",
     "web:build": "next build apps/web",
     "web:start": "next start apps/web --hostname 127.0.0.1 --port 3000",
