@@ -1,6 +1,6 @@
 # Scene Agent 循环：Provider 适配层与工具接口设计
 
-状态：M1（Provider 适配层）与 M2（工具）已实现，见 `packages/scene-agent/`；M3 起未实现。不调用付费模型。
+状态：M1–M3（适配层、工具、循环 / 关卡 / CLI）已实现，见 `packages/scene-agent/` 与 `npm run scene-agent`；M4 起需要真实模型调用，须先确认预算。不调用付费模型。
 
 ## 1. 目标与非目标
 
@@ -207,7 +207,8 @@ loop:
   if finish 通过            → passed
   if 轮数 ≥ maxTurns         → stopped: budget_turns
   if 输出 token ≥ 总预算     → stopped: budget_tokens
-  if 连续 3 轮 audit 高严重度发现数未减少且文件无变化 → stopped: stalled
+  if Scene.tsx 首次写出后连续 6 轮无变化 → stopped: stalled
+  if 连续 2 轮 max_tokens 截断 → stopped: max_tokens
   if stop == end_turn 且未调用 finish → 追加一条提醒；连续 2 次则 stopped: no_finish
 ```
 
