@@ -85,7 +85,7 @@ test('list_files shows only the workspace surface; skill and timing tools',async
  assert.match(listing,/brief\.json/);assert.match(listing,/skill\/scene-contract\.md/);assert.match(listing,/scene\/Scene\.tsx/);
  assert.doesNotMatch(listing,/stills/);
  assert.match(out(await call('read_skill',{topic:'scene-contract'})),/# Scene contract/);
- assert.match(out(await call('read_skill',{topic:'nope'})),/Available: index, scene-contract/);
+ assert.match(out(await call('read_skill',{topic:'nope'})),/Available: craft, index, scene-contract/);
  const timing=out(await call('get_timing'));
  assert.match(timing,/120 frames at 30 fps \(4\.00s\)/);
  assert.match(timing,/- b 60–120 \(2\.0s\): 第二句。/);
@@ -120,8 +120,8 @@ test('render_stills, audit_scene and view_frames work from the last render and r
  const {call}=await setup({initialSource:MINIMAL,renderer});
  assert.match(out(await call('audit_scene')),/call render_stills first/);
  const rendered=out(await call('render_stills'));
- assert.match(rendered,/rendered 6\/6 frames: 0, 30, 59, 60, 90, 119/);
- assert.match(rendered,/2 distinct findings \(1 high\)/);
+ assert.match(rendered,/^typecheck passed\nrendered 6\/6 frames: 0, 30, 59, 60, 90, 119\naudit of frames .*: 1 high \/ 1 medium \/ 0 low/);
+ assert.match(rendered,/\[high\] label-overlap caption-a/); // the audit comes with the render, no extra turn
  assert.match(renderer.calls[0].outDir,/stills\/[0-9a-f]{12}$/);
  const audit=out(await call('audit_scene'));
  assert.match(audit,/1 high \/ 1 medium \/ 0 low/);
@@ -154,4 +154,23 @@ test('audit summary merges identical findings across frames',()=>{
  assert.equal(summary.findings.length,1);
  assert.deepEqual(summary.findings[0].frames,[0,10,20]);
  assert.deepEqual(summary.unsupportedFrames,[20]);
+});
+
+test('render_stills stops at a typecheck failure without rendering',async()=>{
+ const renderer=new FakeRenderer();
+ const {call}=await setup({initialSource:MINIMAL.replace('x={100}','x={"100" * theme}'),renderer});
+ const result=await call('render_stills');
+ assert.equal(result.isError,true);
+ assert.match(out(result),/^typecheck failed/);
+ assert.equal(renderer.calls.length,0);
+});
+
+test('overlaps that only happen at cue changes carry a transition hint',async()=>{
+ // cue a ends at 60 and cue b starts at 60; frames 59 and 60 straddle the hand-over, 119 does not.
+ const renderer=new FakeRenderer(frame=>frame===59||frame===60?[{kind:'label-overlap',target:'old-label',detail:'Overlaps new-label'}]:frame===119?[{kind:'label-overlap',target:'end-a',detail:'Overlaps end-b'}]:[]);
+ const {call}=await setup({initialSource:MINIMAL,renderer});
+ const report=out(await call('render_stills'));
+ assert.match(report,/old-label — Overlaps new-label \(frames 59, 60\) \[at a cue change\]/);
+ assert.match(report,/end-a — Overlaps end-b \(frames 119\)$/m);
+ assert.match(report,/hint: .*fade the old element fully out before the new one fades in/);
 });

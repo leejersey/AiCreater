@@ -65,9 +65,33 @@ export function summarizeAudit(render:StillsResult):{findings:AuditFinding[];uns
  return{findings,unsupportedFrames:render.frames.filter(f=>f.audit.unsupported).map(f=>f.frame)};
 }
 
+const TRANSITION_WINDOW=30;
+/** True when every frame lies within a second of a hand-over between two consecutive cues. */
+function atCueChange(frames:number[],cues:Cue[]):boolean{
+ const changes=cues.slice(1).map((cue,i)=>[cues[i].endFrame-TRANSITION_WINDOW,cue.startFrame+TRANSITION_WINDOW]);
+ return changes.length>0&&frames.every(f=>changes.some(([from,to])=>f>=from&&f<=to));
+}
+
+export function formatAudit(render:StillsResult,cues:Cue[]):string{
+ const {findings,unsupportedFrames}=summarizeAudit(render);
+ const counts=(['high','medium','low'] as const).map(s=>`${findings.filter(f=>f.severity===s).length} ${s}`).join(' / ');
+ const lines=[`audit of frames ${render.frames.map(f=>f.frame).join(', ')}: ${counts}`];
+ let transitions=0;
+ for(const f of findings.slice(0,40)){
+  const transition=f.kind==='label-overlap'&&atCueChange(f.frames,cues);
+  if(transition)transitions++;
+  lines.push(`[${f.severity}] ${f.kind} ${f.target} — ${f.detail} (frames ${f.frames.join(', ')})${transition?' [at a cue change]':''}`);
+ }
+ if(findings.length>40)lines.push(`… ${findings.length-40} more findings; fix the ones above first`);
+ if(transitions)lines.push('hint: findings marked [at a cue change] mean outgoing text is still visible while incoming text appears in the same place. Moving labels a few pixels will not fix this: fade the old element fully out before the new one fades in, or give old and new content separate regions.');
+ if(unsupportedFrames.length)lines.push(`coverage: frames ${unsupportedFrames.join(', ')} are partial (scene root is not a single <svg>).`);
+ if(!findings.length)lines.push('no geometry findings. This does not judge composition or teaching quality; compare against the skill checklist.');
+ return lines.join('\n');
+}
+
 export const renderStills:Tool={
  readOnly:false,
- spec:{name:'render_stills',description:`Render sampled frames of scene/Scene.tsx and measure their geometry. Defaults to the start, middle and end of every cue (max ${MAX_FRAMES}). Run typecheck first.`,
+ spec:{name:'render_stills',description:`Typecheck scene/Scene.tsx, render sampled frames and return the geometry audit, all in one call. Defaults to the start, middle and end of every cue (max ${MAX_FRAMES}). Call this after every change.`,
   inputSchema:{type:'object',properties:{frames:{type:'array',items:{type:'integer',minimum:0},maxItems:MAX_FRAMES}},additionalProperties:false}},
  async run(input,context){
   const {brief,cues}=context.workspace;
@@ -75,16 +99,15 @@ export const renderStills:Tool={
   const frames=input.frames?.length?[...new Set<number>(input.frames)].sort((a,b)=>a-b):defaultFrames(brief.durationInFrames,cues);
   const outside=frames.filter(f=>f>=brief.durationInFrames);
   if(outside.length)throw new ToolInputError(`frames ${outside.join(', ')} are outside 0..${brief.durationInFrames-1}`);
+  const checked=await typecheck.run({},context); // a render of code that does not compile only produces a bundler stack trace
+  if(checked.isError)return checked;
   let render:StillsResult;
   try{render=await context.renderer.render(source,frames,path.join(context.workspace.stillsDir,sourceSha256(source).slice(0,12)));}
   catch(error){context.lastRender=undefined;return failure(`render failed before any frame: ${conciseError(error)}`);}
   context.lastRender=render;
-  const {findings,unsupportedFrames}=summarizeAudit(render);
-  const high=findings.filter(f=>f.severity==='high').length;
-  const lines=[`rendered ${render.frames.length}/${frames.length} frames: ${render.frames.map(f=>f.frame).join(', ')||'none'}`];
+  const lines=['typecheck passed',`rendered ${render.frames.length}/${frames.length} frames: ${render.frames.map(f=>f.frame).join(', ')||'none'}`];
   for(const f of render.failures)lines.push(`frame ${f.frame} failed: ${f.error}`);
-  lines.push(`geometry: ${findings.length} distinct findings (${high} high). Call audit_scene for details.`);
-  if(unsupportedFrames.length)lines.push(`note: frames ${unsupportedFrames.join(', ')} are not a single root <svg>; geometry coverage is partial there.`);
+  lines.push(formatAudit(render,cues));
   return render.failures.length?failure(lines.join('\n')):text(lines.join('\n'));
  },
 };
@@ -97,18 +120,10 @@ async function freshRender(context:ToolContext):Promise<StillsResult>{
 
 export const auditScene:Tool={
  readOnly:true,
- spec:{name:'audit_scene',description:'Report geometry findings from the last render: label overlaps, labels leaving the 1920×980 caption-safe area, labels over obstacles or routes, movers off their routes. Each line names the element id and frames.',
+ spec:{name:'audit_scene',description:'Repeat the geometry audit of the last render (render_stills already includes it): label overlaps, labels leaving the 1920×980 caption-safe area, labels over obstacles or routes, movers off their routes. Each line names the element id and frames.',
   inputSchema:{type:'object',properties:{},additionalProperties:false}},
  async run(_input,context){
-  const render=await freshRender(context);
-  const {findings,unsupportedFrames}=summarizeAudit(render);
-  const counts=(['high','medium','low'] as const).map(s=>`${findings.filter(f=>f.severity===s).length} ${s}`).join(' / ');
-  const lines=[`audit of frames ${render.frames.map(f=>f.frame).join(', ')}: ${counts}`];
-  for(const f of findings.slice(0,40))lines.push(`[${f.severity}] ${f.kind} ${f.target} — ${f.detail} (frames ${f.frames.join(', ')})`);
-  if(findings.length>40)lines.push(`… ${findings.length-40} more findings; fix the ones above first`);
-  if(unsupportedFrames.length)lines.push(`coverage: frames ${unsupportedFrames.join(', ')} are partial (scene root is not a single <svg>).`);
-  if(!findings.length)lines.push('no geometry findings. This does not judge composition or teaching quality; compare against the skill checklist.');
-  return text(lines.join('\n'));
+  return text(formatAudit(await freshRender(context),context.workspace.cues));
  },
 };
 

@@ -6,7 +6,7 @@
     "apiKeyEnv": "DEEPSEEK_API_KEY",
     "extraBody": {"thinking": {"type": "disabled"}},
     "capabilities": {"vision": false, "parallelToolCalls": true, "contextTokens": 128000, "maxOutputTokens": 8192, "promptCache": true, "appendOnlyHistory": false},
-    "budget": {"maxTurns": 15, "maxOutputTokensTotal": 120000}
+    "budget": {"maxTurns": 25, "maxOutputTokensTotal": 120000}
   },
   "claude-sonnet": {
     "adapter": "anthropic",
@@ -15,7 +15,7 @@
     "effort": "medium",
     "fallbacks": "default",
     "capabilities": {"vision": true, "parallelToolCalls": true, "contextTokens": 1000000, "maxOutputTokens": 32000, "promptCache": true, "appendOnlyHistory": true},
-    "budget": {"maxTurns": 15, "maxOutputTokensTotal": 200000}
+    "budget": {"maxTurns": 25, "maxOutputTokensTotal": 200000}
   },
   "claude-opus": {
     "adapter": "anthropic",
@@ -24,6 +24,6 @@
     "effort": "high",
     "fallbacks": "default",
     "capabilities": {"vision": true, "parallelToolCalls": true, "contextTokens": 1000000, "maxOutputTokens": 32000, "promptCache": true, "appendOnlyHistory": true},
-    "budget": {"maxTurns": 15, "maxOutputTokensTotal": 200000}
+    "budget": {"maxTurns": 25, "maxOutputTokensTotal": 200000}
   }
 }

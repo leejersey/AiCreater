@@ -1,6 +1,6 @@
 # Scene Agent 循环：Provider 适配层与工具接口设计
 
-状态：M1–M3（适配层、工具、循环 / 关卡 / CLI）已实现，见 `packages/scene-agent/` 与 `npm run scene-agent`；M4 起需要真实模型调用，须先确认预算。不调用付费模型。
+状态：M1–M3 已实现，见 `packages/scene-agent/` 与 `npm run scene-agent`。M4 进行中，运行记录见 `packages/scene-agent/eval/runs.md`；每次真实模型调用须先确认。不调用付费模型。
 
 ## 1. 目标与非目标
 
