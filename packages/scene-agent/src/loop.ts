@@ -20,6 +20,7 @@ export type RunResult={
  usage:Usage;
  sceneSha256?:string;
  finish?:FinishRecord;
+ cleanCheckpoint?:{sourceSha256:string;file:string}; // last gate-clean version seen, if the run did not pass
 };
 
 export type LoopOptions={
@@ -50,7 +51,7 @@ export async function runLoop(options:LoopOptions):Promise<RunResult>{
  let lastScene:string|undefined=await sceneHash(workspace);
 
  const result=async(status:RunResult['status'],reason?:RunResult['reason']):Promise<RunResult>=>{
-  const value:RunResult={status,...(reason?{reason}:{}),model:provider.name,turns,usage,sceneSha256:await sceneHash(workspace),...(finished?{finish:finished}:{})};
+  const value:RunResult={status,...(reason?{reason}:{}),model:provider.name,turns,usage,sceneSha256:await sceneHash(workspace),...(finished?{finish:finished}:{}),...(!finished&&context.cleanCheckpoint?{cleanCheckpoint:context.cleanCheckpoint}:{})};
   await writeFile(path.join(workspace.root,'result.json'),JSON.stringify(value,null,2)+'\n');
   await log({type:'result',...value});
   return value;

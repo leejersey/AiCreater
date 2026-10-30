@@ -181,3 +181,12 @@ test('refusals and aborts stop the run',async()=>{
  const aborted=await runLoop({provider:new ScriptedProvider([]),...b,budget,signal:controller.signal});
  assert.deepEqual([aborted.reason,aborted.turns],['aborted',0]);
 });
+
+test('a run that stops after a clean render reports the clean checkpoint',async()=>{
+ const {workspace,renderer}=await setup(scene(140));
+ const provider=new ScriptedProvider([[call('render_stills')],[call('edit_file',{path:SCENE_FILE,old:'y={140}',new:'y={1040}'})],[call('render_stills')]]);
+ const result=await runLoop({provider,workspace,renderer,budget:{maxTurns:3,maxOutputTokensTotal:100000}});
+ assert.equal(result.reason,'budget_turns');
+ assert.equal(result.cleanCheckpoint?.sourceSha256,sourceSha256(scene(140)));
+ assert.equal(await readFile(result.cleanCheckpoint!.file,'utf8'),scene(140));
+});

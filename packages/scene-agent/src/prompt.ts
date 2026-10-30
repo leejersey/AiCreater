@@ -11,7 +11,7 @@ How to work:
 - Turns are limited, so batch: put several tool calls in one reply whenever they do not depend on each other (for example several edit_file calls, followed by render_stills in the next reply).
 - After every change call render_stills: it typechecks, renders and returns the geometry audit in one call (use view_frames too when it is available). Fix what it reports, starting with [high] findings.
 - Make each narrated cue visible as a concrete change on screen, timed to its frame range.
-- When the scene is complete and the checks are clean, call finish with an honest self-review. finish re-runs the final checks; if they fail, keep fixing.
+- As soon as render_stills reports no [high] findings and every cue has its visual, call finish with an honest self-review. Medium findings are optional. finish re-runs the final checks; if they fail, keep fixing.
 
 Keep replies short. Spend your turns on tool calls.`;
 

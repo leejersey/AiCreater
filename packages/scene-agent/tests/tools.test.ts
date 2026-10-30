@@ -174,3 +174,36 @@ test('overlaps that only happen at cue changes carry a transition hint',async()=
  assert.match(report,/end-a — Overlaps end-b \(frames 119\)$/m);
  assert.match(report,/hint: .*fade the old element fully out before the new one fades in/);
 });
+
+test('edit_file accepts a unique match that differs only in indentation and re-indents the new text',async()=>{
+ const source='function A(){\n  return (\n          <g>\n            <rect x="1" />\n          </g>\n  );\n}\n';
+ const {workspace,call}=await setup({initialSource:source});
+ const r=await call('edit_file',{path:SCENE_FILE,old:'            <g>\n              <rect x="1" />',new:'            <g id="box">\n              <rect x="2" />'});
+ assert.match(out(r),/line 3 \(matched ignoring indentation\)/);
+ assert.equal(await workspace.readScene(),'function A(){\n  return (\n          <g id="box">\n            <rect x="2" />\n          </g>\n  );\n}\n');
+});
+
+test('edit_file failures show the closest exact text with line numbers',async()=>{
+ const {call}=await setup({initialSource:MINIMAL});
+ const r=await call('edit_file',{path:SCENE_FILE,old:' return <svg width={width} height={height}><text id="title" x={999}',new:'x'});
+ assert.equal(r.isError,true);
+ assert.match(out(r),/Closest text in the file[\s\S]*    3   return <svg width=\{width\} height=\{height\}><text id="title" x=\{100\}/);
+ assert.match(out(await call('edit_file',{path:SCENE_FILE,old:'something that is not there at all',new:'x'})),/No similar line found/);
+});
+
+test('a clean full-sample render is kept as a checkpoint and tells the model to finish',async()=>{
+ const {workspace,call,context}=await setup({initialSource:MINIMAL});
+ const partial=out(await call('render_stills',{frames:[0]}));
+ assert.match(partial,/without frames to check the full sample/);
+ assert.equal(context.cleanCheckpoint,undefined);
+ const full=out(await call('render_stills'));
+ assert.match(full,/passes the final gates\. If every cue has its visual, call finish now/);
+ assert.equal(await readFile(context.cleanCheckpoint!.file,'utf8'),MINIMAL);
+ assert.ok(context.cleanCheckpoint!.file.startsWith(path.join(workspace.root,'checkpoints')));
+});
+
+test('unnamed elements in findings come with an id hint',async()=>{
+ const renderer=new FakeRenderer(()=>[{kind:'label-overlap',target:'text[12]',detail:'Overlaps text[13]'}]);
+ const {call}=await setup({initialSource:MINIMAL,renderer});
+ assert.match(out(await call('render_stills')),/hint: names like text\[12\] are elements without an id/);
+});

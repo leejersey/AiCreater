@@ -9,6 +9,7 @@ export type ToolContext={
  renderer:StillRenderer;
  capabilities:Capabilities;
  lastRender?:StillsResult; // updated by render_stills; audit_scene and view_frames read it
+ cleanCheckpoint?:{sourceSha256:string;file:string}; // last version with no [high] findings, kept by the harness
 };
 
 export type Tool={

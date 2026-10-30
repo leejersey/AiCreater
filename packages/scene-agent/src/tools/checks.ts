@@ -1,4 +1,4 @@
-import {readFile} from 'node:fs/promises';
+import {mkdir,readFile,writeFile} from 'node:fs/promises';
 import path from 'node:path';
 import {checkSource} from '../../../custom-scenes/src/contract';
 import {SourceTypecheckError,typecheckSource} from '../../../custom-scenes/src/files';
@@ -83,6 +83,7 @@ export function formatAudit(render:StillsResult,cues:Cue[]):string{
   lines.push(`[${f.severity}] ${f.kind} ${f.target} — ${f.detail} (frames ${f.frames.join(', ')})${transition?' [at a cue change]':''}`);
  }
  if(findings.length>40)lines.push(`… ${findings.length-40} more findings; fix the ones above first`);
+ if(findings.some(f=>/^(text|g|path|rect)\[\d+\]$/.test(f.target)))lines.push('hint: names like text[12] are elements without an id. Give every <text> and important <g> a descriptive id so findings point at them.');
  if(transitions)lines.push('hint: findings marked [at a cue change] mean outgoing text is still visible while incoming text appears in the same place. Moving labels a few pixels will not fix this: fade the old element fully out before the new one fades in, or give old and new content separate regions.');
  if(unsupportedFrames.length)lines.push(`coverage: frames ${unsupportedFrames.join(', ')} are partial (scene root is not a single <svg>).`);
  if(!findings.length)lines.push('no geometry findings. This does not judge composition or teaching quality; compare against the skill checklist.');
@@ -108,6 +109,17 @@ export const renderStills:Tool={
   const lines=['typecheck passed',`rendered ${render.frames.length}/${frames.length} frames: ${render.frames.map(f=>f.frame).join(', ')||'none'}`];
   for(const f of render.failures)lines.push(`frame ${f.frame} failed: ${f.error}`);
   lines.push(formatAudit(render,cues));
+  const clean=!render.failures.length&&!summarizeAudit(render).findings.some(f=>f.severity==='high');
+  const fullSample=defaultFrames(brief.durationInFrames,cues).every(f=>frames.includes(f));
+  if(clean&&fullSample){
+   // Keep every gate-clean version outside the model's reach, so a later regression cannot lose it.
+   const file=path.join(context.workspace.root,'checkpoints',`${render.sourceSha256.slice(0,12)}.tsx`);
+   await mkdir(path.dirname(file),{recursive:true});await writeFile(file,source);
+   context.cleanCheckpoint={sourceSha256:render.sourceSha256,file};
+  }
+  if(clean)lines.push(fullSample
+   ?'No [high] findings: this version passes the final gates. If every cue has its visual, call finish now. Medium findings are optional polish, and further rewrites risk new problems.'
+   :'No [high] findings in these frames. Call render_stills without frames to check the full sample the gates use.');
   return render.failures.length?failure(lines.join('\n')):text(lines.join('\n'));
  },
 };
