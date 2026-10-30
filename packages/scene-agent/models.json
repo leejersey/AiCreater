@@ -4,9 +4,48 @@
     "baseUrl": "https://api.deepseek.com",
     "model": "deepseek-flash",
     "apiKeyEnv": "DEEPSEEK_API_KEY",
-    "extraBody": {"thinking": {"type": "disabled"}},
-    "capabilities": {"vision": false, "parallelToolCalls": true, "contextTokens": 128000, "maxOutputTokens": 8192, "promptCache": true, "appendOnlyHistory": false},
-    "budget": {"maxTurns": 25, "maxOutputTokensTotal": 120000}
+    "extraBody": {
+      "thinking": {
+        "type": "disabled"
+      }
+    },
+    "capabilities": {
+      "vision": false,
+      "parallelToolCalls": true,
+      "contextTokens": 128000,
+      "maxOutputTokens": 8192,
+      "promptCache": true,
+      "appendOnlyHistory": false
+    },
+    "budget": {
+      "maxTurns": 25,
+      "maxOutputTokensTotal": 120000
+    }
+  },
+  "deepseek-flash-thinking": {
+    "adapter": "openai-compatible",
+    "baseUrl": "https://api.deepseek.com",
+    "model": "deepseek-flash",
+    "apiKeyEnv": "DEEPSEEK_API_KEY",
+    "extraBody": {
+      "thinking": {
+        "type": "enabled"
+      },
+      "reasoning_effort": "high"
+    },
+    "echoReasoning": true,
+    "capabilities": {
+      "vision": false,
+      "parallelToolCalls": true,
+      "contextTokens": 128000,
+      "maxOutputTokens": 16384,
+      "promptCache": true,
+      "appendOnlyHistory": true
+    },
+    "budget": {
+      "maxTurns": 25,
+      "maxOutputTokensTotal": 300000
+    }
   },
   "claude-sonnet": {
     "adapter": "anthropic",
@@ -14,8 +53,18 @@
     "apiKeyEnv": "ANTHROPIC_API_KEY",
     "effort": "medium",
     "fallbacks": "default",
-    "capabilities": {"vision": true, "parallelToolCalls": true, "contextTokens": 1000000, "maxOutputTokens": 32000, "promptCache": true, "appendOnlyHistory": true},
-    "budget": {"maxTurns": 25, "maxOutputTokensTotal": 200000}
+    "capabilities": {
+      "vision": true,
+      "parallelToolCalls": true,
+      "contextTokens": 1000000,
+      "maxOutputTokens": 32000,
+      "promptCache": true,
+      "appendOnlyHistory": true
+    },
+    "budget": {
+      "maxTurns": 25,
+      "maxOutputTokensTotal": 200000
+    }
   },
   "claude-opus": {
     "adapter": "anthropic",
@@ -23,7 +72,17 @@
     "apiKeyEnv": "ANTHROPIC_API_KEY",
     "effort": "high",
     "fallbacks": "default",
-    "capabilities": {"vision": true, "parallelToolCalls": true, "contextTokens": 1000000, "maxOutputTokens": 32000, "promptCache": true, "appendOnlyHistory": true},
-    "budget": {"maxTurns": 25, "maxOutputTokensTotal": 200000}
+    "capabilities": {
+      "vision": true,
+      "parallelToolCalls": true,
+      "contextTokens": 1000000,
+      "maxOutputTokens": 32000,
+      "promptCache": true,
+      "appendOnlyHistory": true
+    },
+    "budget": {
+      "maxTurns": 25,
+      "maxOutputTokensTotal": 200000
+    }
   }
 }

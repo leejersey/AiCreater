@@ -30,3 +30,23 @@ test('config validation names the broken field',()=>{
  assert.throws(()=>parseModels({m:{...good,capabilities:{...good.capabilities,vision:'yes'}}}),/capabilities.vision/);
  assert.throws(()=>parseModels({m:{...good,budget:{maxTurns:0,maxOutputTokensTotal:1}}}),/budget.maxTurns/);
 });
+
+test('the thinking config sends reasoning back on every assistant turn, with or without tool calls',async()=>{
+ const models=loadModels();
+ const bodies:any[]=[];
+ const reply=(message:Record<string,unknown>)=>new Response(JSON.stringify({choices:[{finish_reason:'stop',message:{role:'assistant',...message}}],usage:{prompt_tokens:1,completion_tokens:1}}),{status:200,headers:{'content-type':'application/json'}});
+ const provider=createProvider('deepseek-flash-thinking',models,{env:{DEEPSEEK_API_KEY:'k'},transport:{fetch:async(_u,init)=>{bodies.push(JSON.parse(String(init!.body)));return reply({content:'ok',reasoning_content:'r2'});}}});
+ assert.equal(provider.capabilities.appendOnlyHistory,true);
+ await provider.turn({system:'s',tools:[{name:'t',description:'d',inputSchema:{type:'object'}}],messages:[
+  {role:'user',content:[{type:'text',text:'go'}]},
+  {role:'assistant',content:[],toolCalls:[{id:'c1',name:'t',arguments:{}}],providerState:{reasoning_content:'r0'}},
+  {role:'tool',toolCallId:'c1',content:[{type:'text',text:'done'}]},
+  {role:'assistant',content:[{type:'text',text:'no tools this turn'}],toolCalls:[],providerState:{reasoning_content:'r1'}},
+  {role:'user',content:[{type:'text',text:'continue'}]},
+ ]});
+ const assistants=bodies[0].messages.filter((m:any)=>m.role==='assistant');
+ assert.deepEqual(assistants.map((m:any)=>m.reasoning_content),['r0','r1']);
+ assert.deepEqual(bodies[0].thinking,{type:'enabled'});
+ assert.equal(bodies[0].reasoning_effort,'high');
+ assert.equal(bodies[0].max_tokens,16384);
+});
