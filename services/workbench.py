@@ -63,7 +63,9 @@ def activity(env):
         with psycopg.connect(dsn, connect_timeout=3,
                              options='-c default_transaction_read_only=on -c statement_timeout=3000') as db:
             rows = db.execute("SELECT kind,state,count(*) FROM aicreater.jobs WHERE state IN ('queued','running') GROUP BY kind,state ORDER BY kind,state").fetchall()
-        if any(kind not in {'generate', 'voice', 'timing', 'render'} or state not in {'queued', 'running'} for kind, state, n in rows):
+            if db.execute("SELECT to_regclass('aicreater.visual_jobs')").fetchone()[0]:
+                rows += db.execute("SELECT kind,state,count(*) FROM aicreater.visual_jobs WHERE state IN ('queued','running') GROUP BY kind,state ORDER BY kind,state").fetchall()
+        if any(kind not in {'generate', 'regenerate', 'voice', 'timing', 'render', 'repair', 'preview', 'export', 'prepare-transfer', 'preview-transfer','recover-source','propose-layout'} or state not in {'queued', 'running'} for kind, state, n in rows):
             raise SafetyError('unknown_task_state')
         return [{'kind': kind, 'state': state, 'count': n} for kind, state, n in rows]
     except psycopg.Error:

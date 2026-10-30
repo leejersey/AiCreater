@@ -14,6 +14,9 @@ from pydantic import BaseModel, ConfigDict, Field
 
 from services.api.local import LocalRequestsMiddleware, ORIGINS
 from services.api.accounts import access, router as account_routes
+from services.api.visual import router as visual_routes
+from services.api.teaching import router as teaching_routes
+from services.visual.store import VisualJobs
 from services.accounts.auth import Accounts
 from services.projects.manage import profile
 from services.projects.jobs import Jobs
@@ -134,7 +137,7 @@ def _provider_error_status(code):
     return 502
 
 
-def create_app(store=None, *, authentication=True):
+def create_app(store=None, *, authentication=True, teaching_plan=False, teaching_provider=None, teaching_require_workers=False):
     @asynccontextmanager
     async def lifespan(app):
         configured = store
@@ -148,12 +151,24 @@ def create_app(store=None, *, authentication=True):
         app.state.authentication = authentication
         app.state.accounts = Accounts(configured)
         app.state.jobs = Jobs(configured, model=os.getenv('DEEPSEEK_MODEL', 'deepseek-flash'))
+        app.state.visual = VisualJobs(configured)
+        if teaching_plan:
+            from services.visual.teaching_workbench import TeachingWorkbench
+            app.state.teaching = TeachingWorkbench(configured, teaching_provider)
+            app.state.teaching.tasks.initialize()
+            if teaching_require_workers:
+                from services.visual.teaching_health import WorkerHealth
+                from services.visual.teaching_runtime import require_ready
+                WorkerHealth(configured).initialize()
+                app.state.teaching.readiness=lambda:require_ready(configured)
         yield
 
     app = FastAPI(title='Teaching Projects', lifespan=lifespan, docs_url=None, redoc_url=None,
                   dependencies=[Depends(access)])
     app.state.authentication = authentication
     app.include_router(account_routes)
+    app.include_router(visual_routes)
+    app.include_router(teaching_routes)
     app.add_middleware(CORSMiddleware, allow_origins=sorted(ORIGINS),
                        allow_methods=['GET', 'POST', 'PATCH'], allow_headers=['Content-Type'])
     app.add_middleware(LocalRequestsMiddleware)
@@ -162,7 +177,7 @@ def create_app(store=None, *, authentication=True):
     async def store_error(request, error):
         status = {'not_found': 404, 'conflict': 409, 'not_ready': 409, 'validation': 422,
                   'assets': 422, 'timing_cache': 422, 'database': 503, 'storage': 503, 'invalid_profile': 503,
-                  'unauthorized': 401, 'rate_limit': 429, 'content_type': 415}.get(error.code, 400)
+                  'unauthorized': 401, 'rate_limit': 429, 'content_type': 415, 'teaching_executor_disabled': 503, 'teaching_unavailable':503}.get(error.code, 400)
         response = {'code': error.code, 'message': str(error)}
         if error.code == 'validation':
             response['validation_errors'] = [
@@ -394,6 +409,13 @@ def create_app(store=None, *, authentication=True):
         return public_job(request.app.state.jobs.retry(job_id))
 
     return app
+
+
+def create_teaching_app():
+    """Explicit experimental server factory; never selected by the default entry."""
+    load_dotenv(ROOT / '.env', override=False)
+    from services.visual.teaching_provider import TeachingPlanProvider
+    return create_app(teaching_plan=True,teaching_provider=TeachingPlanProvider.from_env(),teaching_require_workers=True)
 
 
 app = create_app()

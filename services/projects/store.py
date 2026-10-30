@@ -112,6 +112,7 @@ class Store:
             conn.execute((Path(__file__).with_name('schema.sql')).read_text())
             conn.execute((Path(__file__).with_name('jobs.sql')).read_text())
             conn.execute((Path(__file__).parents[1] / 'accounts/schema.sql').read_text())
+            conn.execute((Path(__file__).parents[1] / 'visual/schema.sql').read_text())
 
     def _asset_path(self, key):
         file = self.public / key
@@ -451,6 +452,8 @@ class Store:
             if len(project['scenes']) <= 1: raise StoreError('not_ready', 'Keep at least one scene')
             if conn.execute("SELECT id FROM jobs WHERE scene_id=%s AND state IN ('queued','running') LIMIT 1", [row['id']]).fetchone():
                 raise StoreError('not_ready', 'Wait for scene jobs to finish or cancellation to be acknowledged')
+            if self._teaching_inflight(conn, project['id'], row['id']):
+                raise StoreError('not_ready', 'Wait for the admitted teaching request to finish')
             # Keep history FKs and reserve positions >=20 exclusively for archived rows.
             conn.execute('''UPDATE scenes SET deleted_at=now(),position=(SELECT GREATEST(20,COALESCE(MAX(position),19)+1)
                 FROM scenes WHERE project_id=%s) WHERE id=%s''', [project['id'], row['id']])
@@ -495,6 +498,32 @@ class Store:
                                [project_id, expected_revision]).fetchone()
             return {**row, 'id': str(row['id']), 'project_id': str(row['project_id'])}
 
+    @staticmethod
+    def _teaching_inflight(conn, project_id, scene_id=None):
+        if conn.execute("SELECT to_regclass('aicreater.teaching_media_jobs') AS name").fetchone()['name'] is not None:
+            if conn.execute('''SELECT 1 FROM teaching_media_jobs j JOIN teaching_task_roots r ON r.id=j.root_id
+                WHERE r.project_id=%s AND j.state IN ('queued','running') '''+('AND r.scene_id=%s ' if scene_id else '')+'LIMIT 1',
+                [project_id,scene_id] if scene_id else [project_id]).fetchone() is not None:return True
+        if conn.execute("SELECT to_regclass('aicreater.teaching_render_repairs') AS name").fetchone()['name'] is not None:
+            if conn.execute('''SELECT 1 FROM teaching_render_repairs j JOIN teaching_task_roots r ON r.id=j.root_id
+                WHERE r.project_id=%s AND j.state IN ('queued','running','interrupted') '''+('AND r.scene_id=%s ' if scene_id else '')+'LIMIT 1',
+                [project_id,scene_id] if scene_id else [project_id]).fetchone() is not None:return True
+        if conn.execute("SELECT to_regclass('aicreater.teaching_planning_jobs') AS name").fetchone()['name'] is not None:
+            if conn.execute('''SELECT 1 FROM teaching_planning_jobs j JOIN teaching_task_roots r ON r.id=j.root_id
+                WHERE r.project_id=%s AND j.state IN ('queued','running','interrupted') '''+('AND r.scene_id=%s ' if scene_id else '')+'LIMIT 1',
+                [project_id,scene_id] if scene_id else [project_id]).fetchone() is not None:return True
+        if conn.execute("SELECT to_regclass('aicreater.teaching_render_jobs') AS name").fetchone()['name'] is not None:
+            if conn.execute('''SELECT 1 FROM teaching_render_jobs j JOIN teaching_task_roots r ON r.id=j.root_id
+                WHERE r.project_id=%s AND (j.state IN ('queued','running') OR
+                    (j.state='interrupted' AND j.error_code IS DISTINCT FROM 'execution-cleaned')) ''' + ('AND r.scene_id=%s ' if scene_id else '') + 'LIMIT 1',
+                [project_id, scene_id] if scene_id else [project_id]).fetchone() is not None:
+                return True
+        if conn.execute("SELECT to_regclass('aicreater.teaching_model_calls') AS name").fetchone()['name'] is None:
+            return False
+        return conn.execute('''SELECT 1 FROM teaching_model_calls c JOIN teaching_task_roots r ON r.id=c.root_id
+            WHERE r.project_id=%s AND c.state IN ('dispatched','unknown') ''' + ('AND r.scene_id=%s ' if scene_id else '') + 'LIMIT 1',
+                            [project_id, scene_id] if scene_id else [project_id]).fetchone() is not None
+
     def delete_project(self, project_id, expected_revision, confirmed):
         revision(expected_revision)
         if confirmed is not True:
@@ -507,7 +536,14 @@ class Store:
                     "SELECT id FROM jobs WHERE project_id=%s AND state IN ('queued','running') LIMIT 1",
                     [project['id']]).fetchone():
                 raise StoreError('not_ready', 'Wait for project jobs to finish or cancel them first')
+            if conn.execute(
+                    "SELECT id FROM visual_jobs WHERE project_id=%s AND state IN ('queued','running') LIMIT 1",
+                    [project['id']]).fetchone():
+                raise StoreError('not_ready', 'Wait for visual jobs to finish or cancel them first')
+            if self._teaching_inflight(conn, project['id']):
+                raise StoreError('not_ready', 'Wait for the admitted teaching request to finish')
             pid = project['id']
+            conn.execute('DELETE FROM visual_jobs WHERE project_id=%s',[pid])
             conn.execute('''DELETE FROM scene_candidates WHERE scene_id IN
                 (SELECT id FROM scenes WHERE project_id=%s)''', [pid])
             conn.execute('''DELETE FROM job_attempts WHERE job_id IN
