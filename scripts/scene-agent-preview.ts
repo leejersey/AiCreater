@@ -36,9 +36,10 @@ async function main(){
  await copyFile(path.join(reference,chapter.audio),path.join(out,chapter.audio));
  const preview:WorkbenchManifest={durationInFrames:manifest.durationInFrames,chapters:[{...chapter,sha256:sourceHash(artifact),design_sha256:designHash(design),scene}]};
  await writeFile(path.join(out,'composition.json'),JSON.stringify(preview,null,2));
- await writeFile(path.join(out,'video.srt'),workbenchSrt(preview));
+ // Captions are burned into the video. Not named video.srt: players auto-load a same-name sidecar and show them twice.
+ await writeFile(path.join(out,'captions-for-upload.srt'),workbenchSrt(preview));
  console.log(`rendering ${preview.durationInFrames} frames with reference audio…`);
  await renderWorkbench(out);
- console.log(JSON.stringify({video:path.join(out,'video.mp4'),srt:path.join(out,'video.srt'),modelRequests:0,voiceRequests:0}));
+ console.log(JSON.stringify({video:path.join(out,'video.mp4'),srt:path.join(out,'captions-for-upload.srt'),modelRequests:0,voiceRequests:0}));
 }
 main().catch(error=>{console.error(error instanceof Error?error.message:String(error));process.exitCode=1;});
