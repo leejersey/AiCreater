@@ -6,6 +6,7 @@ import type {Cue} from '../../../custom-scenes/src/design';
 import type {ContentPart} from '../provider/types';
 import {conciseError,sourceSha256,type StillsResult} from '../render/stills';
 import {SCENE_FILE} from '../workspace';
+import {describeLabel,outOfBounds} from '../render/labels';
 import {failure,text,ToolInputError,type Tool,type ToolContext} from './types';
 
 const MAX_FRAMES=12;
@@ -100,6 +101,19 @@ function atCueChange(frames:number[],cues:Cue[]):boolean{
  return changes.length>0&&frames.every(f=>changes.some(([from,to])=>f>=from&&f<=to));
 }
 
+/** Measured position and text of the labels in a finding, at its first frame, so the model knows what to move and how far. */
+function whereLabels(render:StillsResult,finding:AuditFinding):string{
+ if(!finding.kind.startsWith('label-'))return '';
+ const boxes=render.frames.find(f=>f.frame===finding.frames[0])?.audit.labelBoxes;
+ const own=boxes?.[finding.target];
+ if(!own)return '';
+ const parts=[describeLabel(finding.target,own)];
+ if(finding.kind==='label-out-of-bounds'){const by=outOfBounds(own);if(by)parts.push(`out ${by}`);}
+ const other=/^Overlaps (\S+)/.exec(finding.detail)?.[1];
+ if(finding.kind==='label-overlap'&&other&&boxes?.[other])parts.push(describeLabel(other,boxes[other]));
+ return `\n    measured at frame ${finding.frames[0]}: ${parts.join('; ')}`;
+}
+
 export function formatAudit(render:StillsResult,cues:Cue[],duration:number):string{
  const {findings,unsupportedFrames}=summarizeAudit(render,cues,duration);
  const counts=(['high','medium','low'] as const).map(s=>`${findings.filter(f=>f.severity===s).length} ${s}`).join(' / ');
@@ -108,7 +122,7 @@ export function formatAudit(render:StillsResult,cues:Cue[],duration:number):stri
  for(const f of findings.slice(0,40)){
   const transition=f.kind==='label-overlap'&&atCueChange(f.frames,cues);
   if(transition)transitions++;
-  lines.push(`[${f.severity}] ${f.kind} ${f.target} — ${f.detail} (frames ${f.frames.join(', ')})${transition?' [at a cue change]':''}`);
+  lines.push(`[${f.severity}] ${f.kind} ${f.target} — ${f.detail} (frames ${f.frames.join(', ')})${transition?' [at a cue change]':''}${whereLabels(render,f)}`);
  }
  if(findings.length>40)lines.push(`… ${findings.length-40} more findings; fix the ones above first`);
  if(findings.some(f=>/^(text|g|path|rect)\[\d+\]$/.test(f.target)))lines.push('hint: names like text[12] are elements without an id. Give every <text> and important <g> a descriptive id so findings point at them.');

@@ -207,3 +207,17 @@ test('unnamed elements in findings come with an id hint',async()=>{
  const {call}=await setup({initialSource:MINIMAL,renderer});
  assert.match(out(await call('render_stills')),/hint: names like text\[12\] are elements without an id/);
 });
+
+test('label findings carry the measured text and position, and how far a label is out of bounds',async()=>{
+ const boxes={'text[5]':{x:300,y:960,width:220,height:40,text:'BM25 稀疏检索'},'text[7]':{x:400,y:950,width:180,height:40,text:'稠密检索'}};
+ const renderer:StillRenderer={async render(source,frames,outDir){
+  await mkdir(outDir,{recursive:true});const file=path.join(outDir,'f.png');await writeFile(file,'x');
+  return{sourceSha256:sourceSha256(source),failures:[],frames:frames.map(frame=>({frame,file,ink:0.05,audit:{labelBoxes:boxes,labels:2,movers:0,routes:0,obstacles:0,issues:[
+   {kind:'label-overlap',target:'text[5]',detail:'Overlaps text[7] (approximate axis-aligned bboxes).'},
+   {kind:'label-out-of-bounds',target:'text[5]',detail:'Label exceeds 0..1920 x 0..980 caption-safe area (approximate root-coordinate bbox).'}]}}))};
+ },async close(){}};
+ const {call}=await setup({initialSource:MINIMAL,renderer});
+ const report=out(await call('render_stills'));
+ assert.match(report,/label-overlap text\[5\][^\n]*\n    measured at frame 0: text\[5\] "BM25 稀疏检索" at x 300–520, y 960–1000; text\[7\] "稠密检索" at x 400–580, y 950–990/);
+ assert.match(report,/label-out-of-bounds text\[5\][^\n]*\n    measured at frame 0: text\[5\] "BM25 稀疏检索" at x 300–520, y 960–1000; out bottom by 20px \(the caption band starts at y 980\)/);
+});

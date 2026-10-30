@@ -1,7 +1,7 @@
 import {runGates,type GateResult} from '../gates';
 import {failure,text,type Tool} from './types';
 
-export type FinishRecord={summary:string;selfReview:{item:string;pass:boolean;evidence:string}[];gates:GateResult};
+export type FinishRecord={by:'model'|'harness';summary:string;selfReview:{item:string;pass:boolean;evidence:string}[];gates:GateResult};
 
 // The self-review is recorded for humans and evals; only the objective gates decide the outcome.
 export function finishTool(onPassed:(record:FinishRecord)=>void):Tool{
@@ -16,7 +16,7 @@ export function finishTool(onPassed:(record:FinishRecord)=>void):Tool{
    const gates=await runGates(context);
    const lines=gates.checks.map(c=>`${c.passed?'✓':'✗'} ${c.gate}: ${c.detail}`);
    if(!gates.passed)return failure(['finish rejected; fix these and call finish again:',...lines.filter(l=>l.startsWith('✗'))].join('\n'));
-   onPassed({summary:input.summary,selfReview:input.selfReview,gates});
+   onPassed({by:'model',summary:input.summary,selfReview:input.selfReview,gates});
    return text(['finish accepted.',...lines].join('\n'));
   },
  };

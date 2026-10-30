@@ -1,5 +1,5 @@
 // The agent loop: one provider, one workspace, bounded by turns and output tokens.
-import {appendFile,writeFile} from 'node:fs/promises';
+import {appendFile,readFile,writeFile} from 'node:fs/promises';
 import path from 'node:path';
 import {ProviderError,type Message,type Provider,type ToolCall,type ToolMessage,type Usage} from './provider/types';
 import type {Budget} from './provider/registry';
@@ -9,7 +9,8 @@ import {initialMessage,systemPrompt} from './prompt';
 import {finishTool,type FinishRecord} from './tools/finish';
 import {buildTools,executeTool,toolSpecs} from './tools/index';
 import type {Tool,ToolContext} from './tools/types';
-import type {Workspace} from './workspace';
+import {SCENE_FILE,type Workspace} from './workspace';
+import {runGates} from './gates';
 
 export type StopReason='budget_turns'|'budget_tokens'|'stalled'|'no_finish'|'max_tokens'|'refusal'|'provider_auth'|'provider_unavailable'|'aborted';
 export type RunResult={
@@ -34,6 +35,8 @@ export type LoopOptions={
 
 // Stop when the scene file has not changed for this many turns after it was first written.
 const STALL_TURNS=6;
+const FALLBACK_REASONS=new Set(['budget_turns','budget_tokens','stalled','no_finish','max_tokens']);
+const CLEAN_STREAK_NUDGE=2;
 const NUDGE_LIMIT=2;
 
 export async function runLoop(options:LoopOptions):Promise<RunResult>{
@@ -48,10 +51,22 @@ export async function runLoop(options:LoopOptions):Promise<RunResult>{
  const system=systemPrompt(provider.capabilities);
  const messages:Message[]=[{role:'user',content:[{type:'text',text:initialMessage(workspace.brief)}]}];
  const usage:Usage={inputTokens:0,outputTokens:0,cachedInputTokens:0};
- let turns=0,nudges=0,truncations=0,unchangedTurns=0;
+ let turns=0,nudges=0,truncations=0,unchangedTurns=0,cleanStreak=0;
  let lastScene:string|undefined=await sceneHash(workspace);
 
  const result=async(status:RunResult['status'],reason?:RunResult['reason']):Promise<RunResult>=>{
+  if(status==='stopped'&&!finished&&context.cleanCheckpoint&&FALLBACK_REASONS.has(String(reason))){
+   // The model reached a gate-clean version but never signed it off. Gates are objective, so re-check that version
+   // as it stands on disk and accept it, marked as a harness decision with no self-review.
+   const latest=await workspace.readScene();
+   await writeFile(path.join(workspace.root,SCENE_FILE),await readFile(context.cleanCheckpoint.file,'utf8'));
+   const gates=await runGates(context);
+   await log({type:'checkpoint_fallback',reason,checkpoint:context.cleanCheckpoint.sourceSha256,passed:gates.passed});
+   if(gates.passed){
+    finished={by:'harness',summary:`Harness fallback after "${reason}": the model did not call finish; its last gate-clean version was re-checked and accepted.`,selfReview:[],gates};
+    status='passed';reason='checkpoint';
+   }else if(latest!==undefined)await writeFile(path.join(workspace.root,SCENE_FILE),latest);
+  }
   const value:RunResult={status,...(reason?{reason}:{}),model:provider.name,turns,usage,sceneSha256:await sceneHash(workspace),...(finished?{finish:finished}:{}),...(!finished&&context.cleanCheckpoint?{cleanCheckpoint:context.cleanCheckpoint}:{})};
   await writeFile(path.join(workspace.root,'result.json'),JSON.stringify(value,null,2)+'\n');
   await log({type:'result',...value});
@@ -114,6 +129,15 @@ export async function runLoop(options:LoopOptions):Promise<RunResult>{
   if(scene&&scene===lastScene){if(++unchangedTurns>=STALL_TURNS)return result('stopped','stalled');}
   else unchangedTurns=0;
   lastScene=scene;
+
+  // Models keep polishing optional findings long after the scene is clean, then run out of turns.
+  if(scene&&context.cleanCheckpoint?.sourceSha256===scene){
+   if(++cleanStreak>=CLEAN_STREAK_NUDGE){
+    const push=`The scene has passed the final gates on ${cleanStreak} checks in a row. Call finish in your next reply with your self-review; no further changes are needed.`;
+    messages.push({role:'user',content:[{type:'text',text:push}]});
+    await log({type:'nudge',turn:turns,text:push});
+   }
+  }else cleanStreak=0;
 
   const left=budget.maxTurns-turns;
   if(left===2){

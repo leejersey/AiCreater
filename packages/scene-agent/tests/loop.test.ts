@@ -183,13 +183,31 @@ test('refusals and aborts stop the run',async()=>{
  assert.deepEqual([aborted.reason,aborted.turns],['aborted',0]);
 });
 
-test('a run that stops after a clean render reports the clean checkpoint',async()=>{
+test('a run that ends without finish falls back to its last gate-clean version, marked as a harness decision',async()=>{
  const {workspace,renderer}=await setup(scene(140));
- const provider=new ScriptedProvider([[call('render_stills')],[call('edit_file',{path:SCENE_FILE,old:'y={140}',new:'y={1040}'})],[call('render_stills')]]);
+ const provider=new ScriptedProvider([[call('render_stills')],[call('edit_file',{path:SCENE_FILE,old:'y={140}',new:'y={1040}'})],[call('get_timing')]]);
  const result=await runLoop({provider,workspace,renderer,budget:{maxTurns:3,maxOutputTokensTotal:100000}});
- assert.equal(result.reason,'budget_turns');
- assert.equal(result.cleanCheckpoint?.sourceSha256,sourceSha256(scene(140)));
- assert.equal(await readFile(result.cleanCheckpoint!.file,'utf8'),scene(140));
+ assert.deepEqual([result.status,result.reason,result.finish?.by],['passed','checkpoint','harness']);
+ assert.deepEqual(result.finish?.selfReview,[]);
+ assert.equal(result.finish?.gates.sourceSha256,sourceSha256(scene(140)));
+ assert.equal(await workspace.readScene(),scene(140)); // the regressed edit is replaced by the clean version
+ assert.equal(result.cleanCheckpoint,undefined);
+});
+
+test('without any clean version the run still stops honestly',async()=>{
+ const {workspace,renderer}=await setup(scene(1040));
+ const provider=new ScriptedProvider([[call('render_stills')],[call('get_timing')]]);
+ const result=await runLoop({provider,workspace,renderer,budget:{maxTurns:2,maxOutputTokensTotal:100000}});
+ assert.deepEqual([result.status,result.reason,result.finish],['stopped','budget_turns',undefined]);
+});
+
+test('two clean checks in a row bring a firm request to finish',async()=>{
+ const {workspace,renderer}=await setup();
+ const provider=new ScriptedProvider([[call('write_file',{path:SCENE_FILE,content:scene(140)})],[call('get_timing')],[call('get_timing')],[call('finish',{summary:'s',selfReview:review})]]);
+ const result=await runLoop({provider,workspace,renderer,budget});
+ assert.equal(result.finish?.by,'model');
+ const pushes=(i:number)=>provider.requests[i].messages.filter(m=>m.role==='user'&&/passed the final gates on \d+ checks in a row/.test(textOf(m.content))).length;
+ assert.deepEqual([pushes(1),pushes(2),pushes(3)],[0,1,2]);
 });
 
 test('edits are checked automatically in the same turn, and an explicit re-render reuses that result',async()=>{
