@@ -1,0 +1,29 @@
+{
+  "sha256": "96e7622e67d987812b143fd539e25eac7325acd3e0ec3d304cf479d51220eec5",
+  "rules": [
+    {
+      "id": "question-inside-sleeve",
+      "fromFrame": 0,
+      "toFrame": 937,
+      "issue": {
+        "kind": "label-obstacle",
+        "target": "question-mark",
+        "detail": "Overlaps obstacle g[11] (approximate axis-aligned bboxes)."
+      },
+      "relationship": "containment",
+      "reason": "The question mark is artwork on question-slip inside the sleeve assembly. This classification does not exempt fragment or other object overlap."
+    },
+    {
+      "id": "question-enters-generator",
+      "fromFrame": 673,
+      "toFrame": 937,
+      "issue": {
+        "kind": "label-obstacle",
+        "target": "question-mark",
+        "detail": "Overlaps obstacle g[15] (approximate axis-aligned bboxes)."
+      },
+      "relationship": "occlusion",
+      "reason": "Only from the measured generation cue may the generator obscure the entering payload. Any earlier overlap stays unclassified and blocks a clean diagnostic review."
+    }
+  ]
+}

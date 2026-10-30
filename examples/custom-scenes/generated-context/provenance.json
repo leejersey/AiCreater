@@ -1,0 +1,15 @@
+{
+  "origin": "real model first draft, followed by explicit reference-guided local redesign",
+  "status": "local visual baseline pass; user visual acceptance pending",
+  "paidRequests": 2,
+  "automaticRetries": 0,
+  "timing": "measured context chapter from the approved blueprint narration manifest",
+  "localRepairs": ["duplicate variable compile error", "discard paper placement and tray occlusion", "reference-guided replacement of panel-like geometry with approved wallet silhouette", "measured narration retiming of the approved choreography"],
+  "reference": "examples/custom-scenes/context-wallet/WalletScene.tsx",
+  "qualityRevision": "wallet-quality-v2; no additional paid requests; not autonomous model output",
+  "localReview": "pass with opening, crowded, scanning and final frame evidence",
+  "finalFrameCheck": "PNG SHA256 matches approved wallet-final/frame-539.png exactly",
+  "originalCandidate": "output/visual-agent/context-candidate.json",
+  "revisedArtifact": "output/visual-agent/context-quality-v2.json",
+  "review": "output/visual-agent/context-quality-v2-review.json"
+}

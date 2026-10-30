@@ -1,0 +1,42 @@
+{
+  "origin": "manual offline correction; not unmodified agent output",
+  "parentJob": "3faadb09-4dd8-4386-be6b-9e449b5507a3",
+  "parentSourceSha256": "732942a1616185a99f1fe84607b190f4c411da27527f5d8514f57f5117e5788c",
+  "modelRequestsThisRevision": 0,
+  "ttsRequestsThisRevision": 0,
+  "changes": [
+    "dock sleeve at x=1420 rather than translating it outside the frame",
+    "keep payload opacity unchanged and let generator artwork occlude it",
+    "place initial fragments inside the shelf and grip, lift, carry, insert continuously",
+    "hold inserted fragment positions relative to the same sleeve",
+    "remove duplicate front panel artwork",
+    "center labels inside reserved label regions and restore overview highlights",
+    "start rail outside shelf and keep settled answer above label region",
+    "reserve right-side question marker clearance from context fragments and shorten adjacent text line",
+    "hold the complete sleeve 20 pixels outside the inlet until generation cue frame 673"
+  ],
+  "artifact": "output/visual-agent/reviewed-rag-offline-v4.json",
+  "sourceSha256": "96e7622e67d987812b143fd539e25eac7325acd3e0ec3d304cf479d51220eec5",
+  "status": "v4 approved and rendered to 39 stills only; inlet hold and question visibility confirmed in sampled augmentation frame; geometry still failed with 51 containment/occlusion alerts; no final visual acceptance",
+  "lastApprovedStills": "output/visual-agent/reviewed-rag-offline-v4-stills",
+  "lastApprovedRenderedSha256": "96e7622e67d987812b143fd539e25eac7325acd3e0ec3d304cf479d51220eec5",
+  "diagnosticReview": "output/visual-agent/reviewed-rag-offline-v4-stills/diagnostic-review.json",
+  "diagnosticReviewStatus": "51 exact relationships classified; zero unclassified issues; diagnostic-only, accepted=false, original geometry failure preserved",
+  "diagnosticAudioPreview": "output/visual-workbench-diagnostics/reviewed-rag-v4-audio-preview/video.mp4",
+  "diagnosticAudioVerification": "output/visual-workbench-diagnostics/reviewed-rag-v4-audio-preview/verification.json",
+  "diagnosticAudioPreviewStatus": "user-authorized single-chapter diagnostic MP4; original audio and measured captions reused; not a final accepted export",
+  "designStageReference": "examples/custom-scenes/reviewed-rag/storyboard-reference.json",
+  "designStageReferenceScope": "agent-authored planning extraction from the visual baseline; supplied before new design and retained-design revision requests; not separately user-approved JSON or automatic generation proof",
+  "visualBaselineApproval": {
+    "date": "2026-10-24",
+    "confirmedBy": "user",
+    "scope": "visual direction reference after watching the diagnostic preview",
+    "sourceSha256": "96e7622e67d987812b143fd539e25eac7325acd3e0ec3d304cf479d51220eec5",
+    "workbenchAccepted": false,
+    "automaticGenerationVerified": false
+  },
+  "previousStills": "output/visual-agent/reviewed-rag-offline-v2-stills",
+  "previousRenderedSha256": "a768c87b974d1ce34a2f5f43ea8e13be3e677576925e8a236540dda560a62d98",
+  "previousGeometryStatus": "v2 failed with 72 repeated label-obstacle alerts; question marker visibly occluded",
+  "integration": "standalone manual candidate; not imported as a succeeded or accepted workbench generation"
+}

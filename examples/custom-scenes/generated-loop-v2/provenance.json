@@ -1,0 +1,18 @@
+{
+  "origin": "unmodified real model output using revised visual quality rules",
+  "status": "technical checks passed; visual review requires revision",
+  "designRequests": 1,
+  "codeRequestsForThisDesign": 2,
+  "automaticRetries": 0,
+  "budget": "two-request validation followed by one explicitly authorised code-only retry",
+  "manualRepairs": [],
+  "sourceArtifact": "output/visual-agent/loop-quality-v3-candidate.json",
+  "sourceSha256": "b3ad4bff64d62afa2dd8abe4f0c7f3a29aa6a3f5c21288ae53579b9d7a118c15",
+  "previousFailedRequest": "output/visual-agent/loop-quality-v2-candidate.json.failure.json",
+  "providerFinishReason": "stop",
+  "review": "output/visual-agent/loop-quality-v3-reviewed.json",
+  "stills": "output/visual-agent/loop-quality-v3-stills",
+  "reviewFrameCount": 50,
+  "pathMeasurementsPx": {"frame578Ring": 31.5, "frame1154ReturnPipe": 94.4},
+  "visualIssues": ["node labels overlap lines and neighbouring nodes", "payload is interpolated twice and deviates from the visible path"]
+}

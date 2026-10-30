@@ -1,0 +1,111 @@
+{
+  "schemaVersion": "teaching-runtime-failures:1",
+  "sanitization": "Allowlisted failure metadata only. Text, object identifiers and coordinates from historical responses are not copied. Probe inputs are synthetic, not historical scene replay. Evidence paths are repository-relative; SHA256 values cover original file bytes, not sanitized samples.",
+  "evidence": [
+    {
+      "id": "layout-failure",
+      "path": "output/visual-workbench/93f7066e-10a9-494b-bdc5-96e9e244be18/failure.json",
+      "sha256": "12c0a3a13eee0f29785ac76cb7c8b98e561fc4510e5f74206ebe8f43daeb3554"
+    },
+    {
+      "id": "layout-provider-failure",
+      "path": "output/visual-workbench/93f7066e-10a9-494b-bdc5-96e9e244be18/provider-1.failure.json",
+      "sha256": "2ea0ce5c9504f8eb09fe080b48ef4f9fed8a49f494ff95c5be4d18bd5f8d69b5"
+    },
+    {
+      "id": "layout-mode",
+      "path": "output/visual-workbench/93f7066e-10a9-494b-bdc5-96e9e244be18/generation-mode.json",
+      "sha256": "d8d3c45e7b1dc5ac690d700d24d3b4cedfadd072413b6fe0eb58a45a96b26842"
+    },
+    {
+      "id": "json-failure",
+      "path": "output/visual-workbench/8e382d50-986f-4b5d-b2ca-167e65548e92/failure.json",
+      "sha256": "17c87eb4a0043b6716d4758c666176881a3a77af029f0080495b8f756f221f5c"
+    },
+    {
+      "id": "json-provider-failure",
+      "path": "output/visual-workbench/8e382d50-986f-4b5d-b2ca-167e65548e92/provider-1.failure.json",
+      "sha256": "883aecc5e1590d15c7726cc4e65f41031c7e1faf942a5cd9eec4d2cb153bc560"
+    },
+    {
+      "id": "json-mode",
+      "path": "output/visual-workbench/8e382d50-986f-4b5d-b2ca-167e65548e92/generation-mode.json",
+      "sha256": "d8d3c45e7b1dc5ac690d700d24d3b4cedfadd072413b6fe0eb58a45a96b26842"
+    }
+  ],
+  "cases": [
+    {
+      "id": "legacy-layout",
+      "category": "layout",
+      "layer": "design",
+      "generation_mode": "source",
+      "provenance": {
+        "form": "sanitized-minimal-reproduction",
+        "evidence_ids": ["layout-failure", "layout-provider-failure", "layout-mode"],
+        "historical_replay": false,
+        "limitation": "Evidence records six object-overlap findings at stage 1, but cannot reconstruct the original scene. The synthetic bounds-only probe triggers one finding through the existing checker; no full design or rendered scene is replayed."
+      },
+      "input": {
+        "objects": [
+          {"id": "a", "x": 100, "y": 100, "width": 200, "height": 200, "kind": "solid"},
+          {"id": "b", "x": 150, "y": 150, "width": 200, "height": 200, "kind": "solid"}
+        ]
+      },
+      "expected": {
+        "code": "layout_preflight",
+        "recorded_finding_counts": {"object-overlap": 6},
+        "probe_finding": "object-overlap",
+        "requests_dispatched": 1,
+        "automatic_retries": 0,
+        "accepted": false
+      }
+    },
+    {
+      "id": "legacy-provider-json",
+      "category": "json_decode",
+      "layer": "provider",
+      "generation_mode": "source",
+      "provenance": {
+        "form": "sanitized-minimal-reproduction",
+        "evidence_ids": ["json-failure", "json-provider-failure", "json-mode"],
+        "historical_replay": false,
+        "limitation": "Top-level failure has no error code; invalid_json and absence of an executable artifact are recorded only in provider-1.failure.json at stage 1. Original malformed text and exact syntax cause are not retained. Standard JSON decode probes do not verify the new provider."
+      },
+      "input": {
+        "checker": "stdlib-json-decode",
+        "invalid_json": ["{\"value\":", "{\"value\":0,}", "{\"value\":0} trailing"],
+        "valid_json": "{\"value\":0}"
+      },
+      "expected": {
+        "code": "invalid_json",
+        "requests_dispatched": 1,
+        "automatic_retries": 0,
+        "executable_artifact": false,
+        "new_provider_verified": false,
+        "accepted": false
+      }
+    },
+    {
+      "id": "executor-missing",
+      "category": "infrastructure",
+      "layer": "executor",
+      "generation_mode": null,
+      "provenance": {
+        "form": "observed",
+        "evidence_ids": [],
+        "historical_replay": false,
+        "limitation": "Reported runtime observation: executor missing while queued for eight minutes. No original log was verified; no timestamp, request count, mode, or original-file SHA256 is asserted. This is a classification contract only, not execution or queue replay."
+      },
+      "input": {"executor": "missing", "state": "queued", "queue_wait_seconds": 480},
+      "expected": {
+        "code": "executor_missing",
+        "classification": "blocked_before_generation",
+        "generation_slow": false,
+        "generation_duration_seconds": null,
+        "success": false,
+        "accepted": false,
+        "execution": "not_run"
+      }
+    }
+  ]
+}

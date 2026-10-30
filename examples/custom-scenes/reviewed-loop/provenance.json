@@ -1,0 +1,10 @@
+{
+  "origin": "local correction of generated-loop-v2; not unmodified model output",
+  "paidRequestsThisRevision": 0,
+  "originalModelSample": "examples/custom-scenes/generated-loop-v2/Scene.tsx",
+  "changes": ["remove duplicate interpolation of circular and quadratic path points", "space act and result nodes farther apart", "move labels outside nodes and routes", "connect completion exit continuously through its gate", "increase title/subtitle separation", "declare routes, moving anchors and node obstacles for geometry audit"],
+  "sourceArtifact": "output/visual-agent/reviewed-loop-v3.json",
+  "sourceSha256": "fb685d9d23f3e55226ab9176f14eac256a76f79d2d9023bf0522d7ccc6e2687e",
+  "stills": "output/visual-agent/reviewed-loop-final",
+  "status": "sampled geometry checks passed; user aesthetic and teaching acceptance pending"
+}

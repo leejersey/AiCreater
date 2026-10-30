@@ -1,0 +1,62 @@
+{
+  "schemaVersion": "scene-assembly-input:1",
+  "audioManifest": "../../../claude-code-blueprint/presentation/public/audio/audio-manifest.json",
+  "chapters": [
+    {
+      "chapter": "opening",
+      "artifact": "../../output/visual-agent/full-course-inputs/opening/local-visual/candidate.json",
+      "design": "../../output/visual-agent/full-course-inputs/opening/local-visual/candidate.json.design.json",
+      "approval": "6569f815723f12527039b0082879ae789105c6143cc8b3e87c8c2a00f5409f29",
+      "review": "../../output/visual-agent/full-course-inputs/opening/local-visual/review-final.json"
+    },
+    {
+      "chapter": "less-is-more",
+      "artifact": "../../output/visual-agent/full-course-inputs/less-is-more/local-visual/candidate-v2.json",
+      "design": "../../output/visual-agent/full-course-inputs/less-is-more/local-visual/candidate-v2.json.design.json",
+      "approval": "62d884443cb9fce36668b1afadf13441e37737baafa6c29ba73342b95b8a28f5",
+      "review": "../../output/visual-agent/full-course-inputs/less-is-more/local-visual/review-final.json"
+    },
+    {
+      "chapter": "agent-loop",
+      "artifact": "../../output/visual-agent/reviewed-loop-v3.json",
+      "design": "reviewed-loop/design.json",
+      "approval": "fb685d9d23f3e55226ab9176f14eac256a76f79d2d9023bf0522d7ccc6e2687e",
+      "review": "../../output/visual-agent/reviewed-loop-final-reviewed.json"
+    },
+    {
+      "chapter": "tools",
+      "artifact": "../../output/visual-agent/full-course-inputs/tools/local-visual/candidate-v2.json",
+      "design": "../../output/visual-agent/full-course-inputs/tools/local-visual/candidate-v2.json.design.json",
+      "approval": "81bdaba14297d329369670f7bcf35dbfa4eb1d7972b0be2fb82ca7cc188536cf",
+      "review": "../../output/visual-agent/full-course-inputs/tools/local-visual/review-final.json"
+    },
+    {
+      "chapter": "context",
+      "artifact": "../../output/visual-agent/context-quality-v2.json",
+      "design": "generated-context/design.json",
+      "approval": "5b3be96489525e3c62d0fea35cfabb4663f060054e112419c99302e0c9cd86e6",
+      "review": "../../output/visual-agent/context-quality-v2-review.json"
+    },
+    {
+      "chapter": "code-search",
+      "artifact": "../../output/visual-agent/full-course-inputs/code-search/local-visual/candidate.json",
+      "design": "../../output/visual-agent/full-course-inputs/code-search/local-visual/candidate.json.design.json",
+      "approval": "c00be7541e2307d4d0b06a8bb3d098e5a60900d1ca3a3a6e57ee496488b48946",
+      "review": "../../output/visual-agent/full-course-inputs/code-search/local-visual/review-final.json"
+    },
+    {
+      "chapter": "delegation-safety",
+      "artifact": "../../output/visual-agent/full-course-inputs/delegation-safety/local-visual/candidate-v6.json",
+      "design": "../../output/visual-agent/full-course-inputs/delegation-safety/local-visual/candidate-v6.json.design.json",
+      "approval": "57ca5b8bce8f031842289d6c22e5d1984ead055ed97853031006ad34d9c3eb69",
+      "review": "../../output/visual-agent/full-course-inputs/delegation-safety/local-visual/review-final.json"
+    },
+    {
+      "chapter": "ending",
+      "artifact": "../../output/visual-agent/full-course-inputs/ending/local-visual/candidate-v4.json",
+      "design": "../../output/visual-agent/full-course-inputs/ending/local-visual/candidate-v4.json.design.json",
+      "approval": "5b669fe7a970d72245d6b43700fac6dcdceb02872b36cc44cab172db15a46cab",
+      "review": "../../output/visual-agent/full-course-inputs/ending/local-visual/review-final.json"
+    }
+  ]
+}

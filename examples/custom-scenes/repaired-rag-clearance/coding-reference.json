@@ -1,0 +1,18 @@
+{
+  "schemaVersion": "reviewed-coding-contract:1",
+  "sourceSha256": "29c4718e1a8750da4194ce7fbc8c5ef3dad0c900fc0738162108fb2a3dde56d5",
+  "scope": "visual-direction-only",
+  "accepted": false,
+  "automaticGenerationVerified": false,
+  "mechanism": "For RAG, use recognizable retrieval machinery, a document shelf, an augmentation tray and a generator. Track the same question and extracted context into one assembled payload. For other topics invent the relevant mechanism rather than reuse these objects.",
+  "principles": [
+    "Create identifiable silhouettes and interior detail using owned parts, not rows of generic cards. Use hierarchy, restrained blueprint colors and clear caption space.",
+    "Keep one drawable representation per physical payload member. Derive the held gripper and fragment from the same world anchor, preserve terminal states through cue gaps, and attach without replacement copies.",
+    "Reserve space for a readable question glyph above attached context. After attachment, keep member offsets rigid under the same analytical transport.",
+    "Validate the entire swept payload including strokes, curls and labels against unrelated machines. If a direct path crosses a shelf, plan a clear waypoint corridor and an explicit intake while respecting the caption boundary.",
+    "Fit pickup, lift, carry, insert, release and settling inside the current measured cues. Recompute all coordinates and durations; the reference frame numbers are not target timing.",
+    "Render shells and foreground walls after inserted contents for real occlusion. Hide an output and every child mark before emergence; do not fake insertion by fading the payload or moving it outside the frame.",
+    "Anchor each path-following group at local (0,0), offset artwork inside it, and use the same route for motion and visible line. Mark routes and actual obstacles for audit; do not remove markers to hide warnings.",
+    "Review first, handoff, transfer, docking and final frames, then continuous playback with measured audio and captions. Source compilation, JSON validity and relationship classification are not visual acceptance."
+  ]
+}
