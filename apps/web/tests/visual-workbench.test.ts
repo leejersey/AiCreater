@@ -224,7 +224,7 @@ test('SSR never fetches, executes source, or mounts the legacy player',()=>{
   globalThis.fetch=async()=>{calls++;throw Error('unexpected');};
   try {
     const html=renderToStaticMarkup(createElement(VisualWorkbench,{routeProjectId:'p'}));
-    assert.match(html,/legacy/);assert.match(html,/读取/);assert.equal(calls,0);
+    assert.doesNotMatch(html,/\/legacy/);assert.match(html,/读取/);assert.equal(calls,0); // the retired template workbench is no longer linked
     const [job]=parseVisualJobs({jobs:[{...raw,kind:'generate',result:{sha256:sha,source:'<script>alert(1)</script>',design:{title:'<img src=x onerror=alert(1)>'}}}]},'p');
     const artifact=renderToStaticMarkup(createElement(VisualArtifact,{job}));
     assert.match(artifact,/&lt;script&gt;/);assert.doesNotMatch(artifact,/<script|<iframe|onerror="/);

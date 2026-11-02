@@ -570,11 +570,14 @@ class VisualJobs:
             return None
         return VisualJobs._raw(row)
 
-    def heartbeat(self, job_id, token):
+    def heartbeat(self, job_id, token, stage=None):
+        # An optional progress line for the UI; bounded, and never a way to change the job's state.
+        if stage is not None and (not isinstance(stage, str) or not 0 < len(stage) <= 120): raise StoreError('validation', 'Invalid stage')
         with self.store.connection() as conn:
             self._recover(conn)
             if self._active(conn, job_id, token) is None: return False
-            conn.execute('UPDATE visual_jobs SET heartbeat_at=now() WHERE id=%s', [job_id])
+            if stage is None: conn.execute('UPDATE visual_jobs SET heartbeat_at=now() WHERE id=%s', [job_id])
+            else: conn.execute('UPDATE visual_jobs SET heartbeat_at=now(),stage=%s WHERE id=%s', [stage, job_id])
             return True
 
     @staticmethod

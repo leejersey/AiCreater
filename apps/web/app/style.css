@@ -2850,3 +2850,8 @@ li > button {
     align-items: flex-start;
   }
 }
+
+.vw-course-progress { color:var(--muted, #8a9bb8); margin-right:4px; }
+aside[aria-label="章节列表"] small[data-status="confirmed"] { color:#3ecf8e; }
+aside[aria-label="章节列表"] small[data-status="review"] { color:#f2bd64; }
+aside[aria-label="章节列表"] small[data-status="running"] { color:#4dd2ff; }

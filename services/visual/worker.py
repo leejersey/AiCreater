@@ -16,6 +16,31 @@ WORK_ROOT=ROOT/'output/visual-workbench'
 PUBLIC_FILE=re.compile(r'(?:source\.txt|design\.json|video\.mp4|video\.srt|stills/frame-\d+\.png)')
 
 
+def agent_progress(directory):
+    """One line for the UI from the Agent transcript: which turn, and what the last automatic check found."""
+    transcript=Path(directory)/'workspace'/'transcript.jsonl'
+    turns=0;check=None;finished=False
+    try:
+        with transcript.open(encoding='utf-8') as stream:
+            for line in stream:
+                if line.startswith('{"type":"turn"'):turns+=1
+                elif line.startswith('{"type":"auto_check"'):check=line
+                elif line.startswith('{"type":"result"'):finished='"status":"passed"' in line
+    except OSError:return '准备中'
+    if finished:return '画面已完成，正在渲染视频'
+    if not turns:return '阅读分镜与时间轴'
+    summary=''
+    if check:
+        try:text=json.loads(check).get('text','')
+        except ValueError:text=''
+        found=re.search(r'audit of [^:]*: (\d+) high',text)
+        if 'typecheck failed' in text:summary='代码有编译错误，正在修正'
+        elif 'no frame rendered' in text:summary='画面渲染失败，正在修正'
+        elif found and found.group(1)!='0':summary=f'检查发现 {found.group(1)} 个需修正的问题'
+        elif found:summary='已通过检查，正在收尾'
+    return f'第 {turns} 轮'+(f' · {summary}' if summary else ' · 正在设计画面')
+
+
 def _answered_turns(transcript,maximum):
     """Model turns that got a response, i.e. paid ones; a request that failed or was rejected is not logged as a turn."""
     try:
@@ -410,7 +435,8 @@ def run_once(jobs,lane='workflow',*,timeout=None,heartbeat_interval=5,launcher=N
                 now=time.monotonic()
                 if now-started>limit or log.tell()>2*1024**2:raise RuntimeError('Execution limit')
                 if now-beat>=heartbeat_interval:
-                    if not jobs.heartbeat(job['id'],token):raise RuntimeError('Job cancelled or lease lost')
+                    stage=agent_progress(directory) if job['kind']=='agent' else None
+                    if not jobs.heartbeat(job['id'],token,stage):raise RuntimeError('Job cancelled or lease lost')
                     beat=now
                 time.sleep(.2)
             if process.returncode:raise RuntimeError('Visual command failed')

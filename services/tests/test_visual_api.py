@@ -183,6 +183,25 @@ class VisualApiTests(unittest.TestCase):
         age(1900)
         self.assertFalse(jobs.heartbeat(job['id'],claimed['attempt_id']))
 
+    def test_agent_progress_reaches_the_job_stage(self):
+        from services.visual import worker
+        from services.projects.store import StoreError
+        project,row,_=self.ready_scene()
+        job=self.client.post(self.path+'/agent',json={'scene_id':row['id'],'expected_revision':project['revision'],'confirmed':True,'max_turns':25}).json()
+        jobs=self.client.app.state.visual
+        claimed=jobs.claim('workflow')
+        with tempfile.TemporaryDirectory() as directory:
+            (Path(directory)/'workspace').mkdir()
+            lines=['{"type":"start"}','{"type":"turn","turn":1}','{"type":"turn","turn":2}',
+                   json.dumps({'type':'auto_check','text':'typecheck passed\naudit of frames 1: 2 high / 0 medium / 0 low'},separators=(',',':'),ensure_ascii=False)]
+            (Path(directory)/'workspace'/'transcript.jsonl').write_text('\n'.join(lines)+'\n')
+            stage=worker.agent_progress(directory)
+        self.assertEqual(stage,'第 2 轮 · 检查发现 2 个需修正的问题')
+        self.assertTrue(jobs.heartbeat(job['id'],claimed['attempt_id'],stage))
+        self.assertEqual(self.client.get(self.path).json()['jobs'][0]['stage'],stage)
+        with self.assertRaises(StoreError):jobs.heartbeat(job['id'],claimed['attempt_id'],'x'*121)
+        self.assertEqual(self.client.post(self.path+'/'+job['id']+'/cancel',json={}).json()['state'],'cancelled')
+
     def test_stopping_an_already_exited_process_group_does_not_raise(self):
         from services.visual import worker
         process=Mock();process.pid=999999

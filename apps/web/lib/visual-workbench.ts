@@ -192,7 +192,8 @@ export function videoProgress(job:VisualJob,now=0){
  const rendering=['preview','preview-transfer','export','agent'].includes(job.kind);
  const step=rendering?(job.state==='succeeded'&&job.result?.video?4:3):job.state==='succeeded'&&job.result?.source?2:1;
  const label=job.design_revision_of&&(job.state==='queued'||job.state==='running')?(job.state==='queued'?'设计修复已排队':'程序正在修订设计'):job.state==='queued'?(job.operation==='quality-repair'?'程序修复已排队':'等待执行'):job.state==='running'?(rendering?'检查画面与渲染视频':job.operation==='retime'?'同步配音时间':job.operation==='quality-repair'?'程序正在修复画面':job.kind==='repair'?'修改画面':'设计画面与生成动画'):job.kind==='preview'&&job.state==='succeeded'&&job.result?.geometry?.status==='failed'?'画面需要程序修复':videoTaskStatus(job);
- const detail=job.state==='queued'?'任务已提交，等待执行器领取。':job.state==='running'?(rendering?'正在检查画面并生成 MP4，视频文件尚未就绪。':job.design_revision_of?'程序正依据已保存诊断修订设计，通过后继续生成视频；未通过则停止。':job.operation==='retime'?'正在使用实测字幕调整画面时间，不调用模型或配音。':job.operation==='quality-repair'?'程序已读取检查报告，正在修复具体画面问题；本轮最多一次模型请求，失败后停止。':'正在处理画面设计和动画代码，尚未进入视频渲染。'):job.state==='failed'?failureDetail:job.state==='cancelled'?'任务已取消，不会自动重新提交。':step===2?'画面已准备，下一步将自动检查并生成视频。':job.result?.video?'可播放视频已就绪。':job.result?.geometry?.status==='failed'?'程序已保留问题报告，可根据报告修复画面，不必手动填写诊断或重复检查。':'没有生成可播放视频，请检查失败详情或修改画面。';
+ const agentStage=job.kind==='agent'&&job.state==='running'&&job.stage&&job.stage!=='agent'?job.stage:undefined;
+ const detail=agentStage?agentStage+'。':job.state==='queued'?'任务已提交，等待执行器领取。':job.state==='running'?(rendering?'正在检查画面并生成 MP4，视频文件尚未就绪。':job.design_revision_of?'程序正依据已保存诊断修订设计，通过后继续生成视频；未通过则停止。':job.operation==='retime'?'正在使用实测字幕调整画面时间，不调用模型或配音。':job.operation==='quality-repair'?'程序已读取检查报告，正在修复具体画面问题；本轮最多一次模型请求，失败后停止。':'正在处理画面设计和动画代码，尚未进入视频渲染。'):job.state==='failed'?failureDetail:job.state==='cancelled'?'任务已取消，不会自动重新提交。':step===2?'画面已准备，下一步将自动检查并生成视频。':job.result?.video?'可播放视频已就绪。':job.result?.geometry?.status==='failed'?'程序已保留问题报告，可根据报告修复画面，不必手动填写诊断或重复检查。':'没有生成可播放视频，请检查失败详情或修改画面。';
  const seconds=active&&job.created_at&&now>0?Math.max(0,Math.floor((now-Date.parse(job.created_at))/1000)):undefined;
  const elapsed=seconds===undefined?undefined:`已等待 ${seconds>=60?`${Math.floor(seconds/60)}分`:''}${seconds%60}秒`;
  return {active,step,label,detail,elapsed};
@@ -225,8 +226,10 @@ export function canRepairRecoveredSource(job:VisualJob):boolean{
  return job.kind==='recover-source'&&job.state==='succeeded'&&job.current!==false&&job.stage!=='stale'&&
   job.generation_mode==='source'&&validRecoveryResult(job.result);
 }
-export function reviewFrames(frames:string[]):string[] {
+export function reviewFrames(frames:string[],inner=false):string[] {
   if(!frames.length)return [];
+  // Agent samples start and end on cue boundaries, where scenes are often mid-fade; use the frames just inside.
+  if(inner&&frames.length>=5)return [...new Set([frames[1],frames[Math.floor(frames.length/2)],frames[frames.length-2]])];
   return [...new Set([frames[0],frames[Math.floor(frames.length/2)],frames[frames.length-1]])];
 }
 export function visualError(error:unknown):string {
@@ -252,4 +255,19 @@ export function canAcceptAgent(job:VisualJob):boolean{
 export function exportedVersion(jobs:VisualJob[]):VisualJob|undefined{
  return jobs.filter(j=>(j.kind==='preview'||j.kind==='agent')&&j.state==='succeeded'&&j.current!==false&&j.result?.accepted===true)
   .sort((a,b)=>(b.created_at??'').localeCompare(a.created_at??''))[0];
+}
+
+export type ChapterStatus={key:'needs_voice'|'needs_timing'|'running'|'review'|'confirmed'|'todo';label:string};
+/** Where a chapter is on the way to an exportable video. */
+export function chapterStatus(row:SceneRow,jobs:VisualJob[]):ChapterStatus{
+ const own=jobs.filter(j=>j.scene_id===row.id&&j.current!==false);
+ if(own.some(j=>['queued','running'].includes(j.state)))return{key:'running',label:'生成中'};
+ if(!measuredReady(row))return row.state==='needs_timing'?{key:'needs_timing',label:'待对齐'}:{key:'needs_voice',label:'待配音'};
+ if(exportedVersion(own))return{key:'confirmed',label:'已确认'};
+ if(own.some(j=>(j.kind==='agent'&&canAcceptAgent(j))||(j.kind==='preview'&&canAcceptPreview(j))))return{key:'review',label:'待确认'};
+ return{key:'todo',label:'待生成'};
+}
+/** Chapters an Agent batch would start: voiced, nothing confirmed, nothing running. */
+export function agentBatchScenes(rows:SceneRow[],jobs:VisualJob[]):SceneRow[]{
+ return rows.filter(row=>['todo'].includes(chapterStatus(row,jobs).key));
 }

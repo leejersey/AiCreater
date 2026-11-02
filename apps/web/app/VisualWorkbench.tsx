@@ -12,7 +12,7 @@ import {canRecoverSource,canRepairRecoveredSource} from '../lib/visual-workbench
 import {visualRecoverSourceAction,visualRepairSourceAction,type VisualAction} from '../lib/visual-workbench-actions';
 import {canProposeLayout,canApplyLayout} from '../lib/visual-workbench';
 import {visualProposeLayoutAction,visualApplyLayoutAction} from '../lib/visual-workbench-actions';
-import {chapterPresentation,videoTaskStatus,videoProgress,latestAgentJob,canAcceptAgent,exportedVersion} from '../lib/visual-workbench';
+import {chapterPresentation,videoTaskStatus,videoProgress,latestAgentJob,canAcceptAgent,exportedVersion,chapterStatus,agentBatchScenes,visualAgentBody,AGENT_MAX_TURNS} from '../lib/visual-workbench';
 import {visualAgentAction} from '../lib/visual-workbench-actions';
 
 export function VisualLayoutProposal({job,disabled,onAction}:{job:VisualJob;disabled:boolean;onAction:(action:VisualAction)=>void}){
@@ -88,10 +88,10 @@ export function VisualAgentPanel({projectId,job,exported,now,updatedAt,disabled,
  return <div aria-label="Agent 视频" className="vw-current-video"><h3>Agent 视频</h3>
   {!job&&<p>由 Agent 自行设计画面并检查，通过后直接生成本章视频（使用当前配音与字幕）。</p>}
   {job&&job.state==='succeeded'&&job.result?.agent&&<p>{job.result.agent.finish_by==='model'?'Agent 已自检并通过检查':'Agent 未自行收尾，已采用最后一个通过检查的版本'} · {job.result.agent.turns} 轮 · 输出 {job.result.agent.output_tokens.toLocaleString('zh-CN')} token</p>}
-  {job&&job.state==='succeeded'&&<VisualMedia projectId={projectId} job={job} diagnostics/>}
   {job&&job.result?.accepted===true&&<p>已确认此版本 · 可用于整课导出</p>}
+  {job&&onAccept&&canAcceptAgent(job)&&!job.result?.accepted&&<div className="vw-toolbar"><button disabled={disabled} onClick={onAccept}><Check size={14}/>看完后确认此版本</button></div>}
+  {job&&job.state==='succeeded'&&<VisualMedia projectId={projectId} job={job} diagnostics/>}
   <p>整课导出将使用：{!exported?'暂无已确认的版本':exported.id===job?.id?'上方这个 Agent 版本':`${exported.kind==='agent'?'更早确认的 Agent 版本':'已验收的预览'}${exported.created_at?`（${new Date(exported.created_at).toLocaleString('zh-CN',{hour12:false})}）`:''}`}</p>
-  {job&&onAccept&&canAcceptAgent(job)&&!job.result?.accepted&&<div className="vw-toolbar"><button disabled={disabled} onClick={onAccept}><Check size={14}/>确认此版本</button></div>}
   {job&&job.state!=='succeeded'&&<VisualTaskProgress job={job} now={now} updatedAt={updatedAt} disabled={disabled} onRefresh={onRefresh} onCancel={onCancel}/>}
   {job?.state==='failed'&&typeof job.result?.requests_dispatched==='number'&&<p>{job.result.requests_dispatched?`本次已消耗 ${job.result.requests_dispatched} 轮模型调用。`:'本次没有产生模型消耗。'}</p>}
   <div className="vw-toolbar"><button disabled={disabled||running||!!blockedReason} onClick={onStart}><Film size={14}/>{job?'Agent 重新生成（付费）':'Agent 生成视频（付费）'}</button></div>
@@ -140,6 +140,10 @@ export default function VisualWorkbench({routeProjectId}:{routeProjectId:string}
   const sceneJobs=jobs.filter(j=>j.scene_id===row?.id);
   // The older template flow; Agent jobs have their own panel and must not show up here as its latest task.
   const presentation=chapterPresentation(sceneJobs.filter(j=>j.kind!=='agent'));
+  const statuses=(project?.scenes??[]).map(scene=>chapterStatus(scene,jobs));
+  const confirmedCount=statuses.filter(s=>s.key==='confirmed').length;
+  const missing=statuses.map((s,i)=>s.key==='confirmed'?0:i+1).filter(Boolean);
+  const batch=project?agentBatchScenes(project.scenes,jobs):[];
   const latestExport=jobs.find(j=>j.kind==='export'&&j.current!==false&&j.state==='succeeded'&&j.result?.video);
   const activeJob=jobs.find(j=>['queued','running'].includes(j.state));
   const active=!!activeJob;
@@ -154,21 +158,26 @@ export default function VisualWorkbench({routeProjectId}:{routeProjectId:string}
     setVoiceJobs(previous=>[job,...previous.filter(j=>j.job_id!==job.job_id)]);
   });
   return <main className="visual-workbench">
-    <header className="vw-header"><div><a href="/courses">课程</a><h1>{project?.title??'视觉工作台'}</h1><span>定制视觉 {project?`· r${project.revision}`:''}</span></div>
-      <nav><a href={'/courses/'+encodeURIComponent(routeProjectId)+'/legacy'}>旧版模板工作台</a><button title="刷新项目与任务" aria-label="刷新项目与任务" disabled={busy} onClick={()=>void act(refresh)}><RefreshCw size={16}/></button></nav>
+    <header className="vw-header"><div><a href="/courses">课程</a><h1>{project?.title??'视觉工作台'}</h1><span>{project?`${project.scenes.length} 章 · 已确认 ${confirmedCount}/${project.scenes.length}`:''}</span></div>
+      <nav><button title="刷新项目与任务" aria-label="刷新项目与任务" disabled={busy} onClick={()=>void act(refresh)}><RefreshCw size={16}/></button></nav>
     </header>
     {error&&<p role="alert" className="vw-error">{error}</p>}
     {!project?<p role="status">正在读取项目与任务…</p>:<>
       <div className="vw-toolbar">
         {!project.scenes.length&&<button disabled={disabled||active} onClick={()=>void act(async()=>{setProject(await request<Project>(base+'/visual/prepare',{expected_revision:project.revision}));})}>整理口播章节（免费）</button>}
-        <button disabled={disabled||active||!project.scenes.length||!project.scenes.every(measuredReady)} onClick={()=>void act(async()=>{
-          if(await confirm({title:'整课导出',message:`确认导出当前项目 r${project.revision}？每章必须具有当前有效且已确认的预览或 Agent 视频（取最新确认的一个）；服务端将再次检查。`,confirmText:'确认导出'}))await submit('/export',{expected_revision:project.revision,confirmed:true});
+        {!!project.scenes.length&&<span className="vw-course-progress">已确认 {confirmedCount}/{project.scenes.length}{missing.length?` · 未确认：第 ${missing.join('、')} 章`:''}</span>}
+        <button disabled={disabled||active||!batch.length} title={batch.length?undefined:'没有可批量生成的章节（需已配音、未确认、未在生成）'} onClick={()=>void act(async()=>{
+          if(!await confirm({title:`批量 Agent 生成 ${batch.length} 章（付费）`,message:`为第 ${batch.map(s=>project.scenes.indexOf(s)+1).join('、')} 章各提交一个 Agent 任务，依次执行。每章最多 ${AGENT_MAX_TURNS} 轮模型调用，合计最多 ${batch.length*AGENT_MAX_TURNS} 轮；失败不自动重试。每章完成后仍需你看过并确认。`,confirmText:`确认最多 ${batch.length*AGENT_MAX_TURNS} 轮付费调用`,variant:'warning'}))return;
+          for(const scene of batch)await submit('/agent',visualAgentBody(scene.id,project.revision));
+        })}><Film size={14}/>批量 Agent 生成{batch.length?` ${batch.length} 章`:''}（付费）</button>
+        <button disabled={disabled||active||!project.scenes.length||missing.length>0} title={missing.length?'每章都需要一个已确认的视频':undefined} onClick={()=>void act(async()=>{
+          if(await confirm({title:'整课导出',message:`导出全部 ${project.scenes.length} 章。每章使用最新确认的版本（Agent 视频或预览）；在本机渲染，不调用模型或配音。`,confirmText:'确认导出'}))await submit('/export',{expected_revision:project.revision,confirmed:true});
         })}><Film size={14}/>导出整课视频</button>
         {latestExport?.result?.video&&<a href={visualFileUrl(project.id,latestExport.id,latestExport.result.video)} download>下载整课 MP4</a>}
       </div>
       <div className="vw-layout"><aside aria-label="章节列表"><h2>口播章节 · {project.scenes.length}</h2>
         {!project.scenes.length&&<p>尚未整理章节</p>}
-        {project.scenes.map((s,i)=><button key={s.id} aria-pressed={s.id===row?.id} disabled={busy||dirty} onClick={()=>{setSelected(s.id);setFeedback('');}}><span>{i+1}. {s.scene.narration.text.slice(0,36)}</span><small>r{s.revision} · {measuredReady(s)?'实测就绪':s.state==='needs_voice'?'待配音':'待实测对齐'}</small></button>)}
+        {project.scenes.map((s,i)=><button key={s.id} aria-pressed={s.id===row?.id} disabled={busy||dirty} onClick={()=>{setSelected(s.id);setFeedback('');}}><span>{i+1}. {s.scene.narration.text.slice(0,36)}</span><small data-status={statuses[i].key}>{statuses[i].label}</small></button>)}
         <VoiceSettings key={project.id} project={project} dirty={dirty} busy={busy} formEditing={dirty} onDirty={setDirty} act={act} onSave={async speaker=>{setProject(await request<Project>(base+'/voice',{expected_revision:project.revision,speaker},'PATCH'));setDirty(false);}}/>
       </aside><div className="vw-content">
         {activeJob&&activeJob.id!==presentation.active?.id&&<div><h2>当前项目有任务正在执行</h2><VisualTaskProgress job={activeJob} now={now} updatedAt={updatedAt} disabled={busy} onRefresh={()=>void act(refresh)} onCancel={()=>cancelVisual(activeJob)}/>{activeJob.scene_id&&<button onClick={()=>{setSelected(activeJob.scene_id!);setFeedback('');}}>查看执行中的章节</button>}</div>}
@@ -253,7 +262,7 @@ export default function VisualWorkbench({routeProjectId}:{routeProjectId:string}
 }
 export function VisualMedia({projectId,job,diagnostics=false}:{projectId:string;job:VisualJob;diagnostics?:boolean}) {
   return <>{job.state==='succeeded'&&job.result?.video&&<video controls preload="metadata" src={visualFileUrl(projectId,job.id,job.result.video)}/>}
-    {diagnostics&&<div className="vw-stills">{reviewFrames(job.result?.frames??[]).map((name,i)=><figure key={name}><img alt={['首帧','中间帧','末帧'][i]} src={visualFileUrl(projectId,job.id,name)}/><figcaption>{['首帧','中间帧','末帧'][i]}</figcaption></figure>)}</div>}
+    {diagnostics&&<div className="vw-stills">{reviewFrames(job.result?.frames??[],job.kind==='agent').map((name,i)=><figure key={name}><img alt={(job.kind==='agent'?['开头','中段','结尾']:['首帧','中间帧','末帧'])[i]} src={visualFileUrl(projectId,job.id,name)}/><figcaption>{(job.kind==='agent'?['开头','中段','结尾']:['首帧','中间帧','末帧'])[i]}</figcaption></figure>)}</div>}
     {job.state==='succeeded'&&job.result?.video&&<a href={visualFileUrl(projectId,job.id,job.result.video)} download>下载 MP4</a>}{' '}
     {job.state==='succeeded'&&job.result?.srt&&<a href={visualFileUrl(projectId,job.id,job.result.srt)} download>下载 SRT</a>}</>;
 }

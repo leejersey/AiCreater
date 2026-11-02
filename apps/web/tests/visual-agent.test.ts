@@ -88,3 +88,20 @@ test('another configured model parses, and the panel names the version export wi
  const none=renderToStaticMarkup(createElement(VisualAgentPanel,{projectId:'p',job:newer,now:0,updatedAt:0,disabled:false,onStart(){},onRefresh(){},onCancel(){}}));
  assert.match(none,/整课导出将使用：暂无已确认的版本/);
 });
+
+const row=(id:string,state:string,ready:boolean)=>({id,state,revision:1,scene:{narration:{text:'x',...(ready?{audio_asset_id:'a'}:{})},duration_frames:ready?60:undefined,captions:ready?[{text:'x',start_frame:0,end_frame:60}]:undefined}}) as any;
+test('chapter status follows voice, running, review and confirmation; batch takes only chapters still to generate',()=>{
+ const rows=[row('a','needs_voice',false),row('b','needs_timing',false),row('c','ready',true),row('d','ready',true),row('e','ready',true),row('f','ready',true)];
+ const job=(over:Record<string,unknown>)=>parseVisualJobs({jobs:[{...passed,...over}]},'p')[0];
+ const jobs=[job({id:'r',scene_id:'d',state:'running',result:null}),job({id:'v',scene_id:'e'}),job({id:'k',scene_id:'f',result:{...passed.result,accepted:true}})];
+ assert.deepEqual(rows.map(r=>visual.chapterStatus(r,jobs).label),['待配音','待对齐','待生成','生成中','待确认','已确认']);
+ assert.deepEqual(visual.agentBatchScenes(rows,jobs).map(r=>r.id),['c']);
+});
+
+test('Agent stills skip the boundary frames; the running Agent stage shows as progress detail',()=>{
+ const frames=['f0','f1','f2','f3','f4','f5'];
+ assert.deepEqual(visual.reviewFrames(frames,true),['f1','f3','f4']);
+ assert.deepEqual(visual.reviewFrames(frames),['f0','f3','f5']);
+ const [running]=parseVisualJobs({jobs:[{...passed,state:'running',stage:'第 3 轮 · 检查发现 2 个需修正的问题',result:null}]},'p');
+ assert.match(visual.videoProgress(running,0).detail,/第 3 轮 · 检查发现 2 个需修正的问题/);
+});
