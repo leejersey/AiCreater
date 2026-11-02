@@ -90,7 +90,7 @@ export function VisualAgentPanel({projectId,job,now,updatedAt,disabled,canStart,
   {job&&job.state==='succeeded'&&job.result?.agent&&<p>{job.result.agent.finish_by==='model'?'Agent 已自检并通过检查':'Agent 未自行收尾，已采用最后一个通过检查的版本'} · {job.result.agent.turns} 轮 · 输出 {job.result.agent.output_tokens.toLocaleString('zh-CN')} token</p>}
   {job&&job.state==='succeeded'&&<VisualMedia projectId={projectId} job={job} diagnostics/>}
   {job&&job.state!=='succeeded'&&<VisualTaskProgress job={job} now={now} updatedAt={updatedAt} disabled={disabled} onRefresh={onRefresh} onCancel={onCancel}/>}
-  {job?.state==='failed'&&typeof job.result?.requests_dispatched==='number'&&<p>本次已用 {job.result.requests_dispatched} 轮模型调用。</p>}
+  {job?.state==='failed'&&typeof job.result?.requests_dispatched==='number'&&<p>{job.result.requests_dispatched?`本次已消耗 ${job.result.requests_dispatched} 轮模型调用。`:'本次没有产生模型消耗。'}</p>}
   <div className="vw-toolbar"><button disabled={disabled||running||!canStart} onClick={onStart}><Film size={14}/>{job?'Agent 重新生成（付费）':'Agent 生成视频（付费）'}</button></div>
   {!canStart&&!running&&<p>需要先完成本章配音与实测对齐，且项目内没有进行中的任务。</p>}
  </div>;

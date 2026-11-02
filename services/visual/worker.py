@@ -17,6 +17,9 @@ PUBLIC_FILE=re.compile(r'(?:source\.txt|design\.json|video\.mp4|video\.srt|still
 
 class AgentStopped(Exception):
     """The scene-agent run ended without a gated scene; a normal outcome, reported as a failed job."""
+    def __init__(self, reason=None):
+        super().__init__(reason)
+        self.reason = reason
 
 
 def job_directory(job_id):
@@ -295,7 +298,7 @@ def publishable_result(job,directory):
         if result['sha256']!=source_hash or not VisualJobs._valid_result(job,result):raise ValueError('Invalid offline transfer result')
         return result
     if job['kind']=='agent':
-        if result.get('status')!='passed':raise AgentStopped()
+        if result.get('status')!='passed':raise AgentStopped(result.get('reason'))
         frames=result.get('frames')
         if not isinstance(frames,list) or not frames or len(frames)>50:raise ValueError('Missing review frames')
         files=['source.txt','video.mp4','video.srt',*frames]
@@ -382,10 +385,15 @@ def run_once(jobs,lane='workflow',*,timeout=None,heartbeat_interval=5,launcher=N
         if job['kind']=='agent':
             # Paid turns are reported whether the run passed, stopped or crashed after some turns.
             try:
-                turns=_json(directory/'result.json',65536).get('turns')
-                if type(turns) is int and 0<=turns<=job['input']['max_turns']:count=turns
+                record=_json(directory/'result.json',65536);turns=record.get('turns');usage=record.get('usage') or {}
+                # A turn that never got a response (e.g. rejected key) used no tokens and is not counted.
+                used=any(type(usage.get(k)) is int and usage[k]>0 for k in ('inputTokens','outputTokens'))
+                if type(turns) is int and 0<=turns<=job['input']['max_turns']:count=turns if used else 0
             except (ValueError,OSError):pass
-            if isinstance(sys.exc_info()[1],AgentStopped):failure_code='agent_stopped'
+            stopped=sys.exc_info()[1]
+            if isinstance(stopped,AgentStopped):
+                reason=stopped.reason if isinstance(stopped.reason,str) and re.fullmatch(r'[a-z_]{1,40}',stopped.reason) else 'stopped'
+                failure_code='agent_'+reason
         try:
             if job['kind'] in ('generate','repair'):
                 record=_json(directory/'request-count.json',4096);value=record.get('requests_dispatched')

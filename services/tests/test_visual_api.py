@@ -139,6 +139,15 @@ class VisualApiTests(unittest.TestCase):
         self.assertIn('Agent 未在轮数上限内完成',done['error'])
         self.assertEqual(done['result']['requests_dispatched'],25)
 
+    def test_agent_rejected_key_says_so_and_counts_no_paid_turn(self):
+        def write(output):
+            (output/'result.json').write_text(json.dumps({'status':'stopped','reason':'provider_auth','model':'deepseek-flash-thinking','turns':1,'requests_dispatched':1,
+                'usage':{'inputTokens':0,'outputTokens':0,'cachedInputTokens':0}}))
+        _,done,_,_=self.run_agent_job(write)
+        self.assertEqual(done['state'],'failed')
+        self.assertIn('模型服务拒绝请求',done['error'])
+        self.assertEqual(done['result']['requests_dispatched'],0)
+
     def test_agent_result_claiming_success_without_video_is_rejected(self):
         def write(output):
             (output/'source.txt').write_text('x')

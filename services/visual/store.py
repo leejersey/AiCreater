@@ -20,6 +20,17 @@ FILE_NAME = re.compile(r'(?:source\.txt|design\.json|video\.mp4|video\.srt|still
 HASH = re.compile(r'[a-f0-9]{64}')
 FAILURE = '视频生成未完成，程序已保存诊断和已有产物；未自动重试。'
 AGENT_STOPPED = 'Agent 未在轮数上限内完成通过检查的画面；运行记录已保留，未自动重试。'
+# Why a scene-agent run stopped, as the job error the user sees; unknown reasons fall back to AGENT_STOPPED.
+AGENT_ERRORS = {
+    'agent_provider_auth': '模型服务拒绝请求（API Key 无效、无权限或余额不足）；未生成画面，未自动重试。',
+    'agent_provider_unavailable': '模型服务暂时不可用（限流或服务端错误，单轮已重试 2 次）；未自动重试任务。',
+    'agent_refusal': '模型拒绝了本次请求；未生成画面，未自动重试。',
+    'agent_stalled': 'Agent 连续多轮没有修改画面，已停止；运行记录已保留，未自动重试。',
+    'agent_no_finish': 'Agent 多次回复未调用工具，已停止；运行记录已保留，未自动重试。',
+    'agent_max_tokens': 'Agent 连续两轮输出被截断，已停止；运行记录已保留，未自动重试。',
+    'agent_budget_tokens': 'Agent 用完输出 token 上限仍未通过检查；运行记录已保留，未自动重试。',
+    'agent_budget_turns': AGENT_STOPPED,
+}
 AGENT_MODEL = 'deepseek-flash-thinking'
 AGENT_MAX_TURNS = 25
 SOURCE_FAILURE = '动画代码未通过编译检查，程序已保存源码和诊断，尚未开始渲染。未追加模型调用。'
@@ -624,7 +635,7 @@ class VisualJobs:
             row = self._active(conn, job_id, token)
             if row is None: raise StoreError('conflict', 'Visual attempt is terminal or expired')
             current = self._current(conn, project, row)
-            failure = STALE if not current else (LAYOUT_FAILURE if error=='layout_preflight' else SOURCE_FAILURE if error=='source_typecheck' else AGENT_STOPPED if error=='agent_stopped' else FAILURE) if error is not None else None
+            failure = STALE if not current else (LAYOUT_FAILURE if error=='layout_preflight' else SOURCE_FAILURE if error=='source_typecheck' else AGENT_ERRORS.get(error, AGENT_STOPPED) if isinstance(error,str) and error.startswith('agent_') else FAILURE) if error is not None else None
             if failure is None and (not self._valid_result(row, result) or
                     (row['kind'] in ('preview','preview-transfer') and not self._parent_matches(conn, project, row['input'], result))):
                 failure = 'validation: 视觉结果未通过校验，未自动重试。'
