@@ -189,7 +189,7 @@ Beat只开一个。新命令用Celery原生PID文件阻止重复启动；已有�
 
 #### 改过后端代码后重载 API
 
-修改 Python 后端代码后，必须重载 API 和 Worker（否则分镜/配音仍用旧代码，新路由会 404）：
+修改 Python 后端代码后，必须重载 API 和**全部** Worker，包括 Render 队列的 Worker（否则分镜/配音仍用旧代码，新路由会 404；各 Worker 都会回收超时任务，旧代码会按旧的时限误判新类型的任务）：
 
 ```bash
 # bash / zsh
