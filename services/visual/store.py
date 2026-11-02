@@ -32,6 +32,12 @@ AGENT_ERRORS = {
     'agent_budget_turns': AGENT_STOPPED,
 }
 AGENT_MODEL = 'deepseek-flash-thinking'
+# Lease length per job kind. Both the lease check and expiry recovery read this, so a new kind cannot get
+# one limit in one place and the 240 s default in the other.
+LEASE_SECONDS = {'export': 1800, 'agent': 1800, 'preview': 900, 'preview-transfer': 900}
+DEFAULT_LEASE_SECONDS = 240
+LEASE_SQL = ('CASE kind ' + ' '.join(f"WHEN '{kind}' THEN interval '{seconds} seconds'" for kind, seconds in LEASE_SECONDS.items()) +
+             f" ELSE interval '{DEFAULT_LEASE_SECONDS} seconds' END")
 AGENT_MAX_TURNS = 25
 SOURCE_FAILURE = '动画代码未通过编译检查，程序已保存源码和诊断，尚未开始渲染。未追加模型调用。'
 LAYOUT_FAILURE = '设计布局检查未通过，程序已保存诊断，本次尚未生成视频。'
@@ -532,9 +538,7 @@ class VisualJobs:
     def _recover(conn):
         conn.execute("""UPDATE visual_jobs SET state='failed',stage='failed',ended_at=now(),
             error='工作进程租约或执行时限已过期，未自动重试。' WHERE state='running' AND
-            (heartbeat_at <= now()-interval '60 seconds' OR started_at <= now() -
-             CASE kind WHEN 'export' THEN interval '1800 seconds' WHEN 'agent' THEN interval '1800 seconds' WHEN 'preview' THEN interval '900 seconds' WHEN 'preview-transfer' THEN interval '900 seconds'
-             ELSE interval '240 seconds' END)""")
+            (heartbeat_at <= now()-interval '60 seconds' OR started_at <= now() - """ + LEASE_SQL + ')')
 
     def claim(self, lane):
         if lane not in ('workflow', 'render'): raise StoreError('validation', 'Expected workflow or render lane')
@@ -554,8 +558,7 @@ class VisualJobs:
     @staticmethod
     def _active(conn, job_id, token):
         row = conn.execute("""SELECT *, heartbeat_at > now()-interval '60 seconds'
-            AND started_at > now() - CASE kind WHEN 'export' THEN interval '1800 seconds'
-            WHEN 'preview' THEN interval '900 seconds' WHEN 'preview-transfer' THEN interval '900 seconds' ELSE interval '240 seconds' END AS lease_valid
+            AND started_at > now() - """ + LEASE_SQL + """ AS lease_valid
             FROM visual_jobs WHERE id=%s FOR UPDATE""", [identifier(job_id)]).fetchone()
         if row is None or row['state'] != 'running' or str(row['attempt_id']) != identifier(token) or not row['lease_valid']:
             return None

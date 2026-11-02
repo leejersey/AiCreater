@@ -168,6 +168,28 @@ class VisualApiTests(unittest.TestCase):
             self.assertEqual(self.client.get(self.path+'/'+export['id']+'/files/video.mp4').content,b'course')
         self.run_agent_job(write,check)
 
+    def test_agent_lease_outlives_the_default_240_seconds(self):
+        project,row,_=self.ready_scene()
+        job=self.client.post(self.path+'/agent',json={'scene_id':row['id'],'expected_revision':project['revision'],'confirmed':True,'max_turns':25}).json()
+        jobs=self.client.app.state.visual
+        claimed=jobs.claim('workflow');self.assertEqual(claimed['id'],job['id'])
+        def age(seconds):
+            with self.store.connection() as conn:
+                conn.execute("UPDATE visual_jobs SET started_at=now()-make_interval(secs=>%s) WHERE id=%s",[seconds,job['id']])
+        age(300)  # chapters with many labels routinely take 4-6 minutes
+        self.assertTrue(jobs.heartbeat(job['id'],claimed['attempt_id']))
+        self.assertIsNone(jobs.claim('render'))  # recovery in the other lane must not expire it either
+        self.assertEqual(self.client.get(self.path).json()['jobs'][0]['state'],'running')
+        age(1900)
+        self.assertFalse(jobs.heartbeat(job['id'],claimed['attempt_id']))
+
+    def test_stopping_an_already_exited_process_group_does_not_raise(self):
+        from services.visual import worker
+        process=Mock();process.pid=999999
+        with patch.object(worker.os,'killpg',side_effect=PermissionError(1,'Operation not permitted')):
+            worker._stop(process)
+        process.wait.assert_called()
+
     def test_agent_run_that_stops_fails_honestly_and_reports_paid_turns(self):
         def write(output):
             (output/'result.json').write_text(json.dumps({'status':'stopped','reason':'budget_turns','model':'deepseek-flash-thinking','turns':25,'requests_dispatched':25,

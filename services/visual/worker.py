@@ -244,13 +244,14 @@ def command_input(jobs,job):
 
 
 def _stop(process):
+    # macOS answers EPERM, not ESRCH, for a group whose leader already exited; either way there is nothing to signal.
     try:os.killpg(process.pid,signal.SIGTERM)
-    except ProcessLookupError:
+    except (ProcessLookupError,PermissionError):
         process.wait();return
     try:process.wait(timeout=3)
     except subprocess.TimeoutExpired:
         try:os.killpg(process.pid,signal.SIGKILL)
-        except ProcessLookupError:pass
+        except (ProcessLookupError,PermissionError):pass
         process.wait(timeout=5)
 
 
