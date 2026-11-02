@@ -73,7 +73,8 @@ export function parseVisualJobs(value:unknown,projectId:string):VisualJob[] {
     if(!['source','host-motion','host-intent','host-components'].includes(mode as string)||(resultMode!==undefined&&resultMode!==mode))throw invalid();
     let agent:VisualJob['agent'];
     if(v.kind==='agent'){
-      if(summary.model!=='deepseek-flash-thinking'||!Number.isInteger(summary.max_turns)||Number(summary.max_turns)<1||Number(summary.max_turns)>AGENT_MAX_TURNS)throw invalid();
+      // Any configured model name; a strict value here would hide the whole job list when the default changes.
+      if(typeof summary.model!=='string'||!/^[a-z0-9][a-z0-9._-]{0,79}$/.test(summary.model)||!Number.isInteger(summary.max_turns)||Number(summary.max_turns)<1||Number(summary.max_turns)>AGENT_MAX_TURNS)throw invalid();
       agent={model:summary.model,max_turns:Number(summary.max_turns)};
     }else if(Object.hasOwn(summary,'max_turns'))throw invalid();
     const r0=object(v.result)?v.result:undefined;
@@ -246,4 +247,9 @@ export function visualAgentBody(sceneId:string,revision:number){
 export function canAcceptAgent(job:VisualJob):boolean{
  return job.kind==='agent'&&job.state==='succeeded'&&job.current!==false&&job.result?.agent?.status==='passed'&&
   !!job.result.sha256&&job.result.video==='video.mp4'&&(job.result.frames?.length??0)>0;
+}
+/** The version course export will use for a chapter: the newest accepted, current preview or Agent video. */
+export function exportedVersion(jobs:VisualJob[]):VisualJob|undefined{
+ return jobs.filter(j=>(j.kind==='preview'||j.kind==='agent')&&j.state==='succeeded'&&j.current!==false&&j.result?.accepted===true)
+  .sort((a,b)=>(b.created_at??'').localeCompare(a.created_at??''))[0];
 }

@@ -10,9 +10,19 @@ import subprocess
 import time
 
 from services.projects.store import ROOT, StoreError, identifier
+from services.visual.store import LEASE_SECONDS, DEFAULT_LEASE_SECONDS
 
 WORK_ROOT=ROOT/'output/visual-workbench'
 PUBLIC_FILE=re.compile(r'(?:source\.txt|design\.json|video\.mp4|video\.srt|stills/frame-\d+\.png)')
+
+
+def _answered_turns(transcript,maximum):
+    """Model turns that got a response, i.e. paid ones; a request that failed or was rejected is not logged as a turn."""
+    try:
+        with open(transcript,encoding='utf-8') as stream:
+            count=sum(1 for line in stream if line.startswith('{"type":"turn"'))
+    except OSError:return 0
+    return min(count,maximum)
 
 
 class AgentStopped(Exception):
@@ -238,6 +248,9 @@ def command_input(jobs,job):
         if data.get('isolated_render') is True:chapter['isolated_render']=True
         return chapter
     if any('agent_id' in chapter for chapter in data['chapters']):
+        # The Agent course renderer runs locally; it must not silently drop a chapter's isolated-render requirement.
+        if any(chapter.get('isolated_render') is True for chapter in data['chapters'] if 'agent_id' not in chapter):
+            raise StoreError('validation','含隔离渲染章节的课程暂不能与 Agent 视频混合导出')
         return {'chapters':[_agent_chapter(jobs,job['project_id'],chapter) if 'agent_id' in chapter else {'kind':'workbench',**_chapter(jobs,job['project_id'],chapter)}
                             for chapter in data['chapters']]}
     return {'chapters':[_chapter(jobs,job['project_id'],chapter) for chapter in data['chapters']]}
@@ -388,7 +401,11 @@ def run_once(jobs,lane='workflow',*,timeout=None,heartbeat_interval=5,launcher=N
             os.chmod(log_path,0o600)
             process=(launcher or subprocess.Popen)(command,cwd=ROOT,env=child_environment('recover-source' if job['input'].get('operation')=='retime' else job['kind']),stdin=subprocess.DEVNULL,stdout=log,stderr=log,start_new_session=True)
             started=time.monotonic();beat=0
-            limit=timeout or {'agent':1740,'generate':240,'repair':240,'prepare-transfer':240,'recover-source':60,'propose-layout':60,'preview':900,'preview-transfer':900,'export':1800}[job['kind']]
+            # Stop the child before its lease runs out, so the job is finished here rather than expired by recovery.
+            # Kinds with a long lease stop their child 60 s early, so the job is finished here rather than expired by
+            # recovery; the short-lease kinds keep their original limits.
+            limit=timeout or ({'generate':240,'repair':240,'prepare-transfer':240,'recover-source':60,'propose-layout':60}.get(job['kind'])
+                               or LEASE_SECONDS.get(job['kind'],DEFAULT_LEASE_SECONDS)-60)
             while process.poll() is None:
                 now=time.monotonic()
                 if now-started>limit or log.tell()>2*1024**2:raise RuntimeError('Execution limit')
@@ -403,16 +420,12 @@ def run_once(jobs,lane='workflow',*,timeout=None,heartbeat_interval=5,launcher=N
         count=0 if job['kind'] in ('prepare-transfer','preview-transfer','recover-source','propose-layout') else None;failure_code=None
         if job['kind']=='agent':
             # Paid turns are reported whether the run passed, stopped or crashed after some turns.
-            try:
-                record=_json(directory/'result.json',65536);turns=record.get('turns');usage=record.get('usage') or {}
-                # A turn that never got a response (e.g. rejected key) used no tokens and is not counted.
-                used=any(type(usage.get(k)) is int and usage[k]>0 for k in ('inputTokens','outputTokens'))
-                if type(turns) is int and 0<=turns<=job['input']['max_turns']:count=turns if used else 0
-            except (ValueError,OSError):pass
+            count=_answered_turns(directory/'workspace'/'transcript.jsonl',job['input']['max_turns'])
             stopped=sys.exc_info()[1]
             if isinstance(stopped,AgentStopped):
-                reason=stopped.reason if isinstance(stopped.reason,str) and re.fullmatch(r'[a-z_]{1,40}',stopped.reason) else 'stopped'
-                failure_code='agent_'+reason
+                # Failed runs carry detail after the code ("provider_request: HTTP 400 …"); only the code is public.
+                code=stopped.reason.split(':',1)[0] if isinstance(stopped.reason,str) else ''
+                failure_code='agent_'+(code if re.fullmatch(r'[a-z_]{1,40}',code) else 'stopped')
         try:
             if job['kind'] in ('generate','repair'):
                 record=_json(directory/'request-count.json',4096);value=record.get('requests_dispatched')

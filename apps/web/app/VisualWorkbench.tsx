@@ -12,7 +12,7 @@ import {canRecoverSource,canRepairRecoveredSource} from '../lib/visual-workbench
 import {visualRecoverSourceAction,visualRepairSourceAction,type VisualAction} from '../lib/visual-workbench-actions';
 import {canProposeLayout,canApplyLayout} from '../lib/visual-workbench';
 import {visualProposeLayoutAction,visualApplyLayoutAction} from '../lib/visual-workbench-actions';
-import {chapterPresentation,videoTaskStatus,videoProgress,latestAgentJob,canAcceptAgent} from '../lib/visual-workbench';
+import {chapterPresentation,videoTaskStatus,videoProgress,latestAgentJob,canAcceptAgent,exportedVersion} from '../lib/visual-workbench';
 import {visualAgentAction} from '../lib/visual-workbench-actions';
 
 export function VisualLayoutProposal({job,disabled,onAction}:{job:VisualJob;disabled:boolean;onAction:(action:VisualAction)=>void}){
@@ -83,13 +83,14 @@ export function VisualTaskProgress({job,now,updatedAt,disabled,onCancel,onRefres
  </div>;
 }
 /** Agent path: one paid job designs, checks and renders the chapter; shown beside the existing video. */
-export function VisualAgentPanel({projectId,job,now,updatedAt,disabled,canStart,onStart,onRefresh,onCancel,onAccept}:{projectId:string;job?:VisualJob;now:number;updatedAt:number;disabled:boolean;canStart:boolean;onStart:()=>void;onRefresh:()=>void;onCancel:()=>void;onAccept?:()=>void}){
+export function VisualAgentPanel({projectId,job,exported,now,updatedAt,disabled,canStart,onStart,onRefresh,onCancel,onAccept}:{projectId:string;job?:VisualJob;exported?:VisualJob;now:number;updatedAt:number;disabled:boolean;canStart:boolean;onStart:()=>void;onRefresh:()=>void;onCancel:()=>void;onAccept?:()=>void}){
  const running=!!job&&['queued','running'].includes(job.state);
  return <div aria-label="Agent 视频" className="vw-current-video"><h3>Agent 视频</h3>
   {!job&&<p>由 Agent 自行设计画面并检查，通过后直接生成本章视频（使用当前配音与字幕）。</p>}
   {job&&job.state==='succeeded'&&job.result?.agent&&<p>{job.result.agent.finish_by==='model'?'Agent 已自检并通过检查':'Agent 未自行收尾，已采用最后一个通过检查的版本'} · {job.result.agent.turns} 轮 · 输出 {job.result.agent.output_tokens.toLocaleString('zh-CN')} token</p>}
   {job&&job.state==='succeeded'&&<VisualMedia projectId={projectId} job={job} diagnostics/>}
   {job&&job.result?.accepted===true&&<p>已确认此版本 · 可用于整课导出</p>}
+  <p>整课导出将使用：{!exported?'暂无已确认的版本':exported.id===job?.id?'上方这个 Agent 版本':`${exported.kind==='agent'?'更早确认的 Agent 版本':'已验收的预览'}${exported.created_at?`（${new Date(exported.created_at).toLocaleString('zh-CN',{hour12:false})}）`:''}`}</p>
   {job&&onAccept&&canAcceptAgent(job)&&!job.result?.accepted&&<div className="vw-toolbar"><button disabled={disabled} onClick={onAccept}><Check size={14}/>确认此版本</button></div>}
   {job&&job.state!=='succeeded'&&<VisualTaskProgress job={job} now={now} updatedAt={updatedAt} disabled={disabled} onRefresh={onRefresh} onCancel={onCancel}/>}
   {job?.state==='failed'&&typeof job.result?.requests_dispatched==='number'&&<p>{job.result.requests_dispatched?`本次已消耗 ${job.result.requests_dispatched} 轮模型调用。`:'本次没有产生模型消耗。'}</p>}
@@ -172,7 +173,7 @@ export default function VisualWorkbench({routeProjectId}:{routeProjectId:string}
             {presentation.video?<><p>{presentation.video.timing_mode==='draft'?'无声草稿':'视频已生成'}{presentation.video.result?.accepted?' · 已确认':''}</p><VisualMedia projectId={project.id} job={presentation.video}/></>:<p>本章暂无可播放视频</p>}
             {presentation.latest&&presentation.latest.id!==presentation.video?.id&&<><VisualTaskProgress job={presentation.latest} now={now} updatedAt={updatedAt} disabled={busy} onRefresh={()=>void act(refresh)} onCancel={()=>cancelVisual(presentation.latest!)}/>{presentation.video&&<p>保留上次可播放版本。</p>}</>}
           </div>
-          <VisualAgentPanel projectId={project.id} job={latestAgentJob(sceneJobs)} now={now} updatedAt={updatedAt} disabled={disabled} canStart={!active&&measuredReady(row)}
+          <VisualAgentPanel projectId={project.id} job={latestAgentJob(sceneJobs)} exported={exportedVersion(sceneJobs)} now={now} updatedAt={updatedAt} disabled={disabled} canStart={!active&&measuredReady(row)}
             onStart={()=>void act(()=>confirmVisualAction(visualAgentAction(row.id,project.revision),confirm,submit))}
             onRefresh={()=>void act(refresh)} onCancel={()=>{const job=latestAgentJob(sceneJobs);if(job)cancelVisual(job);}}
             onAccept={()=>void act(async()=>{const job=latestAgentJob(sceneJobs)!;

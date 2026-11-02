@@ -190,8 +190,23 @@ class VisualApiTests(unittest.TestCase):
             worker._stop(process)
         process.wait.assert_called()
 
+    def test_agent_failure_counts_answered_turns_from_the_transcript(self):
+        # A run that crashed before writing result.json, with a final request that never got a response.
+        def write(output):
+            (output/'workspace').mkdir()
+            lines=[{'type':'start'}]+[{'type':'turn','turn':i} for i in (1,2,3,4)]+[{'type':'provider_error','turn':5}]
+            (output/'workspace'/'transcript.jsonl').write_text(''.join(json.dumps(l,separators=(',',':'))+'\n' for l in lines))
+            (output/'result.json').write_text(json.dumps({'status':'failed','reason':'provider_request: HTTP 400: context too long','model':'deepseek-flash-thinking','turns':5,
+                'usage':{'inputTokens':9,'outputTokens':9,'cachedInputTokens':0},'requests_dispatched':5}))
+        _,done,_,_=self.run_agent_job(write)
+        self.assertEqual(done['state'],'failed')
+        self.assertIn('模型服务拒绝了请求格式',done['error'])
+        self.assertEqual(done['result']['requests_dispatched'],4)
+
     def test_agent_run_that_stops_fails_honestly_and_reports_paid_turns(self):
         def write(output):
+            (output/'workspace').mkdir()
+            (output/'workspace'/'transcript.jsonl').write_text(''.join(json.dumps({'type':'turn','turn':i},separators=(',',':'))+'\n' for i in range(1,26)))
             (output/'result.json').write_text(json.dumps({'status':'stopped','reason':'budget_turns','model':'deepseek-flash-thinking','turns':25,'requests_dispatched':25,
                 'usage':{'inputTokens':1,'outputTokens':1,'cachedInputTokens':0}}))
         _,done,_,_=self.run_agent_job(write)

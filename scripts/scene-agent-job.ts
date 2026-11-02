@@ -9,6 +9,8 @@ import {parseCues} from '../packages/custom-scenes/src/design';
 import {repositoryRoot} from '../packages/custom-scenes/src/files';
 import {runLoop} from '../packages/scene-agent/src/loop';
 import {createProvider,loadModels} from '../packages/scene-agent/src/provider/registry';
+import {ProviderError} from '../packages/scene-agent/src/provider/types';
+import {defaultFrames} from '../packages/scene-agent/src/tools/checks';
 import {RemotionStillRenderer,sourceSha256} from '../packages/scene-agent/src/render/stills';
 import {agentChapter,renderAgentVideo} from '../packages/scene-agent/src/render/video';
 import {createWorkspace} from '../packages/scene-agent/src/workspace';
@@ -25,7 +27,15 @@ async function main(){
  if(!Number.isInteger(input.max_turns)||input.max_turns<1||input.max_turns>entry.budget.maxTurns)throw Error('invalid turn limit');
  // Fail before any model call if the measured audio and captions cannot make a video.
  agentChapter({source:'',brief,cues,scene:input.scene,audioFile:input.audio_file});
- const provider=createProvider(input.model,models);
+ let provider;
+ try{provider=createProvider(input.model,models);}
+ catch(error){
+  // No usable key: report it like a rejected key, with nothing spent.
+  if(!(error instanceof ProviderError))throw error;
+  await writeFile(path.join(out,'result.json'),JSON.stringify({status:'stopped',reason:'provider_auth',model:input.model,turns:0,usage:{inputTokens:0,outputTokens:0,cachedInputTokens:0},requests_dispatched:0},null,2));
+  console.log(JSON.stringify({status:'stopped',reason:'provider_auth',turns:0}));
+  return;
+ }
  const workspace=await createWorkspace(path.join(out,'workspace'),{brief,cues,skillDir:path.join(repositoryRoot,'packages/scene-agent/skill')});
  const renderer=new RemotionStillRenderer(workspace.brief);
  let run;
@@ -40,8 +50,11 @@ async function main(){
   const frames:string[]=[];
   await mkdir(path.join(out,'stills'));
   const stills=path.join(workspace.stillsDir,run.finish.gates.sourceSha256!.slice(0,12));
-  for(const name of (await readdir(stills)).filter(n=>/^frame-\d+\.png$/.test(n)).sort()){
-   const frame=Number(name.slice(6,-4));
+  // Exactly the sample the gates judged, in frame order; extra frames the model rendered are not review evidence.
+  const available=new Set((await readdir(stills)).filter(n=>/^frame-\d+\.png$/.test(n)));
+  for(const frame of defaultFrames(brief.durationInFrames,cues)){
+   const name=`frame-${String(frame).padStart(4,'0')}.png`;
+   if(!available.has(name))throw Error(`gated frame ${frame} is missing`);
    await copyFile(path.join(stills,name),path.join(out,'stills',`frame-${frame}.png`));
    frames.push(`stills/frame-${frame}.png`);
   }

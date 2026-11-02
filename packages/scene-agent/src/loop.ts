@@ -112,7 +112,7 @@ export async function runLoop(options:LoopOptions):Promise<RunResult>{
   }
   nudges=0;
 
-  const results=await runCalls(tools,turn.message.toolCalls,context);
+  const results=await runCalls(tools,turn.message.toolCalls,context,()=>finished!==undefined);
   for(const message of results)messages.push(message);
   await log({type:'tool_results',turn:turns,results:results.map(r=>({...r,content:r.content.map(p=>p.type==='image'?{type:'image',mediaType:p.mediaType,bytes:p.data.length}:p)}))});
   if(finished)return result('passed');
@@ -149,18 +149,21 @@ export async function runLoop(options:LoopOptions):Promise<RunResult>{
 }
 
 /** Consecutive read-only calls run in parallel; anything that writes or renders runs alone, in order. */
-async function runCalls(tools:Tool[],calls:ToolCall[],context:ToolContext):Promise<ToolMessage[]>{
+async function runCalls(tools:Tool[],calls:ToolCall[],context:ToolContext,finished:()=>boolean):Promise<ToolMessage[]>{
  const out:ToolMessage[]=[];
+ // Once finish is accepted the gated version is final: later calls in the same reply must not change it.
+ const skipped=(call:ToolCall):ToolMessage=>({role:'tool',toolCallId:call.id,content:[{type:'text',text:'not run: finish was already accepted in this reply'}],isError:true});
  let batch:ToolCall[]=[];
  const isReadOnly=(call:ToolCall)=>tools.find(t=>t.spec.name===call.name)?.readOnly??true;
  const flush=async()=>{
-  const outputs=await Promise.all(batch.map(call=>executeTool(tools,call,context)));
+  const outputs=await Promise.all(batch.map(call=>finished()?skipped(call):executeTool(tools,call,context)));
   batch.forEach((call,i)=>out.push({role:'tool',toolCallId:call.id,content:outputs[i].content,...(outputs[i].isError?{isError:true}:{})}));
   batch=[];
  };
  for(const call of calls){
   if(isReadOnly(call)){batch.push(call);continue;}
   await flush();
+  if(finished()){out.push(skipped(call));continue;}
   const output=await executeTool(tools,call,context);
   out.push({role:'tool',toolCallId:call.id,content:output.content,...(output.isError?{isError:true}:{})});
  }

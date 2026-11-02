@@ -234,3 +234,12 @@ test('a scene that renders nothing cannot finish, even with no geometry findings
  const rejection=textOf(provider.requests[1].messages.filter(m=>m.role==='tool').at(-1)!.content);
  assert.match(rejection,/finish rejected[\s\S]*✗ audit: blank-frame frame \(frames 30, 90\)/);
 });
+
+test('calls after an accepted finish in the same reply do not run, so the gated version is what passes',async()=>{
+ const {workspace,renderer}=await setup(scene(140));
+ const provider=new ScriptedProvider([[call('finish',{summary:'s',selfReview:review}),call('edit_file',{path:SCENE_FILE,old:'y={140}',new:'y={1040}'}),call('get_timing')]]);
+ const result=await runLoop({provider,workspace,renderer,budget});
+ assert.equal(result.status,'passed');
+ assert.equal(await workspace.readScene(),scene(140));
+ assert.equal(result.sceneSha256,result.finish?.gates.sourceSha256);
+});

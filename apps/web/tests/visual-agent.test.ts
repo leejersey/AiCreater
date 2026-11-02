@@ -27,7 +27,7 @@ test('agent jobs parse with their turn budget and a passed result',()=>{
 
 test('agent responses that break the contract are rejected',()=>{
  const bad=[
-  {...passed,input_summary:{...passed.input_summary,model:'gpt-x'}},
+  {...passed,input_summary:{...passed.input_summary,model:'Bad Model!'}},
   {...passed,input_summary:{...passed.input_summary,max_turns:26}},
   {...passed,result:{...passed.result,turns:30,requests_dispatched:30}},
   {...passed,result:{...passed.result,requests_dispatched:5}},
@@ -75,4 +75,16 @@ test('a passed agent video can be accepted once, and the panel says when it is',
  assert.match(done,/已确认此版本 · 可用于整课导出/);
  assert.doesNotMatch(done,/<button[^>]*>.*确认此版本<\/button>/);
  assert.ok(!visual.canAcceptAgent({...job,current:false}));
+});
+
+test('another configured model parses, and the panel names the version export will use',()=>{
+ const [other]=parseVisualJobs({jobs:[{...passed,input_summary:{...passed.input_summary,model:'claude-sonnet'}}]},'p');
+ assert.equal(other.agent?.model,'claude-sonnet');
+ const [older]=parseVisualJobs({jobs:[{...passed,id:'old',created_at:'2026-11-01T10:00:00Z',result:{...passed.result,accepted:true}}]},'p');
+ const [newer]=parseVisualJobs({jobs:[{...passed,id:'new',state:'failed',created_at:'2026-11-01T11:00:00Z',result:{requests_dispatched:3}}]},'p');
+ assert.equal(visual.exportedVersion([newer,older])?.id,'old');
+ const html=renderToStaticMarkup(createElement(VisualAgentPanel,{projectId:'p',job:newer,exported:older,now:0,updatedAt:0,disabled:false,canStart:true,onStart(){},onRefresh(){},onCancel(){}}));
+ assert.match(html,/整课导出将使用：更早确认的 Agent 版本/);
+ const none=renderToStaticMarkup(createElement(VisualAgentPanel,{projectId:'p',job:newer,now:0,updatedAt:0,disabled:false,canStart:true,onStart(){},onRefresh(){},onCancel(){}}));
+ assert.match(none,/整课导出将使用：暂无已确认的版本/);
 });

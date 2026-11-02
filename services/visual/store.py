@@ -30,6 +30,9 @@ AGENT_ERRORS = {
     'agent_max_tokens': 'Agent 连续两轮输出被截断，已停止；运行记录已保留，未自动重试。',
     'agent_budget_tokens': 'Agent 用完输出 token 上限仍未通过检查；运行记录已保留，未自动重试。',
     'agent_budget_turns': AGENT_STOPPED,
+    'agent_provider_request': '模型服务拒绝了请求格式（例如上下文过长）；运行记录已保留，未自动重试。',
+    'agent_provider_response': '模型服务返回了无法读取的响应；运行记录已保留，未自动重试。',
+    'agent_internal': 'Agent 运行出错；运行记录已保留，未自动重试。',
 }
 AGENT_MODEL = 'deepseek-flash-thinking'
 # Lease length per job kind. Both the lease check and expiry recovery read this, so a new kind cannot get
@@ -447,6 +450,9 @@ class VisualJobs:
                     chapters.append({**data, 'agent_id': str(accepted['id']), 'sha256': accepted['result']['sha256'], 'scene_id': scene['id']})
                 else:
                     chapters.append({**copy.deepcopy(accepted['input']), 'scene_id': scene['id']})
+            if (any('agent_id' in c for c in chapters) and
+                    any(c.get('isolated_render') is True for c in chapters if 'agent_id' not in c)):
+                raise StoreError('validation', '含隔离渲染章节的课程暂不能与 Agent 视频混合导出')
             return self._submit(conn, project, None, 'export', {'chapters': chapters, 'project_revision': expected_revision})
 
     def _snapshot_current(self, project, scene_id, data):
