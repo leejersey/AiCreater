@@ -83,7 +83,7 @@ export function VisualTaskProgress({job,now,updatedAt,disabled,onCancel,onRefres
  </div>;
 }
 /** Agent path: one paid job designs, checks and renders the chapter; shown beside the existing video. */
-export function VisualAgentPanel({projectId,job,exported,now,updatedAt,disabled,canStart,onStart,onRefresh,onCancel,onAccept}:{projectId:string;job?:VisualJob;exported?:VisualJob;now:number;updatedAt:number;disabled:boolean;canStart:boolean;onStart:()=>void;onRefresh:()=>void;onCancel:()=>void;onAccept?:()=>void}){
+export function VisualAgentPanel({projectId,job,exported,now,updatedAt,disabled,blockedReason,onStart,onRefresh,onCancel,onAccept}:{projectId:string;job?:VisualJob;exported?:VisualJob;now:number;updatedAt:number;disabled:boolean;blockedReason?:string;onStart:()=>void;onRefresh:()=>void;onCancel:()=>void;onAccept?:()=>void}){
  const running=!!job&&['queued','running'].includes(job.state);
  return <div aria-label="Agent 视频" className="vw-current-video"><h3>Agent 视频</h3>
   {!job&&<p>由 Agent 自行设计画面并检查，通过后直接生成本章视频（使用当前配音与字幕）。</p>}
@@ -94,8 +94,8 @@ export function VisualAgentPanel({projectId,job,exported,now,updatedAt,disabled,
   {job&&onAccept&&canAcceptAgent(job)&&!job.result?.accepted&&<div className="vw-toolbar"><button disabled={disabled} onClick={onAccept}><Check size={14}/>确认此版本</button></div>}
   {job&&job.state!=='succeeded'&&<VisualTaskProgress job={job} now={now} updatedAt={updatedAt} disabled={disabled} onRefresh={onRefresh} onCancel={onCancel}/>}
   {job?.state==='failed'&&typeof job.result?.requests_dispatched==='number'&&<p>{job.result.requests_dispatched?`本次已消耗 ${job.result.requests_dispatched} 轮模型调用。`:'本次没有产生模型消耗。'}</p>}
-  <div className="vw-toolbar"><button disabled={disabled||running||!canStart} onClick={onStart}><Film size={14}/>{job?'Agent 重新生成（付费）':'Agent 生成视频（付费）'}</button></div>
-  {!canStart&&!running&&<p>需要先完成本章配音与实测对齐，且项目内没有进行中的任务。</p>}
+  <div className="vw-toolbar"><button disabled={disabled||running||!!blockedReason} onClick={onStart}><Film size={14}/>{job?'Agent 重新生成（付费）':'Agent 生成视频（付费）'}</button></div>
+  {blockedReason&&!running&&<p>{blockedReason}</p>}
  </div>;
 }
 export default function VisualWorkbench({routeProjectId}:{routeProjectId:string}) {
@@ -139,7 +139,8 @@ export default function VisualWorkbench({routeProjectId}:{routeProjectId:string}
   });}
   const row=project?.scenes.find(s=>s.id===selected)??project?.scenes[0];
   const sceneJobs=jobs.filter(j=>j.scene_id===row?.id);
-  const presentation=chapterPresentation(sceneJobs);
+  // The older template flow; Agent jobs have their own panel and must not show up here as its latest task.
+  const presentation=chapterPresentation(sceneJobs.filter(j=>j.kind!=='agent'));
   const latestExport=jobs.find(j=>j.kind==='export'&&j.current!==false&&j.state==='succeeded'&&j.result?.video);
   const activeJob=jobs.find(j=>['queued','running'].includes(j.state));
   const active=!!activeJob;
@@ -147,6 +148,12 @@ export default function VisualWorkbench({routeProjectId}:{routeProjectId:string}
   const disabled=busy||dirty||!!error;
   const voice=row?currentVoiceJob(row,voiceJobs):undefined;
   const audioActions=row?sceneAudioActions(row,voiceJobs):null;
+  const retime=()=>void act(async()=>{
+    if(!row||!project||!audioActions)return;
+    if(!await confirm({title:'免费重算本章时间轴',message:'按已有音频计算字幕与画面时间，保留原音频，不调用模型或配音服务；已有视觉预览与验收可能失效。',confirmText:'确认免费重算',variant:'info'}))return;
+    const job=parseSceneJob(await request<unknown>(audioActions.timingPath,audioActions.timingBody),project.id,row,'timing');
+    setVoiceJobs(previous=>[job,...previous.filter(j=>j.job_id!==job.job_id)]);
+  });
   return <main className="visual-workbench">
     <header className="vw-header"><div><a href="/courses">课程</a><h1>{project?.title??'视觉工作台'}</h1><span>定制视觉 {project?`· r${project.revision}`:''}</span></div>
       <nav><a href={'/courses/'+encodeURIComponent(routeProjectId)+'/legacy'}>旧版模板工作台</a><button title="刷新项目与任务" aria-label="刷新项目与任务" disabled={busy} onClick={()=>void act(refresh)}><RefreshCw size={16}/></button></nav>
@@ -167,17 +174,9 @@ export default function VisualWorkbench({routeProjectId}:{routeProjectId:string}
       </aside><div className="vw-content">
         {activeJob&&activeJob.id!==presentation.active?.id&&<div><h2>当前项目有任务正在执行</h2><VisualTaskProgress job={activeJob} now={now} updatedAt={updatedAt} disabled={busy} onRefresh={()=>void act(refresh)} onCancel={()=>cancelVisual(activeJob)}/>{activeJob.scene_id&&<button onClick={()=>{setSelected(activeJob.scene_id!);setFeedback('');setTransferInput(null);}}>查看执行中的章节</button>}</div>}
         {row&&<section aria-label="当前章节"><h2>当前章节 · r{row.revision}</h2><details><summary>口播稿</summary><p className="vw-narration">{row.scene.narration.text}</p></details>
-          <p>{measuredReady(row)?`实测音频与字幕已就绪 · ${row.scene.duration_frames} 帧`:row.state==='needs_timing'?'已有音频，待实测对齐 · 可先生成估时画面':'待配音 · 可先生成估时画面'}</p>
+          <div className="vw-step" aria-label="第 1 步：配音与对齐"><h3>第 1 步 · 配音与对齐</h3>
+          <p>{measuredReady(row)?`实测音频与字幕已就绪 · ${row.scene.duration_frames} 帧`:row.state==='needs_timing'?'已有音频，待实测对齐':'待配音'}</p>
           {voice&&<p role="status">配音：{states[voice.state]??'待核对'} {voice.state==='failed'?(voice.error?.retryable?'可显式确认付费后重试。':'此任务不可重试，请检查项目状态。'):''}</p>}
-          <div aria-label="本章视频" className="vw-current-video"><h3>本章视频</h3>
-            {presentation.video?<><p>{presentation.video.timing_mode==='draft'?'无声草稿':'视频已生成'}{presentation.video.result?.accepted?' · 已确认':''}</p><VisualMedia projectId={project.id} job={presentation.video}/></>:<p>本章暂无可播放视频</p>}
-            {presentation.latest&&presentation.latest.id!==presentation.video?.id&&<><VisualTaskProgress job={presentation.latest} now={now} updatedAt={updatedAt} disabled={busy} onRefresh={()=>void act(refresh)} onCancel={()=>cancelVisual(presentation.latest!)}/>{presentation.video&&<p>保留上次可播放版本。</p>}</>}
-          </div>
-          <VisualAgentPanel projectId={project.id} job={latestAgentJob(sceneJobs)} exported={exportedVersion(sceneJobs)} now={now} updatedAt={updatedAt} disabled={disabled} canStart={!active&&measuredReady(row)}
-            onStart={()=>void act(()=>confirmVisualAction(visualAgentAction(row.id,project.revision),confirm,submit))}
-            onRefresh={()=>void act(refresh)} onCancel={()=>{const job=latestAgentJob(sceneJobs);if(job)cancelVisual(job);}}
-            onAccept={()=>void act(async()=>{const job=latestAgentJob(sceneJobs)!;
-              if(await confirm({title:'确认 Agent 视频',message:'确认已播放并检查画面、口播和字幕同步？确认后整课导出将使用此版本；口播或配音变化后确认失效。',detail:'SHA-256: '+job.result!.sha256,confirmText:'确认此版本'}))await submit('/'+job.id+'/accept',{confirmed:true,sha256:job.result!.sha256});})}/>
           <div className="vw-toolbar"><button disabled={disabled||audioActions!.voiceBlocked} onClick={()=>void act(async()=>{
             const revision=project.revision;
             if(!await confirmEstimate(audioActions!.retry?'显式重试当前章节付费配音':'为当前章节付费配音',audioActions!.estimatePath??base+'/estimate',audioActions!.retry?undefined:{operation:'voice',expected_revision:revision,scenes:[{scene_id:row.id,expected_revision:row.revision}]},()=>alive.current,{
@@ -185,7 +184,21 @@ export default function VisualWorkbench({routeProjectId}:{routeProjectId:string}
             const job=parseSceneJob(await request<unknown>(audioActions!.voicePath,audioActions!.voiceBody),project.id,row,'voice');
             setVoiceJobs(previous=>[job,...previous.filter(j=>j.job_id!==job.job_id)]);
           })}><Mic size={14}/>{audioActions!.retry?'重试配音（付费）':measuredReady(row)?'配音已就绪':'添加配音（付费）'}</button>
-          <button disabled={disabled||active||!row.scene.narration.text.trim()} onClick={()=>void act(async()=>{
+          {row.state==='needs_timing'&&<button disabled={disabled||audioActions!.timingBlocked} onClick={retime}><RefreshCw size={14}/>实测对齐（免费）</button>}</div>
+          </div>
+          <div className="vw-step" aria-label="第 2 步：生成视频"><h3>第 2 步 · 生成视频</h3>
+          <p>{measuredReady(row)?'配音已就绪，可以生成视频。':'配音完成后才能生成可确认、可导出的视频。'}</p>
+          <VisualAgentPanel projectId={project.id} job={latestAgentJob(sceneJobs)} exported={exportedVersion(sceneJobs)} now={now} updatedAt={updatedAt} disabled={disabled} blockedReason={!measuredReady(row)?(row.state==='needs_timing'?'先完成第 1 步：实测对齐（免费）。':'先完成第 1 步：添加配音。'):active?'项目内有任务进行中，结束后再生成。':undefined}
+            onStart={()=>void act(()=>confirmVisualAction(visualAgentAction(row.id,project.revision),confirm,submit))}
+            onRefresh={()=>void act(refresh)} onCancel={()=>{const job=latestAgentJob(sceneJobs);if(job)cancelVisual(job);}}
+            onAccept={()=>void act(async()=>{const job=latestAgentJob(sceneJobs)!;
+              if(await confirm({title:'确认 Agent 视频',message:'确认已播放并检查画面、口播和字幕同步？确认后整课导出将使用此版本；口播或配音变化后确认失效。',detail:'SHA-256: '+job.result!.sha256,confirmText:'确认此版本'}))await submit('/'+job.id+'/accept',{confirmed:true,sha256:job.result!.sha256});})}/>
+          <div aria-label="本章视频" className="vw-current-video"><h3>本章视频</h3>
+            {presentation.video?<><p>{presentation.video.timing_mode==='draft'?'无声草稿':'视频已生成'}{presentation.video.result?.accepted?' · 已确认':''}</p><VisualMedia projectId={project.id} job={presentation.video}/></>:<p>本章暂无可播放视频</p>}
+            {presentation.latest&&presentation.latest.id!==presentation.video?.id&&<><VisualTaskProgress job={presentation.latest} now={now} updatedAt={updatedAt} disabled={busy} onRefresh={()=>void act(refresh)} onCancel={()=>cancelVisual(presentation.latest!)}/>{presentation.video&&<p>保留上次可播放版本。</p>}</>}
+          </div>
+          {!measuredReady(row)&&<p>旧流程可先按估计时长生成无声草稿；草稿不能确认或导出，配音后用「同步配音（免费）」对齐。</p>}
+          <div className="vw-toolbar"><button disabled={disabled||active||!row.scene.narration.text.trim()} onClick={()=>void act(async()=>{
             await confirmVisualAction(presentation.designRepairTarget?visualRepairDesignVideoAction(presentation.designRepairTarget):presentation.repairTarget?visualRepairAndRenderAction(presentation.repairTarget):presentation.pending?visualRenderVideoAction(presentation.pending,autoRepair):visualCreateVideoAction(row.id,project.revision,measuredReady(row)?generationMode:'source',!measuredReady(row),autoRepair),confirm,submit);
           })}><Film size={14}/>{active?presentation.active?'视频任务进行中':'等待项目内任务结束':presentation.designRepairTarget?'修复并继续':presentation.repairTarget?'程序修复画面':presentation.video||presentation.repairStopped?'重新生成视频':'生成视频'}</button>
           {presentation.repairStopped&&<p>本轮程序修复已停止，没有追加调用。重新生成属于新的付费任务，需另行确认。</p>}
@@ -194,17 +207,15 @@ export default function VisualWorkbench({routeProjectId}:{routeProjectId:string}
             const video=presentation.video!;
             if(await confirm({title:'确认当前视频',message:'确认已播放并检查画面、口播和字幕同步？',detail:'SHA-256: '+video.result!.sha256,confirmText:'确认此版本'}))await submit('/'+video.id+'/accept',{confirmed:true,sha256:video.result!.sha256});
           })}><Check size={14}/>确认此版本</button>}</div>
+
+          </div>
           {!active&&!presentation.repairTarget&&!presentation.designRepairTarget&&<label className="vw-auto-repair"><input type="checkbox" checked={autoRepair} disabled={busy} onChange={e=>setAutoRepair(e.target.checked)}/>设计或画面异常时自动修复一次（共用额外最多一次模型费用）</label>}
           {!active&&presentation.pending&&<details><summary>画面源码与设计</summary><VisualArtifact job={presentation.pending}/></details>}
           {!active&&presentation.editable&&<details className="vw-modify"><summary>修改视频</summary><label>修改意见<textarea maxLength={4000} value={feedback} disabled={busy} onChange={e=>setFeedback(e.target.value)}/></label>
             <button disabled={disabled||active||!feedback.trim()} onClick={()=>void act(()=>confirmVisualAction(visualRepairAction(presentation.editable!,feedback),confirm,submit))}><Code size={14}/>提交修改</button>
           </details>}
           <details className="vw-advanced"><summary>高级设置</summary><div className="vw-toolbar">
-          <button disabled={disabled||audioActions!.timingBlocked} onClick={()=>void act(async()=>{
-            if(!await confirm({title:'免费重算本章时间轴',message:'重新计算会替换当前动画和字幕时间，保留原音频，不调用模型或配音服务；已有视觉预览与验收可能失效。',confirmText:'确认免费重算',variant:'info'}))return;
-            const job=parseSceneJob(await request<unknown>(audioActions!.timingPath,audioActions!.timingBody),project.id,row,'timing');
-            setVoiceJobs(previous=>[job,...previous.filter(j=>j.job_id!==job.job_id)]);
-          })}><RefreshCw size={14}/>重算时间轴（免费）</button>
+          <button disabled={disabled||audioActions!.timingBlocked} onClick={retime}><RefreshCw size={14}/>重算时间轴（免费）</button>
           <VisualGenerationModeSelect value={measuredReady(row)?generationMode:'source'} onChange={setGenerationMode} disabled={disabled||active} sourceOnly={!measuredReady(row)}/>
           </div>
           <div className="vw-toolbar"><label>机构设计文件<input key={row.id} type="file" accept="application/json,.json" disabled={disabled||active} onChange={event=>{

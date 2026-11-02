@@ -56,22 +56,22 @@ test('the agent action asks for a capped, paid confirmation',()=>{
 test('the agent panel shows the result, the media and a re-run button',()=>{
  const [job]=parseVisualJobs({jobs:[passed]},'p');
  assert.equal(latestAgentJob([job])?.id,'a1');
- const html=renderToStaticMarkup(createElement(VisualAgentPanel,{projectId:'p',job,now:0,updatedAt:0,disabled:false,canStart:true,onStart(){},onRefresh(){},onCancel(){}}));
+ const html=renderToStaticMarkup(createElement(VisualAgentPanel,{projectId:'p',job,now:0,updatedAt:0,disabled:false,onStart(){},onRefresh(){},onCancel(){}}));
  assert.match(html,/Agent 已自检并通过检查 · 6 轮/);
  assert.match(html,/<video[^>]+src="\/api\/projects\/p\/visual\/a1\/files\/video.mp4"/);
  assert.match(html,/Agent 重新生成（付费）/);
- const blocked=renderToStaticMarkup(createElement(VisualAgentPanel,{projectId:'p',now:0,updatedAt:0,disabled:false,canStart:false,onStart(){},onRefresh(){},onCancel(){}}));
- assert.match(blocked,/需要先完成本章配音与实测对齐/);
+ const blocked=renderToStaticMarkup(createElement(VisualAgentPanel,{projectId:'p',now:0,updatedAt:0,disabled:false,blockedReason:'先完成第 1 步：添加配音。',onStart(){},onRefresh(){},onCancel(){}}));
+ assert.match(blocked,/先完成第 1 步：添加配音。/);
  assert.match(blocked,/disabled=""/);
 });
 
 test('a passed agent video can be accepted once, and the panel says when it is',()=>{
  const [job]=parseVisualJobs({jobs:[passed]},'p');
  assert.ok(visual.canAcceptAgent(job));
- const open=renderToStaticMarkup(createElement(VisualAgentPanel,{projectId:'p',job,now:0,updatedAt:0,disabled:false,canStart:true,onStart(){},onRefresh(){},onCancel(){},onAccept(){}}));
+ const open=renderToStaticMarkup(createElement(VisualAgentPanel,{projectId:'p',job,now:0,updatedAt:0,disabled:false,onStart(){},onRefresh(){},onCancel(){},onAccept(){}}));
  assert.match(open,/确认此版本/);
  const [accepted]=parseVisualJobs({jobs:[{...passed,result:{...passed.result,accepted:true}}]},'p');
- const done=renderToStaticMarkup(createElement(VisualAgentPanel,{projectId:'p',job:accepted,now:0,updatedAt:0,disabled:false,canStart:true,onStart(){},onRefresh(){},onCancel(){},onAccept(){}}));
+ const done=renderToStaticMarkup(createElement(VisualAgentPanel,{projectId:'p',job:accepted,now:0,updatedAt:0,disabled:false,onStart(){},onRefresh(){},onCancel(){},onAccept(){}}));
  assert.match(done,/已确认此版本 · 可用于整课导出/);
  assert.doesNotMatch(done,/<button[^>]*>.*确认此版本<\/button>/);
  assert.ok(!visual.canAcceptAgent({...job,current:false}));
@@ -83,8 +83,8 @@ test('another configured model parses, and the panel names the version export wi
  const [older]=parseVisualJobs({jobs:[{...passed,id:'old',created_at:'2026-11-01T10:00:00Z',result:{...passed.result,accepted:true}}]},'p');
  const [newer]=parseVisualJobs({jobs:[{...passed,id:'new',state:'failed',created_at:'2026-11-01T11:00:00Z',result:{requests_dispatched:3}}]},'p');
  assert.equal(visual.exportedVersion([newer,older])?.id,'old');
- const html=renderToStaticMarkup(createElement(VisualAgentPanel,{projectId:'p',job:newer,exported:older,now:0,updatedAt:0,disabled:false,canStart:true,onStart(){},onRefresh(){},onCancel(){}}));
+ const html=renderToStaticMarkup(createElement(VisualAgentPanel,{projectId:'p',job:newer,exported:older,now:0,updatedAt:0,disabled:false,onStart(){},onRefresh(){},onCancel(){}}));
  assert.match(html,/整课导出将使用：更早确认的 Agent 版本/);
- const none=renderToStaticMarkup(createElement(VisualAgentPanel,{projectId:'p',job:newer,now:0,updatedAt:0,disabled:false,canStart:true,onStart(){},onRefresh(){},onCancel(){}}));
+ const none=renderToStaticMarkup(createElement(VisualAgentPanel,{projectId:'p',job:newer,now:0,updatedAt:0,disabled:false,onStart(){},onRefresh(){},onCancel(){}}));
  assert.match(none,/整课导出将使用：暂无已确认的版本/);
 });
