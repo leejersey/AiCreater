@@ -3,8 +3,8 @@ import React,{useCallback,useEffect,useRef,useState} from 'react';
 import {request,parseJobs,parseSceneJob,type Project,type Job} from '../lib/editor';
 import {confirmEstimate} from '../lib/cost-estimates';
 import {currentVoiceJob} from '../lib/course';
-import {parseVisualJobs,parseTransferImport,visualFileUrl,measuredReady,canAcceptPreview,canReviseDesign,reviewFrames,visualError,sceneAudioActions,visualGenerationActions,visualModeLabels,isVisualDataMode,type VisualGenerationMode,type VisualJob} from '../lib/visual-workbench';
-import {confirmVisualAction,visualGenerateAction,visualCreateVideoAction,visualRenderVideoAction,visualRepairAndRenderAction,visualRepairDesignVideoAction,visualAlignDraftAction,visualRepairAction,visualRepairVideoAction,visualPreviewAction,visualTransferAction,visualTransferPreviewAction,visualAutomaticTransferAction} from '../lib/visual-workbench-actions';
+import {parseVisualJobs,visualFileUrl,measuredReady,canAcceptPreview,canReviseDesign,reviewFrames,visualError,sceneAudioActions,visualGenerationActions,visualModeLabels,isVisualDataMode,type VisualGenerationMode,type VisualJob} from '../lib/visual-workbench';
+import {confirmVisualAction,visualGenerateAction,visualCreateVideoAction,visualRenderVideoAction,visualRepairAndRenderAction,visualRepairDesignVideoAction,visualAlignDraftAction,visualRepairAction,visualRepairVideoAction,visualPreviewAction,visualTransferPreviewAction} from '../lib/visual-workbench-actions';
 import {useConfirm} from './ConfirmContext';
 import {VoiceSettings} from './VoiceSettings';
 import {RefreshCw,Play,Check,Film,Mic,Code,X} from './Icons';
@@ -109,7 +109,6 @@ export default function VisualWorkbench({routeProjectId}:{routeProjectId:string}
   const [dirty,setDirty]=useState(false);
   const [feedback,setFeedback]=useState('');
   const [generationMode,setGenerationMode]=useState<VisualGenerationMode>('source');
-  const [transferInput,setTransferInput]=useState<ReturnType<typeof parseTransferImport>|null>(null);
   const [updatedAt,setUpdatedAt]=useState(0),[now,setNow]=useState(0);
   const [autoRepair,setAutoRepair]=useState(true);
   const lock=useRef(false),alive=useRef(true);
@@ -169,10 +168,10 @@ export default function VisualWorkbench({routeProjectId}:{routeProjectId:string}
       </div>
       <div className="vw-layout"><aside aria-label="章节列表"><h2>口播章节 · {project.scenes.length}</h2>
         {!project.scenes.length&&<p>尚未整理章节</p>}
-        {project.scenes.map((s,i)=><button key={s.id} aria-pressed={s.id===row?.id} disabled={busy||dirty} onClick={()=>{setSelected(s.id);setFeedback('');setTransferInput(null);}}><span>{i+1}. {s.scene.narration.text.slice(0,36)}</span><small>r{s.revision} · {measuredReady(s)?'实测就绪':s.state==='needs_voice'?'待配音':'待实测对齐'}</small></button>)}
+        {project.scenes.map((s,i)=><button key={s.id} aria-pressed={s.id===row?.id} disabled={busy||dirty} onClick={()=>{setSelected(s.id);setFeedback('');}}><span>{i+1}. {s.scene.narration.text.slice(0,36)}</span><small>r{s.revision} · {measuredReady(s)?'实测就绪':s.state==='needs_voice'?'待配音':'待实测对齐'}</small></button>)}
         <VoiceSettings key={project.id} project={project} dirty={dirty} busy={busy} formEditing={dirty} onDirty={setDirty} act={act} onSave={async speaker=>{setProject(await request<Project>(base+'/voice',{expected_revision:project.revision,speaker},'PATCH'));setDirty(false);}}/>
       </aside><div className="vw-content">
-        {activeJob&&activeJob.id!==presentation.active?.id&&<div><h2>当前项目有任务正在执行</h2><VisualTaskProgress job={activeJob} now={now} updatedAt={updatedAt} disabled={busy} onRefresh={()=>void act(refresh)} onCancel={()=>cancelVisual(activeJob)}/>{activeJob.scene_id&&<button onClick={()=>{setSelected(activeJob.scene_id!);setFeedback('');setTransferInput(null);}}>查看执行中的章节</button>}</div>}
+        {activeJob&&activeJob.id!==presentation.active?.id&&<div><h2>当前项目有任务正在执行</h2><VisualTaskProgress job={activeJob} now={now} updatedAt={updatedAt} disabled={busy} onRefresh={()=>void act(refresh)} onCancel={()=>cancelVisual(activeJob)}/>{activeJob.scene_id&&<button onClick={()=>{setSelected(activeJob.scene_id!);setFeedback('');}}>查看执行中的章节</button>}</div>}
         {row&&<section aria-label="当前章节"><h2>当前章节 · r{row.revision}</h2><details><summary>口播稿</summary><p className="vw-narration">{row.scene.narration.text}</p></details>
           <div className="vw-step" aria-label="第 1 步：配音与对齐"><h3>第 1 步 · 配音与对齐</h3>
           <p>{measuredReady(row)?`实测音频与字幕已就绪 · ${row.scene.duration_frames} 帧`:row.state==='needs_timing'?'已有音频，待实测对齐':'待配音'}</p>
@@ -184,7 +183,7 @@ export default function VisualWorkbench({routeProjectId}:{routeProjectId:string}
             const job=parseSceneJob(await request<unknown>(audioActions!.voicePath,audioActions!.voiceBody),project.id,row,'voice');
             setVoiceJobs(previous=>[job,...previous.filter(j=>j.job_id!==job.job_id)]);
           })}><Mic size={14}/>{audioActions!.retry?'重试配音（付费）':measuredReady(row)?'配音已就绪':'添加配音（付费）'}</button>
-          {row.state==='needs_timing'&&<button disabled={disabled||audioActions!.timingBlocked} onClick={retime}><RefreshCw size={14}/>实测对齐（免费）</button>}</div>
+          <button disabled={disabled||audioActions!.timingBlocked} onClick={retime}><RefreshCw size={14}/>{row.state==='needs_timing'?'实测对齐（免费）':'重算时间轴（免费）'}</button></div>
           </div>
           <div className="vw-step" aria-label="第 2 步：生成视频"><h3>第 2 步 · 生成视频</h3>
           <p>{measuredReady(row)?'配音已就绪，可以生成视频。':'配音完成后才能生成可确认、可导出的视频。'}</p>
@@ -193,11 +192,12 @@ export default function VisualWorkbench({routeProjectId}:{routeProjectId:string}
             onRefresh={()=>void act(refresh)} onCancel={()=>{const job=latestAgentJob(sceneJobs);if(job)cancelVisual(job);}}
             onAccept={()=>void act(async()=>{const job=latestAgentJob(sceneJobs)!;
               if(await confirm({title:'确认 Agent 视频',message:'确认已播放并检查画面、口播和字幕同步？确认后整课导出将使用此版本；口播或配音变化后确认失效。',detail:'SHA-256: '+job.result!.sha256,confirmText:'确认此版本'}))await submit('/'+job.id+'/accept',{confirmed:true,sha256:job.result!.sha256});})}/>
+          <details className="vw-legacy" open={!!(presentation.video||presentation.latest)}><summary>旧流程：模板源码生成{presentation.video?.result?.accepted?' · 有已确认版本':''}</summary>
           <div aria-label="本章视频" className="vw-current-video"><h3>本章视频</h3>
             {presentation.video?<><p>{presentation.video.timing_mode==='draft'?'无声草稿':'视频已生成'}{presentation.video.result?.accepted?' · 已确认':''}</p><VisualMedia projectId={project.id} job={presentation.video}/></>:<p>本章暂无可播放视频</p>}
             {presentation.latest&&presentation.latest.id!==presentation.video?.id&&<><VisualTaskProgress job={presentation.latest} now={now} updatedAt={updatedAt} disabled={busy} onRefresh={()=>void act(refresh)} onCancel={()=>cancelVisual(presentation.latest!)}/>{presentation.video&&<p>保留上次可播放版本。</p>}</>}
           </div>
-          {!measuredReady(row)&&<p>旧流程可先按估计时长生成无声草稿；草稿不能确认或导出，配音后用「同步配音（免费）」对齐。</p>}
+          {!measuredReady(row)&&<p>可先按估计时长生成无声草稿；草稿不能确认或导出，配音后用「同步配音（免费）」对齐。</p>}
           <div className="vw-toolbar"><button disabled={disabled||active||!row.scene.narration.text.trim()} onClick={()=>void act(async()=>{
             await confirmVisualAction(presentation.designRepairTarget?visualRepairDesignVideoAction(presentation.designRepairTarget):presentation.repairTarget?visualRepairAndRenderAction(presentation.repairTarget):presentation.pending?visualRenderVideoAction(presentation.pending,autoRepair):visualCreateVideoAction(row.id,project.revision,measuredReady(row)?generationMode:'source',!measuredReady(row),autoRepair),confirm,submit);
           })}><Film size={14}/>{active?presentation.active?'视频任务进行中':'等待项目内任务结束':presentation.designRepairTarget?'修复并继续':presentation.repairTarget?'程序修复画面':presentation.video||presentation.repairStopped?'重新生成视频':'生成视频'}</button>
@@ -207,27 +207,14 @@ export default function VisualWorkbench({routeProjectId}:{routeProjectId:string}
             const video=presentation.video!;
             if(await confirm({title:'确认当前视频',message:'确认已播放并检查画面、口播和字幕同步？',detail:'SHA-256: '+video.result!.sha256,confirmText:'确认此版本'}))await submit('/'+video.id+'/accept',{confirmed:true,sha256:video.result!.sha256});
           })}><Check size={14}/>确认此版本</button>}</div>
-
-          </div>
           {!active&&!presentation.repairTarget&&!presentation.designRepairTarget&&<label className="vw-auto-repair"><input type="checkbox" checked={autoRepair} disabled={busy} onChange={e=>setAutoRepair(e.target.checked)}/>设计或画面异常时自动修复一次（共用额外最多一次模型费用）</label>}
+          <VisualGenerationModeSelect value={measuredReady(row)?generationMode:'source'} onChange={setGenerationMode} disabled={disabled||active} sourceOnly={!measuredReady(row)}/>
           {!active&&presentation.pending&&<details><summary>画面源码与设计</summary><VisualArtifact job={presentation.pending}/></details>}
           {!active&&presentation.editable&&<details className="vw-modify"><summary>修改视频</summary><label>修改意见<textarea maxLength={4000} value={feedback} disabled={busy} onChange={e=>setFeedback(e.target.value)}/></label>
             <button disabled={disabled||active||!feedback.trim()} onClick={()=>void act(()=>confirmVisualAction(visualRepairAction(presentation.editable!,feedback),confirm,submit))}><Code size={14}/>提交修改</button>
           </details>}
-          <details className="vw-advanced"><summary>高级设置</summary><div className="vw-toolbar">
-          <button disabled={disabled||audioActions!.timingBlocked} onClick={retime}><RefreshCw size={14}/>重算时间轴（免费）</button>
-          <VisualGenerationModeSelect value={measuredReady(row)?generationMode:'source'} onChange={setGenerationMode} disabled={disabled||active} sourceOnly={!measuredReady(row)}/>
+          </details>
           </div>
-          <div className="vw-toolbar"><label>机构设计文件<input key={row.id} type="file" accept="application/json,.json" disabled={disabled||active} onChange={event=>{
-            const file=event.target.files?.[0];setTransferInput(null);if(!file)return;
-            void act(async()=>{if(file.size>128*1024)throw Error('Transfer input too large');const input=parseTransferImport(JSON.parse(await file.text()));if(alive.current)setTransferInput(input);});
-          }}/></label>
-          <button disabled={disabled||active||!measuredReady(row)||!transferInput} onClick={()=>void act(async()=>{
-            await confirmVisualAction(visualTransferAction(row.id,project.revision,transferInput),confirm,submit);
-          })}><Code size={14}/>准备机构候选（免费）</button>
-          <button disabled={disabled||active||!measuredReady(row)} onClick={()=>void act(async()=>{
-            await confirmVisualAction(visualAutomaticTransferAction(row.id,project.revision),confirm,submit);
-          })}><Code size={14}/>RAG 增强机构（免费）</button></div></details>
         </section>}
         {!!sceneJobs.length&&<details className="vw-history"><summary>版本与高级详情 · {sceneJobs.length} 条记录</summary>{sceneJobs.map(job=><VisualHistoryEntry key={job.id} job={job}><section className="vw-job" aria-label={kinds[job.kind]}><div className="vw-toolbar">
           {['queued','running'].includes(job.state)&&<button disabled={busy} onClick={()=>void act(async()=>{if(await confirm({title:'取消任务',message:'确认请求取消？已发出的模型调用仍可能计费。'}))await submit('/'+job.id+'/cancel',{});})}><X size={14}/>取消</button>}</div>
