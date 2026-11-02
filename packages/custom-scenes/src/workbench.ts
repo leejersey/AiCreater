@@ -234,7 +234,7 @@ async function retainedCandidate(directory:string):Promise<FrozenGeneration>{
  const artifact=assembly?await assembleMotionScene(assembly):parseArtifact(value,design.brief);
  return {artifact,design,assembly,...(intentMode(mode)?{intent:value}:{})};
 }
-async function frozen(directory:string,allowFailedCandidate=false):Promise<FrozenGeneration>{
+export async function frozen(directory:string,allowFailedCandidate=false):Promise<FrozenGeneration>{
  let artifact:SceneArtifact;
  try{artifact=parseArtifact(await readJson(path.join(directory,'artifact.json')));}
  catch(error){

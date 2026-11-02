@@ -17,8 +17,8 @@ import {sourceSha256} from './stills';
 export type AgentVideoInput={source:string;brief:SceneBrief;cues:Cue[];scene:WorkbenchScene;audioFile:string};
 const AUDIO=/\.(mp3|wav|m4a|aac|ogg|flac)$/i;
 
-/** The measured scene must match the brief, and its captions must cover the cues exactly. */
-export function agentChapter(input:AgentVideoInput):WorkbenchManifest{
+/** One chapter: the measured scene must match the brief, and its captions must cover the cues exactly. */
+function chapterScene(input:AgentVideoInput):WorkbenchScene{
  const {brief,cues,scene}=input;
  const duration=brief.durationInFrames;
  if(!scene||scene.duration_frames!==duration||scene.narration?.text!==brief.narration||!Number.isInteger(scene.narration?.audio_start_frame)||
@@ -27,35 +27,52 @@ export function agentChapter(input:AgentVideoInput):WorkbenchManifest{
  assertCaptionCueBinding(captions,cues,brief.narration,duration);
  if(scene.narration.audio_start_frame>captions[0].start_frame)throw Error('agent video: audio starts after the first caption');
  for(const caption of captions)workbenchCaptionLines(caption.text);
- const ext=path.extname(input.audioFile).toLowerCase();
- if(!AUDIO.test(ext))throw Error('agent video: unsupported audio');
- return{durationInFrames:duration,chapters:[{artifact:'scene/Scene.tsx',sha256:sourceSha256(input.source),design_sha256:'',audio:`chapter-0/audio${ext}`,from:0,
-  scene:{duration_frames:duration,narration:{text:brief.narration,audio_start_frame:scene.narration.audio_start_frame},captions}}]};
+ if(!AUDIO.test(path.extname(input.audioFile)))throw Error('agent video: unsupported audio');
+ return{duration_frames:duration,narration:{text:brief.narration,audio_start_frame:scene.narration.audio_start_frame},captions};
 }
 
-/** Writes video.mp4 and video.srt into `directory`. */
-export async function renderAgentVideo(input:AgentVideoInput,directory:string):Promise<{video:'video.mp4';srt:'video.srt'}>{
- checkSource(input.source);
- await typecheckSource(input.source);
- const manifest=agentChapter(input);
+/** Chapters back to back; each keeps its own measured audio and captions. */
+export function courseManifest(inputs:AgentVideoInput[]):WorkbenchManifest{
+ if(!inputs.length||inputs.length>20)throw Error('agent video: 1..20 chapters');
+ let from=0;
+ const chapters=inputs.map((input,i)=>{
+  const scene=chapterScene(input);
+  const chapter={artifact:`chapter-${i}/Scene.tsx`,sha256:sourceSha256(input.source),design_sha256:'',audio:`chapter-${i}/audio${path.extname(input.audioFile).toLowerCase()}`,from,scene};
+  from+=scene.duration_frames;
+  return chapter;
+ });
+ return{durationInFrames:from,chapters};
+}
+export const agentChapter=(input:AgentVideoInput)=>courseManifest([input]);
+
+/** Writes video.mp4 and video.srt for one chapter into `directory`. */
+export function renderAgentVideo(input:AgentVideoInput,directory:string){return renderCourseVideo([input],directory);}
+
+/** Writes video.mp4 and video.srt for chapters played back to back into `directory`. */
+export async function renderCourseVideo(inputs:AgentVideoInput[],directory:string):Promise<{video:'video.mp4';srt:'video.srt';durationInFrames:number}>{
+ for(const input of inputs){checkSource(input.source);await typecheckSource(input.source);}
+ const manifest=courseManifest(inputs);
  const temp=await mkdtemp(path.join(repositoryRoot,'.scene-agent-render-'));
  let browser:Awaited<ReturnType<typeof openBrowser>>|undefined;
  const {cancel,cancelSignal}=makeCancelSignal();
  const timer=setTimeout(cancel,renderTimeouts(manifest.durationInFrames).cancelMs);
  try{
   const publicDir=path.join(temp,'public');
-  await mkdir(path.join(publicDir,'chapter-0'),{recursive:true});
-  await copyFile(input.audioFile,path.join(publicDir,manifest.chapters[0].audio));
-  await writeFile(path.join(temp,'Scene0.tsx'),input.source);
+  for(const [i,input] of inputs.entries()){
+   await mkdir(path.join(publicDir,`chapter-${i}`),{recursive:true});
+   await copyFile(input.audioFile,path.join(publicDir,manifest.chapters[i].audio));
+   await writeFile(path.join(temp,`Scene${i}.tsx`),input.source);
+  }
   const host=path.join(repositoryRoot,'packages/custom-scenes/src/workbench-video').split(path.sep).join('/');
+  const names=inputs.map((_,i)=>`Scene${i}`);
   const entryPoint=path.join(temp,'index.tsx');
-  await writeFile(entryPoint,`import React from 'react';import {Composition,registerRoot} from 'remotion';import {WorkbenchVideo} from ${JSON.stringify(host)};import Scene0 from './Scene0';const manifest=${JSON.stringify(manifest)};function Video(){return <WorkbenchVideo manifest={manifest} scenes={[Scene0]} fontText={${JSON.stringify(input.source+input.brief.narration)}}/>}registerRoot(()=> <Composition id="AgentVideo" component={Video} width={1920} height={1080} fps={30} durationInFrames={${manifest.durationInFrames}}/>);`);
+  await writeFile(entryPoint,`import React from 'react';import {Composition,registerRoot} from 'remotion';import {WorkbenchVideo} from ${JSON.stringify(host)};${names.map(n=>`import ${n} from './${n}';`).join('')}const manifest=${JSON.stringify(manifest)};function Video(){return <WorkbenchVideo manifest={manifest} scenes={[${names.join(',')}]} fontText={${JSON.stringify(inputs.map(i=>i.source+i.brief.narration).join(''))}}/>}registerRoot(()=> <Composition id="AgentVideo" component={Video} width={1920} height={1080} fps={30} durationInFrames={${manifest.durationInFrames}}/>);`);
   const serveUrl=await bundle({entryPoint,publicDir,outDir:path.join(temp,'bundle')});
   browser=await openBrowser('chrome',{logLevel:'error',browserExecutable:process.env.REMOTION_BROWSER_EXECUTABLE??(existsSync('/Applications/Google Chrome.app/Contents/MacOS/Google Chrome')?'/Applications/Google Chrome.app/Contents/MacOS/Google Chrome':undefined)});
   const composition=await selectComposition({serveUrl,id:'AgentVideo',puppeteerInstance:browser,logLevel:'error'});
   await renderMedia({serveUrl,composition,puppeteerInstance:browser,codec:'h264',pixelFormat:'yuv420p',outputLocation:path.join(directory,'video.mp4'),concurrency:2,timeoutInMilliseconds:20000,cancelSignal,logLevel:'error'});
   await writeFile(path.join(directory,'video.srt'),workbenchSrt(manifest));
-  return{video:'video.mp4',srt:'video.srt'};
+  return{video:'video.mp4',srt:'video.srt',durationInFrames:manifest.durationInFrames};
  }finally{
   clearTimeout(timer);
   try{if(browser)await browser.close({silent:true});}finally{await rm(temp,{recursive:true,force:true});}

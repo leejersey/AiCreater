@@ -53,7 +53,7 @@ class VisualJobs:
     def _public(row, current=True):
         result = {k: copy.deepcopy(v) for k, v in (row.get('result') or {}).items() if k in RESULT_FIELDS}
         accepted = bool(current and row['state'] == 'succeeded' and (row.get('result') or {}).get('accepted') is True)
-        if row['kind'] == 'preview': result['accepted'] = accepted
+        if row['kind'] in ('preview','agent'): result['accepted'] = accepted
         data = row.get('input') or {}
         summary = {k: data[k] for k in ('fingerprint', 'generation_id', 'sha256', 'design_revision_of','preset','recovery_id','recovery_sha256','layout_id','layout_sha256','design_sha256','repair_preview_id','auto_render','isolated_render') if k in data}
         if row['kind'] in ('generate', 'repair'): summary['max_requests'] = 2 if row['kind'] == 'generate' else 1
@@ -398,6 +398,11 @@ class VisualJobs:
     def _acceptable(row):
         result = row.get('result') or {}; files = result.get('_files') or {}
         frames = result.get('frames') or []
+        if row['kind'] == 'agent':
+            # A gated Agent scene with its rendered chapter video; the gates replaced the geometry preview.
+            return (row['state'] == 'succeeded' and result.get('status') == 'passed' and isinstance(result.get('sha256'),str) and
+                    result.get('video') == 'video.mp4' and result.get('srt') == 'video.srt' and bool(frames) and
+                    all(name in files for name in ('source.txt','video.mp4','video.srt',*frames)))
         return (row['kind'] == 'preview' and row.get('input',{}).get('timing_mode')!='draft' and row['state'] == 'succeeded' and
                 result.get('geometry', {}).get('status') == 'passed' and
                 result.get('video') == 'video.mp4' and result.get('srt') == 'video.srt' and
@@ -410,8 +415,8 @@ class VisualJobs:
             project = self.store._read(conn, project_id, lock=True)
             row = self._read(conn, project_id, job_id, lock=True)
             if not self._current(conn, project, row): raise StoreError('conflict', STALE)
-            if not self._acceptable(row): raise StoreError('not_ready', 'A geometry-passed rendered preview is required')
-            if row['input']['sha256'] != sha256 or row['result'].get('sha256') != sha256:
+            if not self._acceptable(row): raise StoreError('not_ready', 'A geometry-passed rendered preview or a passed Agent video is required')
+            if (row['kind'] != 'agent' and row['input']['sha256'] != sha256) or row['result'].get('sha256') != sha256:
                 raise StoreError('conflict', 'Approved source hash does not match')
             result = {**row['result'], 'accepted': True}
             conn.execute('UPDATE visual_jobs SET result=%s WHERE id=%s', [Jsonb(result), row['id']])
@@ -427,11 +432,15 @@ class VisualJobs:
             chapters = []
             for scene in project['scenes']:
                 rows = conn.execute("""SELECT * FROM visual_jobs WHERE project_id=%s AND scene_id=%s
-                    AND kind='preview' AND state='succeeded' AND result->'accepted'='true'::jsonb
+                    AND kind IN ('preview','agent') AND state='succeeded' AND result->'accepted'='true'::jsonb
                     ORDER BY created_at DESC,id DESC""", [project['id'], scene['id']]).fetchall()
                 accepted = next((self._raw(r) for r in rows if self._acceptable(r) and self._current(conn, project, self._raw(r))), None)
-                if accepted is None: raise StoreError('not_ready', 'Every current chapter needs an accepted preview')
-                chapters.append({**copy.deepcopy(accepted['input']), 'scene_id': scene['id']})
+                if accepted is None: raise StoreError('not_ready', 'Every current chapter needs an accepted preview or Agent video')
+                if accepted['kind'] == 'agent':
+                    data = {k: copy.deepcopy(accepted['input'][k]) for k in ('scene', 'asset', 'fingerprint', 'brief', 'cues')}
+                    chapters.append({**data, 'agent_id': str(accepted['id']), 'sha256': accepted['result']['sha256'], 'scene_id': scene['id']})
+                else:
+                    chapters.append({**copy.deepcopy(accepted['input']), 'scene_id': scene['id']})
             return self._submit(conn, project, None, 'export', {'chapters': chapters, 'project_revision': expected_revision})
 
     def _snapshot_current(self, project, scene_id, data):
@@ -447,7 +456,8 @@ class VisualJobs:
                 chapters = data['chapters']
                 return (data['project_revision'] == project['revision'] and
                         [c['scene_id'] for c in chapters] == [s['id'] for s in project['scenes']] and
-                        all(self._snapshot_current(project, c['scene_id'], c) and self._parent_matches(conn, project, c) for c in chapters))
+                        all(self._snapshot_current(project, c['scene_id'], c) and
+                            (self._agent_matches(conn, project, c) if 'agent_id' in c else self._parent_matches(conn, project, c)) for c in chapters))
             if not self._snapshot_current(project, row['scene_id'], data): return False
             if data.get('operation')=='retime':
                 parent=self._read(conn,project['id'],data['draft_generation_id'])
@@ -486,6 +496,13 @@ class VisualJobs:
             return row['kind'] not in ('preview','preview-transfer') or self._parent_matches(conn, project, data, row.get('result'))
         except (StoreError, KeyError, TypeError, ValueError):
             return False
+
+    def _agent_matches(self, conn, project, data):
+        agent = self._read(conn, project['id'], data['agent_id'])
+        result = agent.get('result') or {}
+        return (agent['kind'] == 'agent' and agent['scene_id'] == data['scene_id'] and self._acceptable(agent) and
+                result.get('accepted') is True and result.get('sha256') == data['sha256'] and
+                all(agent['input'][k] == data[k] for k in ('fingerprint', 'scene', 'asset', 'brief', 'cues')))
 
     def _parent_matches(self, conn, project, data, result=None):
         parent = self._read(conn, project['id'], data['generation_id'])

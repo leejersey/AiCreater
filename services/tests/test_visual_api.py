@@ -130,6 +130,44 @@ class VisualApiTests(unittest.TestCase):
         self.assertEqual((public['result']['status'],public['result']['turns'],public['result']['finish_by']),('passed',6,'model'))
         self.assertNotIn('_files',public['result'])
 
+    def test_accepted_agent_video_exports_through_the_agent_course_renderer(self):
+        from services.visual import worker
+        source='export default function Scene(){return null;}'
+        import hashlib
+        sha=hashlib.sha256(source.encode()).hexdigest()
+        def write(output):
+            (output/'source.txt').write_text(source);(output/'video.mp4').write_bytes(b'mp4');(output/'video.srt').write_text('1\n')
+            (output/'stills').mkdir();(output/'stills'/'frame-30.png').write_bytes(b'png')
+            (output/'result.json').write_text(json.dumps({'status':'passed','model':'deepseek-flash-thinking','turns':4,'requests_dispatched':4,
+                'usage':{'inputTokens':1,'outputTokens':1,'cachedInputTokens':0},'sha256':sha,'finish_by':'model',
+                'frames':['stills/frame-30.png'],'video':'video.mp4','srt':'video.srt'}))
+        root=self.store.public.resolve()/'visual'
+        def check(job):
+            project=self.client.get('/api/projects/'+self.pid).json()
+            export=self.client.post(self.path+'/export',json={'expected_revision':project['revision'],'confirmed':True})
+            self.assertEqual(export.status_code,409)  # not accepted yet
+            self.assertEqual(self.client.post(self.path+'/'+job['id']+'/accept',json={'confirmed':True,'sha256':'0'*64}).status_code,409)
+            accepted=self.client.post(self.path+'/'+job['id']+'/accept',json={'confirmed':True,'sha256':sha})
+            self.assertEqual(accepted.status_code,200,accepted.text);self.assertTrue(accepted.json()['result']['accepted'])
+            export=self.client.post(self.path+'/export',json={'expected_revision':project['revision'],'confirmed':True})
+            self.assertEqual(export.status_code,202,export.text);export=export.json()
+            seen={}
+            def launcher(command,**options):
+                seen.update(command=command,input=json.loads(Path(command[-2]).read_text()))
+                output=Path(command[-1]);output.mkdir()
+                (output/'video.mp4').write_bytes(b'course');(output/'video.srt').write_text('1\n')
+                (output/'result.json').write_text(json.dumps({'video':'video.mp4','srt':'video.srt','durationInFrames':60}))
+                process=Mock();process.poll.return_value=0;process.returncode=0
+                return process
+            done=worker.run_once(self.client.app.state.visual,lane='render',launcher=launcher)
+            self.assertEqual(done['state'],'succeeded',done.get('error'))
+            self.assertTrue(seen['command'][1].endswith('scripts/scene-agent-course-job.ts'))
+            [chapter]=seen['input']['chapters']
+            self.assertEqual((chapter['kind'],chapter['sha256']),('agent',sha))
+            self.assertEqual(Path(chapter['source_file']).read_text(),source)
+            self.assertEqual(self.client.get(self.path+'/'+export['id']+'/files/video.mp4').content,b'course')
+        self.run_agent_job(write,check)
+
     def test_agent_run_that_stops_fails_honestly_and_reports_paid_turns(self):
         def write(output):
             (output/'result.json').write_text(json.dumps({'status':'stopped','reason':'budget_turns','model':'deepseek-flash-thinking','turns':25,'requests_dispatched':25,

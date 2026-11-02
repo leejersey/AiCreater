@@ -5,6 +5,7 @@ import {renderToStaticMarkup} from 'react-dom/server';
 import {parseVisualJobs,latestAgentJob,visualAgentBody,videoTaskStatus} from '../lib/visual-workbench';
 import {visualAgentAction} from '../lib/visual-workbench-actions';
 import {VisualAgentPanel} from '../app/VisualWorkbench';
+import * as visual from '../lib/visual-workbench';
 
 const passed={id:'a1',project_id:'p',scene_id:'s',kind:'agent',state:'succeeded',current:true,
  input_summary:{model:'deepseek-flash-thinking',max_turns:25,fingerprint:'f'},
@@ -62,4 +63,16 @@ test('the agent panel shows the result, the media and a re-run button',()=>{
  const blocked=renderToStaticMarkup(createElement(VisualAgentPanel,{projectId:'p',now:0,updatedAt:0,disabled:false,canStart:false,onStart(){},onRefresh(){},onCancel(){}}));
  assert.match(blocked,/需要先完成本章配音与实测对齐/);
  assert.match(blocked,/disabled=""/);
+});
+
+test('a passed agent video can be accepted once, and the panel says when it is',()=>{
+ const [job]=parseVisualJobs({jobs:[passed]},'p');
+ assert.ok(visual.canAcceptAgent(job));
+ const open=renderToStaticMarkup(createElement(VisualAgentPanel,{projectId:'p',job,now:0,updatedAt:0,disabled:false,canStart:true,onStart(){},onRefresh(){},onCancel(){},onAccept(){}}));
+ assert.match(open,/确认此版本/);
+ const [accepted]=parseVisualJobs({jobs:[{...passed,result:{...passed.result,accepted:true}}]},'p');
+ const done=renderToStaticMarkup(createElement(VisualAgentPanel,{projectId:'p',job:accepted,now:0,updatedAt:0,disabled:false,canStart:true,onStart(){},onRefresh(){},onCancel(){},onAccept(){}}));
+ assert.match(done,/已确认此版本 · 可用于整课导出/);
+ assert.doesNotMatch(done,/<button[^>]*>.*确认此版本<\/button>/);
+ assert.ok(!visual.canAcceptAgent({...job,current:false}));
 });

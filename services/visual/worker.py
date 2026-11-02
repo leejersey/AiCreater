@@ -125,6 +125,19 @@ def _transfer_chapter(jobs,project_id,snapshot):
             **({k:snapshot[k] for k in ('preset','origin_sha256')} if 'preset' in snapshot else {})}
 
 
+def _agent_chapter(jobs,project_id,snapshot):
+    agent=jobs.get_raw(project_id,snapshot['agent_id'])
+    result=agent.get('result') or {}
+    if agent['kind']!='agent' or agent['state']!='succeeded' or result.get('accepted') is not True or result.get('sha256')!=snapshot['sha256']:
+        raise StoreError('conflict','Agent 视频已改变')
+    source=checked_file(job_directory(agent['id']),'source.txt')
+    if _hash(source)!=result['_files']['source.txt']:raise ValueError('Agent source differs from the published job')
+    audio=jobs.store.asset_file(project_id,snapshot['asset']['id'])
+    if _hash(audio)!=snapshot['asset']['checksum']:raise StoreError('assets','配音已改变')
+    return {'kind':'agent','source_file':str(source),'sha256':snapshot['sha256'],'brief':snapshot['brief'],'cues':snapshot['cues'],
+            'scene':snapshot['scene'],'audio_file':str(audio)}
+
+
 def check_request_audio(jobs,project_id,data):
     if data.get('timing_mode')=='draft':
         if data['asset'] is not None:raise ValueError('Draft cannot claim measured audio')
@@ -224,6 +237,9 @@ def command_input(jobs,job):
         chapter=_chapter(jobs,job['project_id'],data)
         if data.get('isolated_render') is True:chapter['isolated_render']=True
         return chapter
+    if any('agent_id' in chapter for chapter in data['chapters']):
+        return {'chapters':[_agent_chapter(jobs,job['project_id'],chapter) if 'agent_id' in chapter else {'kind':'workbench',**_chapter(jobs,job['project_id'],chapter)}
+                            for chapter in data['chapters']]}
     return {'chapters':[_chapter(jobs,job['project_id'],chapter) for chapter in data['chapters']]}
 
 
@@ -361,7 +377,9 @@ def run_once(jobs,lane='workflow',*,timeout=None,heartbeat_interval=5,launcher=N
         input_path=WORK_ROOT/(job['id']+'.input.json')
         with input_path.open('x',encoding='utf-8') as stream:
             os.chmod(input_path,0o600);json.dump(data,stream,ensure_ascii=False)
+        mixed=job['kind']=='export' and any(c.get('kind')=='agent' for c in data['chapters'])
         command=([str(ROOT/'node_modules/.bin/tsx'),str(ROOT/'scripts/scene-agent-job.ts'),str(input_path),str(directory)] if job['kind']=='agent' else
+                 [str(ROOT/'node_modules/.bin/tsx'),str(ROOT/'scripts/scene-agent-course-job.ts'),str(input_path),str(directory)] if mixed else
                  [str(ROOT/'node_modules/.bin/tsx'),str(ROOT/'scripts/visual-workbench.ts'),job['kind'],str(input_path),str(directory)])
         # Logs remain private; generated output and provider diagnostics never cross the API.
         log_path=WORK_ROOT/(job['id']+'.log')

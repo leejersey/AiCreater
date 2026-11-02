@@ -243,3 +243,7 @@ export function visualAgentBody(sceneId:string,revision:number){
  if(!identifier(sceneId)||!Number.isInteger(revision)||revision<1)throw invalid();
  return {scene_id:sceneId,expected_revision:revision,confirmed:true,max_turns:AGENT_MAX_TURNS};
 }
+export function canAcceptAgent(job:VisualJob):boolean{
+ return job.kind==='agent'&&job.state==='succeeded'&&job.current!==false&&job.result?.agent?.status==='passed'&&
+  !!job.result.sha256&&job.result.video==='video.mp4'&&(job.result.frames?.length??0)>0;
+}
