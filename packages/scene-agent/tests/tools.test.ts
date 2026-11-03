@@ -245,3 +245,18 @@ test('a model that can see must view the final version before finish; one that c
  assert.match(out(await blind.call('render_stills')),/call finish now/);
  assert.match(out(await finish.run(review,blind.context)),/finish accepted/);
 });
+
+test('a gate-clean version with empty-area findings is kept but the model is asked to fill the frame first',async()=>{
+ class SparseRenderer extends FakeRenderer{
+  async render(source:string,frames:number[],outDir:string){
+   const result=await super.render(source,frames,outDir);
+   return{...result,frames:result.frames.map(f=>({...f,ink:0.05,space:{rows:[300,980] as [number,number],cols:[0,100] as [number,number]}}))};
+  }
+ }
+ const {call,context}=await setup({initialSource:MINIMAL,renderer:new SparseRenderer(),vision:false});
+ const report=out(await call('render_stills'));
+ assert.match(report,/\[medium\] empty-area/);
+ assert.match(report,/nothing drawn in y 300–980 \(69% of the height\)/);
+ assert.match(report,/passes the final gates and is kept\. The empty-area finding is the one medium finding to fix/);
+ assert.ok(context.cleanCheckpoint); // still a fallback: empty space never blocks the gates
+});

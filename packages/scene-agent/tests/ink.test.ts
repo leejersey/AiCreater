@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {deflateSync} from 'node:zlib';
-import {decodePng,inkCoverage} from '../src/render/ink';
+import {decodePng,emptySpace,inkCoverage} from '../src/render/ink';
 import {defaultFrames,inkFindings} from '../src/tools/checks';
 
 // Encodes RGB rows with a chosen filter per row, so the decoder's filters are exercised.
@@ -44,4 +44,28 @@ test('default sampling keeps every cue midpoint when the frame cap applies',()=>
  const frames=defaultFrames(982,cues);
  assert.ok(frames.length<=12);
  for(const c of cues)assert.ok(frames.includes(Math.floor((c.startFrame+c.endFrame)/2)),`midpoint of ${c.id}`);
+});
+
+test('empty space is the largest undrawn band of rows and of columns above the captions, in canvas pixels',()=>{
+ // 20×10 image standing for 1920×1080: ink only in the top-left 4×3 block; rows 9+ are the caption band.
+ const rows=Array.from({length:10},(_,y)=>Array.from({length:20},(_,x)=>x<4&&y<3?INK:BG));
+ const space=emptySpace(decodePng(png(20,rows,rows.map(()=>0))),'#0e1a2e');
+ assert.deepEqual(space.rows,[288,960]); // rows 3–9 of 10 (980 px safe height ≈ 9 rows of 108)
+ assert.deepEqual(space.cols,[384,1920]);
+});
+
+test('a frame that leaves most of the canvas empty mid-cue is reported with coordinates; edges and full frames are not',()=>{
+ const cues=[{id:'a',text:'x',startFrame:0,endFrame:100},{id:'b',text:'y',startFrame:100,endFrame:200}];
+ const frame=(f:number,rows:[number,number],cols:[number,number])=>({frame:f,file:'',ink:0.05,space:{rows,cols},audit:{issues:[],labels:0,movers:0,routes:0,obstacles:0}});
+ const findings=inkFindings({sourceSha256:'x',failures:[],frames:[
+  frame(50,[542,980],[1680,1920]), // bottom 45% empty
+  frame(150,[700,980],[0,800]),     // 42% of the width empty
+  frame(120,[800,980],[0,200]),     // full enough
+  frame(199,[0,980],[0,1920]),      // cue edge: not judged
+ ]},cues,200);
+ const empty=findings.find(f=>f.kind==='empty-area')!;
+ assert.equal(empty.severity,'medium');
+ assert.deepEqual(empty.frames,[50,150]);
+ assert.match(empty.detail,/frame 50: nothing drawn in y 542–980 \(45% of the height\)/);
+ assert.match(empty.detail,/frame 150: nothing drawn in x 0–800 \(42% of the width\)/);
 });

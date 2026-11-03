@@ -49,3 +49,23 @@ export function inkCoverage(png:DecodedPng,background:string,tolerance=48):numbe
  }
  return count?ink/count:0;
 }
+
+export type EmptySpace={rows:[number,number];cols:[number,number]}; // largest empty band of rows / columns, canvas px
+
+/** Largest band of rows and of columns above the caption area (y < safeHeight) with no ink, in 1920×1080 canvas px. */
+export function emptySpace(png:DecodedPng,background:string,tolerance=48,canvasWidth=1920,safeHeight=980):EmptySpace{
+ const bg=[1,3,5].map(i=>parseInt(background.slice(i,i+2),16));
+ const scale=canvasWidth/png.width,height=Math.min(png.height,Math.round(safeHeight/scale)),width=png.width;
+ const rows=new Array(height).fill(0),cols=new Array(width).fill(0);
+ for(let y=0;y<height;y++)for(let x=0;x<width;x++){
+  const o=(y*width+x)*png.channels;
+  if(Math.abs(png.pixels[o]-bg[0])+Math.abs(png.pixels[o+1]-bg[1])+Math.abs(png.pixels[o+2]-bg[2])>tolerance){rows[y]++;cols[x]++;}
+ }
+ // A band stays "empty" under a stray hairline: fewer than 0.3% of its pixels are drawn.
+ const run=(counts:number[],limit:number):[number,number]=>{
+  let best=0,start=0,current=0,from=0;
+  counts.forEach((n,i)=>{if(n<limit){if(!current)from=i;current++;if(current>best){best=current;start=from;}}else current=0;});
+  return [Math.round(start*scale),Math.round((start+best)*scale)];
+ };
+ return{rows:run(rows,Math.max(2,width*0.003)),cols:run(cols,Math.max(2,height*0.003))};
+}

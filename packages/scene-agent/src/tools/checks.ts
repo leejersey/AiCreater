@@ -48,6 +48,9 @@ export function defaultFrames(duration:number,cues:Cue[]):number[]{
 // Below BLANK_INK a frame shows essentially nothing; below SPARSE_INK it shows a stray label at most.
 // Measured on rag-ch1: an empty-looking passing scene had 0.00% on 9 of 12 frames; a readable one had 1.7–14.8%.
 const BLANK_INK=0.001,SPARSE_INK=0.01,EDGE_FRAMES=15;
+// Largest empty band, as a share of the 1920×980 area above the captions. Measured on reviewed RAG frames: full
+// layouts leave 10–30%; the frames that looked unfinished left 45–72% of the height empty.
+const EMPTY_ROWS=0.4,EMPTY_COLS=0.35;
 function insideCue(frame:number,cues:Cue[],duration:number):boolean{
  if(!cues.length)return frame>=EDGE_FRAMES&&frame<duration-EDGE_FRAMES;
  return cues.some(c=>frame>=c.startFrame+EDGE_FRAMES&&frame<c.endFrame-EDGE_FRAMES);
@@ -60,14 +63,22 @@ export function inkFindings(render:StillsResult,cues:Cue[],duration:number):Audi
   const existing=out.find(f=>f.kind===kind&&f.severity===severity);
   if(existing)existing.frames.push(frame);else out.push({severity,kind,target:'frame',detail,frames:[frame]});
  };
- for(const {frame,ink} of render.frames){
+ const empty:string[]=[];
+ for(const {frame,ink,space} of render.frames){
   if(ink===undefined)continue;
   const inside=insideCue(frame,cues,duration);
   if(ink<BLANK_INK)add(inside?'high':'low','blank-frame',inside
    ?'Nothing visible while this cue is narrated (under 0.1% of the canvas differs from the background). Check opacity, fade timing and positions.'
    :'Nothing visible at a cue edge; fine only if it is the middle of a deliberate fade.',frame);
   else if(ink<SPARSE_INK&&inside)add('medium','sparse-frame','Under 1% of the canvas is drawn while this cue is narrated; the beat is barely visible.',frame);
+  else if(inside&&space){
+   const rows=space.rows[1]-space.rows[0],cols=space.cols[1]-space.cols[0];
+   const parts=[...(rows>=980*EMPTY_ROWS?[`y ${space.rows[0]}–${space.rows[1]} (${Math.round(rows/9.8)}% of the height)`]:[]),...(cols>=1920*EMPTY_COLS?[`x ${space.cols[0]}–${space.cols[1]} (${Math.round(cols/19.2)}% of the width)`]:[])];
+   if(parts.length)empty.push(`frame ${frame}: nothing drawn in ${parts.join(' and in ')}`);
+  }
  }
+ if(empty.length)out.push({severity:'medium',kind:'empty-area',target:'frame',frames:render.frames.filter(f=>empty.some(e=>e.startsWith(`frame ${f.frame}:`))).map(f=>f.frame),
+  detail:'A large part of the canvas above the captions stays empty while a cue is narrated. Enlarge or move the main object, or give the cue a second visual element; only a closing end card may stay this sparse.\n    '+empty.join('\n    ')});
  return out;
 }
 
@@ -158,7 +169,9 @@ export const renderStills:Tool={
   const lines=['typecheck passed',`rendered ${render.frames.length}/${frames.length} frames: ${render.frames.map(f=>f.frame).join(', ')||'none'}`];
   for(const f of render.failures)lines.push(`frame ${f.frame} failed: ${f.error}`);
   lines.push(formatAudit(render,cues,brief.durationInFrames));
-  const clean=!render.failures.length&&!summarizeAudit(render,cues,brief.durationInFrames).findings.some(f=>f.severity==='high');
+  const findings=summarizeAudit(render,cues,brief.durationInFrames).findings;
+  const clean=!render.failures.length&&!findings.some(f=>f.severity==='high');
+  const empty=findings.some(f=>f.kind==='empty-area');
   const fullSample=defaultFrames(brief.durationInFrames,cues).every(f=>frames.includes(f));
   if(clean&&fullSample){
    // Keep every gate-clean version outside the model's reach, so a later regression cannot lose it.
@@ -166,7 +179,9 @@ export const renderStills:Tool={
    await mkdir(path.dirname(file),{recursive:true});await writeFile(file,source);
    context.cleanCheckpoint={sourceSha256:render.sourceSha256,file};
   }
-  if(clean)lines.push(fullSample
+  if(clean)lines.push(fullSample&&empty
+   ?'No [high] findings: this version passes the final gates and is kept. The empty-area finding is the one medium finding to fix: viewers notice a half-empty frame. Enlarge or spread the content of those cues (a closing end card may stay sparse), then check again and call finish.'
+   :fullSample
    ?(context.capabilities.vision
     ?'No [high] findings: this version passes the final gates. Now look at it with view_frames and check it against the visual-review list; fix what fails, or call finish if it holds up. Medium findings are optional polish.'
     :'No [high] findings: this version passes the final gates. If every cue has its visual, call finish now. Medium findings are optional polish, and further rewrites risk new problems.')

@@ -12,7 +12,7 @@ Practical rules learned from rendered runs. They keep the picture readable; they
 
 - Cards and panels must not partly cover each other. Either place one fully inside the other, or keep a gap; the audit reports `panel-overlap` with the shapes' ids.
 - Keep at least 24 px between separate text labels. Stacked captions with no gap read as one blurred line.
-- Use the whole canvas above the caption area (y up to 980). A scene that fills only the top half looks unfinished.
+- Use the whole canvas above the caption area (y up to 980). A scene that fills only the top half looks unfinished. The audit reports `empty-area` with the empty band's coordinates when more than 40% of the height or 35% of the width stays empty during a cue; draw the main object large (at least half the width) rather than a small panel in the middle.
 - One idea per cue should dominate the frame; secondary labels stay smaller and muted.
 
 ## Showing, not listing

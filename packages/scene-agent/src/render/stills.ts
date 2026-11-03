@@ -10,11 +10,12 @@ import path from 'node:path';
 import {checkSource,sceneTheme,type SceneBrief} from '../../../custom-scenes/src/contract';
 import {repositoryRoot} from '../../../custom-scenes/src/files';
 import type {GeometryAudit} from '../../../custom-scenes/src/geometry-audit';
-import {decodePng,inkCoverage} from './ink';
+import {decodePng,emptySpace,inkCoverage,type EmptySpace} from './ink';
 import type {LabelBox} from './labels';
 
 export type FrameAudit=GeometryAudit&{unsupported?:true;labelBoxes?:Record<string,LabelBox>};
-export type RenderedFrame={frame:number;file:string;audit:FrameAudit;ink?:number}; // ink: share of pixels that differ from the background
+// ink: share of pixels that differ from the background; space: the largest empty bands above the captions
+export type RenderedFrame={frame:number;file:string;audit:FrameAudit;ink?:number;space?:EmptySpace};
 export type FrameFailure={frame:number;error:string};
 export type StillsResult={sourceSha256:string;frames:RenderedFrame[];failures:FrameFailure[]};
 
@@ -77,8 +78,9 @@ export class RemotionStillRenderer implements StillRenderer{
      if(!log.text.startsWith('SCENE_GEOMETRY:'))return;
      try{const item=JSON.parse(log.text.slice('SCENE_GEOMETRY:'.length));if(item.frame===frame&&Array.isArray(item.audit?.issues))audit=item.audit;}catch{}
     }});
-    const ink=inkCoverage(decodePng(await readFile(file)),sceneTheme.background);
-    result.frames.push({frame,file,ink,audit:audit??{issues:[{kind:'missing-audit',target:'scene',detail:'Geometry audit did not complete for this frame'}],labels:0,movers:0,routes:0,obstacles:0}});
+    const png=decodePng(await readFile(file));
+    const ink=inkCoverage(png,sceneTheme.background),space=emptySpace(png,sceneTheme.background);
+    result.frames.push({frame,file,ink,space,audit:audit??{issues:[{kind:'missing-audit',target:'scene',detail:'Geometry audit did not complete for this frame'}],labels:0,movers:0,routes:0,obstacles:0}});
    }catch(error){result.failures.push({frame,error:conciseError(error)});}
    finally{clearTimeout(timer);}
   }
