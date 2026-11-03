@@ -45,7 +45,7 @@ test('account and course summary responses are validated before entering UI stat
   assert.equal(parseProjectSummaries([{id,title:'课程',active_jobs:true,active_job_kind:'generate',active_job_state:'queued'}]).length,1);
   for(const extra of [{scene_count:-1},{revision:0},{active_jobs:'yes'},{updated_at:'not a date'},{active_job_state:'succeeded'}])assert.throws(()=>parseProjectSummaries([{id,title:'课程',...extra}]));
   const {activeJobLabel}=await import('../lib/editor');
-  assert.equal(activeJobLabel({active_jobs:true,active_job_kind:'generate',active_job_state:'queued'}),'教学分镜 · 排队中');
+  assert.equal(activeJobLabel({active_jobs:true,active_job_kind:'voice',active_job_state:'queued'}),'配音 · 排队中');
   assert.equal(activeJobLabel({active_jobs:false}),null);
 });
 

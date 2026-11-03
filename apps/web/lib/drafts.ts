@@ -1,16 +1,7 @@
-import type {Element} from '../../../packages/video-schema/src/types';
-import {conceptLabels} from '../../../packages/video-schema/src/concept';
 import {isTeachingStyle} from './teaching-style';
-export type RawCues = Record<string,{text_start:string;text_end:string}>;
 export type DraftData = {
   course: {title: string; source: string; audience?: string; duration_hint?: string; outline?: string; teaching_style?: string; manuscript_format?: 'plain'|'markdown'};
-  append: {content: string; narration: string; sceneType?:'card_sequence'|'concept'; conceptSteps?:Pick<Element,'content'|'concept_role'>[]};
   voice: {speaker: string};
-  'teaching-style': {teaching_style: string};
-  'visual-style': {visual_style:string};
-  chart: {text: string};
-  scene: {text: string; code: string; steps: string; arrayName?: string;
-    edges: {from: string; to: string}[]; rawStates: Record<string, string>; rawCues?: RawCues; graphics?: string};
 };
 export type DraftKind = keyof DraftData;
 export type DraftScope = {kind: DraftKind; projectId: string; sceneId: string; label?: string};
@@ -34,11 +25,11 @@ export function userDraftStorage(storage:DraftStorage & Pick<Storage,'length'|'k
   };
 }
 const limit = 262144;
-const kinds: DraftKind[] = ['course','append','voice','teaching-style','visual-style','chart','scene'];
+const kinds: DraftKind[] = ['course','voice'];
 const object = (v: unknown): v is Record<string, unknown> => !!v && typeof v === 'object' && !Array.isArray(v);
 function validScope(scope: DraftScope) {
   return kinds.includes(scope.kind) && typeof scope.projectId === 'string' && typeof scope.sceneId === 'string' &&
-    (scope.kind === 'course' ? !scope.projectId && !scope.sceneId : !!scope.projectId && (['append','voice','teaching-style','visual-style'].includes(scope.kind) ? !scope.sceneId : !!scope.sceneId));
+    (scope.kind === 'course' ? !scope.projectId && !scope.sceneId : !!scope.projectId && !scope.sceneId);
 }
 export function draftKey(scope: DraftScope): string {
   if (!validScope(scope)) throw new Error('草稿位置不合法');
@@ -46,21 +37,13 @@ export function draftKey(scope: DraftScope): string {
 }
 function validData(kind: DraftKind, data: unknown): boolean {
   if (!object(data)) return false;
-  const strings = kind === 'course' ? ['title','source'] : kind === 'append' ? ['content','narration'] : kind === 'voice' ? ['speaker'] : kind==='teaching-style'?['teaching_style']:kind==='visual-style'?['visual_style']:kind === 'chart' ? ['text'] : ['text','code','steps'];
+  const strings = kind === 'course' ? ['title','source'] : ['speaker'];
   if (!strings.every(k=>typeof data[k] === 'string')) return false;
-  const allowed = kind === 'scene' ? [...strings,'arrayName','edges','rawStates','rawCues','graphics'] : kind==='append'?[...strings,'sceneType','conceptSteps']:kind==='course'?[...strings,'audience','duration_hint','outline','teaching_style','manuscript_format']:strings;
+  const allowed = kind==='course'?[...strings,'audience','duration_hint','outline','teaching_style','manuscript_format']:strings;
   if (kind === 'course' && !['audience','duration_hint','outline'].every(k=>data[k]===undefined||typeof data[k]==='string')) return false;
   if (kind === 'course' && data.manuscript_format !== undefined && !['plain','markdown'].includes(data.manuscript_format as string)) return false;
   if (kind === 'course' && data.teaching_style !== undefined && !isTeachingStyle(data.teaching_style)) return false;
-  if (kind === 'teaching-style' && !isTeachingStyle(data.teaching_style)) return false;
-  if (!Object.keys(data).every(k=>allowed.includes(k))) return false;
-  if(kind==='append')return (data.sceneType===undefined||['card_sequence','concept'].includes(data.sceneType as string))&&
-    (data.conceptSteps===undefined||(Array.isArray(data.conceptSteps)&&data.conceptSteps.length>=1&&data.conceptSteps.length<=6&&data.conceptSteps.every(e=>object(e)&&Object.keys(e).length===2&&typeof e.content==='string'&&typeof e.concept_role==='string'&&Object.hasOwn(conceptLabels,e.concept_role))));
-  return kind !== 'scene' || ((data.graphics === undefined || typeof data.graphics === 'string') && (data.arrayName === undefined || typeof data.arrayName === 'string') &&
-    Array.isArray(data.edges) && data.edges.length <= 15 && data.edges.every(e=>object(e) && typeof e.from === 'string' && typeof e.to === 'string' && Object.keys(e).length === 2) &&
-    object(data.rawStates) && Object.keys(data.rawStates).length <= 6 && Object.values(data.rawStates).every(v=>typeof v === 'string') &&
-    (data.rawCues === undefined || (object(data.rawCues) && Object.keys(data.rawCues).length <= 6 &&
-      Object.values(data.rawCues).every(v=>object(v) && Object.keys(v).length === 2 && typeof v.text_start === 'string' && typeof v.text_end === 'string'))));
+  return Object.keys(data).every(k=>allowed.includes(k));
 }
 export function readDraft<K extends DraftKind>(raw: string | null, scope: DraftScope & {kind: K}): DraftRecord<K> | null {
   if (!raw || raw.length > limit) return null;

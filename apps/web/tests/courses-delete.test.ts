@@ -21,14 +21,11 @@ test('courses page exposes per-card delete control',()=>{
 
 test('clearProjectDrafts removes scopes for one project only',()=>{
   const store=new MemoryStorage();
-  const a: DraftScope={kind:'scene',projectId:'keep',sceneId:'s1'};
-  const b: DraftScope={kind:'append',projectId:'gone',sceneId:''};
+  const a: DraftScope={kind:'voice',projectId:'keep',sceneId:''};
   const c: DraftScope={kind:'voice',projectId:'gone',sceneId:''};
-  writeDraft(store,a,1,{text:'',code:'',steps:'[]',edges:[],rawStates:{}},null);
-  writeDraft(store,b,1,{content:'x',narration:'y'},null);
+  writeDraft(store,a,1,{speaker:'keep'},null);
   writeDraft(store,c,1,{speaker:'spk'},null);
   clearProjectDrafts(store,'gone');
   assert.notEqual(store.getItem(draftKey(a)),null);
-  assert.equal(store.getItem(draftKey(b)),null);
   assert.equal(store.getItem(draftKey(c)),null);
 });

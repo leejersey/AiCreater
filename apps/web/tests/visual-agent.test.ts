@@ -84,7 +84,7 @@ test('another configured model parses, and the panel names the version export wi
  const [newer]=parseVisualJobs({jobs:[{...passed,id:'new',state:'failed',created_at:'2026-11-01T11:00:00Z',result:{requests_dispatched:3}}]},'p');
  assert.equal(visual.exportedVersion([newer,older])?.id,'old');
  const html=renderToStaticMarkup(createElement(VisualAgentPanel,{projectId:'p',job:newer,exported:older,now:0,updatedAt:0,disabled:false,onStart(){},onRefresh(){},onCancel(){}}));
- assert.match(html,/整课导出将使用：更早确认的 Agent 版本/);
+ assert.match(html,/整课导出将使用：更早确认的版本/);
  const none=renderToStaticMarkup(createElement(VisualAgentPanel,{projectId:'p',job:newer,now:0,updatedAt:0,disabled:false,onStart(){},onRefresh(){},onCancel(){}}));
  assert.match(none,/整课导出将使用：暂无已确认的版本/);
 });
@@ -100,8 +100,42 @@ test('chapter status follows voice, running, review and confirmation; batch take
 
 test('Agent stills skip the boundary frames; the running Agent stage shows as progress detail',()=>{
  const frames=['f0','f1','f2','f3','f4','f5'];
- assert.deepEqual(visual.reviewFrames(frames,true),['f1','f3','f4']);
- assert.deepEqual(visual.reviewFrames(frames),['f0','f3','f5']);
+ assert.deepEqual(visual.reviewFrames(frames),['f1','f3','f4']);
+ assert.deepEqual(visual.reviewFrames(['f0','f1','f2']),['f0','f1','f2']);
  const [running]=parseVisualJobs({jobs:[{...passed,state:'running',stage:'第 3 轮 · 检查发现 2 个需修正的问题',result:null}]},'p');
  assert.match(visual.videoProgress(running,0).detail,/第 3 轮 · 检查发现 2 个需修正的问题/);
+});
+
+test('the parser checks ownership, kinds and media names, and the job list only has Agent and export jobs',()=>{
+ for(const bad of [{...passed,project_id:'other'},{...passed,state:'ready'},{...passed,kind:'preview'},{...passed,kind:'generate'},
+  {...passed,result:{...passed.result,frames:['/private/file.png']}},{...passed,result:{...passed.result,video:'https://evil.test/a'}}])
+  assert.throws(()=>parseVisualJobs({jobs:[bad]},'p'),/视觉任务响应无效/);
+ assert.throws(()=>parseVisualJobs({jobs:[passed,passed]},'p'));
+ const [exported]=parseVisualJobs({jobs:[{id:'e',project_id:'p',scene_id:null,kind:'export',state:'succeeded',input_summary:{chapter_count:8},result:{video:'video.mp4',srt:'video.srt',provider_response:'SECRET'}}]},'p');
+ assert.equal(videoTaskStatus(exported),'整课视频已导出');
+ assert.doesNotMatch(JSON.stringify(exported),/SECRET/);
+ assert.equal(visual.visualFileUrl('p','j','stills/frame-10.png'),'/api/projects/p/visual/j/files/stills/frame-10.png');
+ for(const name of ['../video.mp4','stills/../../x','//evil','source.tsx','stills/frame-1.png?x','design.json'])assert.throws(()=>visual.visualFileUrl('p','j',name));
+});
+
+test('only measured audio with captions unlocks generation; voice and timing actions follow the current jobs',()=>{
+ const ready={id:'s',revision:2,state:'ready',scene:{duration_frames:30,narration:{text:'口播',audio_asset_id:'a'},captions:[{text:'口播',start_frame:6,end_frame:20}]}} as any;
+ assert.equal(visual.measuredReady(ready),true);
+ assert.equal(visual.measuredReady({...ready,state:'needs_timing'}),false);
+ assert.equal(visual.measuredReady({...ready,scene:{...ready.scene,captions:[]}}),false);
+ assert.equal(visual.measuredReady({...ready,scene:{...ready.scene,narration:{text:'口播'}}}),false);
+ const row={id:'s',revision:2,state:'needs_voice',scene:{narration:{text:'口播'}}} as any;
+ const job={job_id:'voice-job',kind:'voice',scene_id:'s',base_revision:2,state:'failed',progress:0,error:{message:'失败',retryable:true}} as any;
+ assert.equal(visual.sceneAudioActions(row,[job]).voicePath,'/api/jobs/voice-job/retry');
+ assert.equal(visual.sceneAudioActions(row,[{...job,state:'succeeded'}]).voicePath,'/api/scenes/s/voice');
+ for(const state of ['queued','running'])assert.equal(visual.sceneAudioActions(row,[job,{...job,state}]).voiceBlocked,true);
+ assert.equal(visual.sceneAudioActions(row,[{...job,state:'running',base_revision:1}]).voiceBlocked,false);
+ const timed={id:'s',revision:2,state:'needs_timing',scene:{narration:{text:'口播',audio_asset_id:'audio'}}} as any;
+ assert.equal(visual.sceneAudioActions(timed,[]).timingBlocked,false);
+ assert.equal(visual.sceneAudioActions(timed,[{job_id:'t',kind:'timing',scene_id:'s',base_revision:2,state:'queued',progress:0} as any]).timingBlocked,true);
+});
+
+test('untrusted errors are reduced to fixed messages',()=>{
+ assert.doesNotMatch(visual.visualError(new Error('/private/key provider response')),/private|provider/);
+ assert.match(visual.visualError(new Error('conflict',{cause:409})),/版本/);
 });
