@@ -31,8 +31,9 @@ The narration lists items. This is where scenes most often end up empty or padde
 
 - Show exactly the items the narration names, each with its own words from the brief. Count them in the narration first.
 - Reveal each item when it is spoken. Items already shown stay visible, so the list builds up.
-- Lay the items out to fill the space the list owns: three challenges get three cards across the width, not two cards and a gap.
-- Give each item a small icon or a one-line consequence from the narration ("召回不相关文档 → 生成错误答案"). Do not invent consequences the narration does not state.
+- Lay the items out to fill the space the list owns: three challenges get three columns across the width, not two and a gap.
+- Draw each item as an object in a state, with its name as a label underneath: a document crossed out, a box overflowing, gauges that disagree, a lock that closes. `read_skill examples` shows how. An icon in a titled card is the fallback for items that are pure names with nothing to show.
+- Add a one-line consequence from the narration under the name ("召回不相关文档 → 生成错误答案"). Do not invent consequences the narration does not state.
 - Never leave placeholder shapes: no empty cards, no dashed boxes waiting for text, no lorem lines standing in for items. If there is nothing to put in a box, do not draw the box.
 
 ## Summary / outlook
