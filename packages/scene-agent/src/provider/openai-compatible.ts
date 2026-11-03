@@ -48,17 +48,19 @@ export class OpenAICompatibleProvider implements Provider{
    if(attempt>0)await sleep(Math.min(retryAfter??1000*2**(attempt-1),30000));
    retryAfter=undefined;
    if(signal?.aborted)throw new ProviderError('aborted','request aborted');
-   let response:Response;
+   let response:Response,text:string;
    try{
     const timeout=AbortSignal.timeout(this.config.timeoutMs??180000);
     response=await doFetch(url,{method:'POST',redirect:'error',
      headers:{'content-type':'application/json',authorization:'Bearer '+this.config.apiKey},
      body:JSON.stringify(body),signal:signal?AbortSignal.any([signal,timeout]):timeout});
+    // A connection dropped while the body streams in ("terminated") is a transport failure too.
+    text=await readBounded(response);
    }catch(error){
+    if(error instanceof ProviderError)throw error;
     if(signal?.aborted)throw new ProviderError('aborted','request aborted');
-    last=new ProviderError('unavailable','transport: '+(error instanceof Error?error.name:'error'));continue;
+    last=new ProviderError('unavailable','transport: '+(error instanceof Error?`${error.name}: ${error.message}`.slice(0,200):'error'));continue;
    }
-   const text=await readBounded(response);
    if(response.ok){
     try{return JSON.parse(text);}catch{throw new ProviderError('response','response body is not JSON',response.status);}
    }

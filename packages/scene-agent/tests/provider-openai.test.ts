@@ -89,6 +89,16 @@ test('network errors retry; caller aborts do not',async()=>{
  await assert.rejects(flaky.turn({...request,signal:controller.signal}),(e:unknown)=>e instanceof ProviderError&&e.code==='aborted');
 });
 
+test('a connection that drops while the body streams in is retried like any network error',async()=>{
+ let attempts=0;
+ const dropped=()=>new Response(new ReadableStream({start(c){c.enqueue(new TextEncoder().encode('{"choices":['));c.error(new TypeError('terminated'));}}),{status:200,headers:{'content-type':'application/json'}});
+ const provider=new OpenAICompatibleProvider(config,{sleep:async()=>{},fetch:async()=>attempts++===0?dropped():json(200,completion({content:'ok'}))});
+ assert.equal((await provider.turn(request)).stop,'end_turn');
+ assert.equal(attempts,2);
+ const always=new OpenAICompatibleProvider(config,{sleep:async()=>{},fetch:async()=>dropped()});
+ await assert.rejects(always.turn(request),(e:unknown)=>e instanceof ProviderError&&e.code==='unavailable'&&/terminated/.test(e.message));
+});
+
 test('non-JSON or empty responses are response errors',async()=>{
  const provider=new OpenAICompatibleProvider(config,{fetch:async()=>new Response('<html>',{status:200})});
  await assert.rejects(provider.turn(request),(e:unknown)=>e instanceof ProviderError&&e.code==='response');
