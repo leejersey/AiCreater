@@ -115,9 +115,7 @@ class Accounts:
 
     def authorize(self, user_id, params):
         # Identifiers come only from the framework's matched route; SQL names are a fixed allowlist.
-        tables = {'project_id':('projects','id'), 'scene_id':('scenes','project_id'),
-                  'version_id':('project_versions','project_id'), 'job_id':('jobs','project_id'),
-                  'candidate_id':('scene_candidates','scene_id')}
+        tables = {'project_id':('projects','id'), 'scene_id':('scenes','project_id'), 'job_id':('jobs','project_id')}
         with self.store.connection() as conn:
             for key,(table,column) in tables.items():
                 if key not in params: continue
@@ -125,8 +123,6 @@ class Accounts:
                 except StoreError: raise StoreError('not_found','资源不存在') from None
                 if key=='project_id':
                     query='SELECT 1 FROM projects WHERE id=%s AND owner_id=%s'
-                elif key=='candidate_id':
-                    query='SELECT 1 FROM scene_candidates r JOIN scenes s ON s.id=r.scene_id JOIN projects p ON p.id=s.project_id WHERE r.id=%s AND p.owner_id=%s'
                 else:
                     query=f'SELECT 1 FROM {table} r JOIN projects p ON p.id=r.{column} WHERE r.id=%s AND p.owner_id=%s'
                 if not conn.execute(query,[value,user_id]).fetchone(): raise StoreError('not_found','资源不存在')

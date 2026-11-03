@@ -25,6 +25,8 @@ class VisualApiTests(unittest.TestCase):
         self.assertEqual(self.client.post('/api/auth/register',json={'username':'qa_'+uuid.uuid4().hex[:16],'password':'test-password-2026'}).status_code,201)
         project=self.client.post('/api/projects',json={'title':'Visual QA','source_text':'先读代码。再修改文件。'}).json()
         self.pid=project['id'];self.path='/api/projects/'+self.pid+'/visual'
+        # Workers claim the oldest queued job of a lane: start each test with nothing queued or running.
+        with self.store.connection() as conn:conn.execute("UPDATE jobs SET state='cancelled' WHERE state IN ('queued','running')")
 
     def test_prepare_is_local_strict_and_ownership_checked(self):
         self.assertEqual(self.client.get(self.path).json(),{'jobs':[]})
@@ -225,7 +227,7 @@ class VisualApiTests(unittest.TestCase):
         claimed=jobs.claim('workflow');self.assertEqual(claimed['id'],job['id'])
         def age(seconds):
             with self.store.connection() as conn:
-                conn.execute("UPDATE visual_jobs SET started_at=now()-make_interval(secs=>%s) WHERE id=%s",[seconds,job['id']])
+                conn.execute("UPDATE jobs SET started_at=now()-make_interval(secs=>%s) WHERE id=%s",[seconds,job['id']])
         age(300)  # chapters with many labels routinely take 4-6 minutes
         self.assertTrue(jobs.heartbeat(job['id'],claimed['attempt_id']))
         self.assertIsNone(jobs.claim('render'))  # recovery in the other lane must not expire it either
@@ -250,7 +252,9 @@ class VisualApiTests(unittest.TestCase):
         self.assertTrue(jobs.heartbeat(job['id'],claimed['attempt_id'],stage))
         self.assertEqual(self.client.get(self.path).json()['jobs'][0]['stage'],stage)
         with self.assertRaises(StoreError):jobs.heartbeat(job['id'],claimed['attempt_id'],'x'*121)
-        self.assertEqual(self.client.post(self.path+'/'+job['id']+'/cancel',json={}).json()['state'],'cancelled')
+        self.assertEqual(self.client.post(self.path+'/'+job['id']+'/cancel',json={}).json()['state'],'running')
+        self.assertFalse(jobs.heartbeat(job['id'],claimed['attempt_id']))  # the worker is told to stop and then reports it
+        self.assertEqual(jobs.finish(job['id'],claimed['attempt_id'],{'requests_dispatched':2},error='agent_internal')['state'],'cancelled')
 
     def test_stopping_an_already_exited_process_group_does_not_raise(self):
         from services.visual import worker

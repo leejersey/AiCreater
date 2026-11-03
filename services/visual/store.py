@@ -1,11 +1,13 @@
 """Durable, project-scoped Scene Agent and course export jobs. No file access or provider execution."""
 import copy
+import hashlib
 import re
 import uuid
 
 from psycopg.types.json import Jsonb
 
 from services import chapters
+from services.projects import leases
 from services.projects.store import StoreError, identifier, revision, unicode_valid
 from services.visual.contract import measured_input, partition_narration
 
@@ -34,12 +36,6 @@ AGENT_ERRORS = {
     'agent_internal': 'Agent 运行出错；运行记录已保留，未自动重试。',
 }
 AGENT_MODEL = 'deepseek-flash-thinking'
-# Lease length per job kind. Both the lease check and expiry recovery read this, so a new kind cannot get
-# one limit in one place and the 240 s default in the other.
-LEASE_SECONDS = {'export': 1800, 'agent': 1800}
-DEFAULT_LEASE_SECONDS = 240
-LEASE_SQL = ('CASE kind ' + ' '.join(f"WHEN '{kind}' THEN interval '{seconds} seconds'" for kind, seconds in LEASE_SECONDS.items()) +
-             f" ELSE interval '{DEFAULT_LEASE_SECONDS} seconds' END")
 AGENT_MAX_TURNS = 25
 MAX_FEEDBACK = 2000
 STALE = 'stale: 章节版本或冻结素材已改变，请重新生成并确认当前版本。'
@@ -60,12 +56,7 @@ class VisualJobs:
     def __init__(self, store):
         self.store = store
 
-    @staticmethod
-    def _raw(row):
-        row = dict(row)
-        for key in ('id', 'project_id', 'scene_id', 'attempt_id'):
-            if row.get(key) is not None: row[key] = str(row[key])
-        return row
+    _raw = staticmethod(leases.row)
 
     @staticmethod
     def _public(row, current=True):
@@ -80,6 +71,7 @@ class VisualJobs:
             summary.update(revision_of=data['revision'].get('job_id'), feedback=data['revision'].get('feedback'))
         created = row.get('created_at')
         public_error=row.get('error')
+        if isinstance(public_error, dict): public_error = public_error.get('message')
         return {'id': str(row['id']), 'project_id': str(row['project_id']),
                 'scene_id': str(row['scene_id']) if row.get('scene_id') else None,
                 'kind': row['kind'], 'state': row['state'], 'stage': row['stage'],
@@ -89,7 +81,7 @@ class VisualJobs:
 
     @staticmethod
     def _read(conn, project_id, job_id, lock=False):
-        row = conn.execute('SELECT * FROM visual_jobs WHERE project_id=%s AND id=%s AND kind=ANY(%s)' +
+        row = conn.execute('SELECT * FROM jobs WHERE project_id=%s AND id=%s AND kind=ANY(%s)' +
                            (' FOR UPDATE' if lock else ''), [identifier(project_id), identifier(job_id), list(KINDS)]).fetchone()
         if row is None: raise StoreError('not_found', 'Visual job not found in this project')
         return VisualJobs._raw(row)
@@ -109,20 +101,22 @@ class VisualJobs:
         with self.store.connection() as conn:
             conn.execute('SET TRANSACTION ISOLATION LEVEL REPEATABLE READ, READ ONLY')
             project = self.store._read(conn, project_id)
-            rows = conn.execute('SELECT * FROM visual_jobs WHERE project_id=%s AND kind=ANY(%s) ORDER BY created_at DESC,id DESC',
+            rows = conn.execute('SELECT * FROM jobs WHERE project_id=%s AND kind=ANY(%s) ORDER BY created_at DESC,id DESC',
                                 [project['id'], list(KINDS)]).fetchall()
             return [self._public(r, self._current(conn, project, self._raw(r))) for r in rows]
 
-    def _submit(self, conn, project, scene_id, kind, data):
+    def _submit(self, conn, project, scene_id, kind, data, base_revision):
         unicode_valid(data)
-        existing=conn.execute("""SELECT * FROM visual_jobs WHERE project_id=%s
+        # An identical request that is still queued or running is the same paid job; a finished one may be repeated.
+        existing=conn.execute("""SELECT * FROM jobs WHERE project_id=%s
             AND scene_id IS NOT DISTINCT FROM %s AND kind=%s AND input=%s
             AND state IN ('queued','running') ORDER BY created_at LIMIT 1""",
             [project['id'],scene_id,kind,Jsonb(data)]).fetchone()
-        if existing:return self._public(existing)
+        if existing:return self._public(self._raw(existing))
         job_id = str(uuid.uuid4())
-        conn.execute('''INSERT INTO visual_jobs(id,project_id,scene_id,kind,input)
-            VALUES (%s,%s,%s,%s,%s)''', [job_id, project['id'], scene_id, kind, Jsonb(data)])
+        conn.execute('''INSERT INTO jobs(id,project_id,scene_id,kind,base_revision,input_hash,input,stage)
+            VALUES (%s,%s,%s,%s,%s,%s,%s,'queued')''',
+            [job_id, project['id'], scene_id, kind, base_revision, hashlib.sha256(job_id.encode()).hexdigest(), Jsonb(data)])
         return self._public(self._read(conn, project['id'], job_id))
 
     def prepare(self, project_id, expected_revision):
@@ -143,9 +137,7 @@ class VisualJobs:
     def _editable(self, conn, project_id, expected_revision, scene_id):
         project = self.store._structure_project(conn, project_id, expected_revision)
         row = self.store._scene(project, scene_id)
-        busy = conn.execute("""SELECT 1 FROM jobs WHERE project_id=%s AND state IN ('queued','running')
-            UNION ALL SELECT 1 FROM visual_jobs WHERE project_id=%s AND state IN ('queued','running') LIMIT 1""",
-            [project['id'], project['id']]).fetchone()
+        busy = conn.execute("SELECT 1 FROM jobs WHERE project_id=%s AND state IN ('queued','running') LIMIT 1", [project['id']]).fetchone()
         if busy: raise StoreError('not_ready', '项目内有任务进行中，结束后再修改章节')
         return project, row
 
@@ -223,7 +215,7 @@ class VisualJobs:
                         result.get('status') != 'passed' or 'source.txt' not in (result.get('_files') or {}) or not self._current(conn, project, base)):
                     raise StoreError('conflict', '只能在本章当前有效、已通过检查的 Agent 版本上修改')
                 data['revision'] = {'job_id': base['id'], 'sha256': result['sha256'], 'feedback': feedback.strip()}
-            return self._submit(conn, project, scene['id'], 'agent', data)
+            return self._submit(conn, project, scene['id'], 'agent', data, scene['revision'])
 
     @staticmethod
     def _acceptable(row):
@@ -245,7 +237,7 @@ class VisualJobs:
             if row['result'].get('sha256') != sha256:
                 raise StoreError('conflict', 'Approved source hash does not match')
             result = {**row['result'], 'accepted': True}
-            conn.execute('UPDATE visual_jobs SET result=%s WHERE id=%s', [Jsonb(result), row['id']])
+            conn.execute('UPDATE jobs SET result=%s WHERE id=%s', [Jsonb(result), row['id']])
             return self._public({**row, 'result': result})
 
     def export(self, project_id, expected_revision, confirmed):
@@ -257,14 +249,14 @@ class VisualJobs:
             if not project['scenes']: raise StoreError('not_ready', 'No narration chapters')
             chapters = []
             for scene in project['scenes']:
-                rows = conn.execute("""SELECT * FROM visual_jobs WHERE project_id=%s AND scene_id=%s
+                rows = conn.execute("""SELECT * FROM jobs WHERE project_id=%s AND scene_id=%s
                     AND kind='agent' AND state='succeeded' AND result->'accepted'='true'::jsonb
                     ORDER BY created_at DESC,id DESC""", [project['id'], scene['id']]).fetchall()
                 accepted = next((self._raw(r) for r in rows if self._acceptable(r) and self._current(conn, project, self._raw(r))), None)
                 if accepted is None: raise StoreError('not_ready', 'Every current chapter needs an accepted Agent video')
                 data = {k: copy.deepcopy(accepted['input'][k]) for k in ('scene', 'asset', 'fingerprint', 'brief', 'cues')}
                 chapters.append({**data, 'agent_id': str(accepted['id']), 'sha256': accepted['result']['sha256'], 'scene_id': scene['id']})
-            return self._submit(conn, project, None, 'export', {'chapters': chapters, 'project_revision': expected_revision})
+            return self._submit(conn, project, None, 'export', {'chapters': chapters, 'project_revision': expected_revision}, expected_revision)
 
     def _snapshot_current(self, project, scene_id, data):
         row = self.store._scene(project, scene_id)
@@ -295,50 +287,29 @@ class VisualJobs:
         with self.store.connection() as conn:
             project = self.store._read(conn, project_id, lock=True)
             row = self._read(conn, project_id, job_id, lock=True)
-            if row['state'] in ('queued', 'running'):
-                conn.execute("UPDATE visual_jobs SET state='cancelled',stage='cancelled',ended_at=now() WHERE id=%s", [row['id']])
-                row = self._read(conn, project_id, job_id)
+            # A queued job ends now; a running one is stopped by its worker at the next heartbeat.
+            if row['state'] == 'queued':
+                leases.terminal(conn, row, 'cancelled'); row = self._read(conn, project_id, job_id)
+            elif row['state'] == 'running':
+                conn.execute('UPDATE jobs SET cancel_requested=true WHERE id=%s', [row['id']]); row = self._read(conn, project_id, job_id)
             return self._public(row, self._current(conn, project, row))
 
-    @staticmethod
-    def _recover(conn):
-        conn.execute("""UPDATE visual_jobs SET state='failed',stage='failed',ended_at=now(),
-            error='工作进程租约或执行时限已过期，未自动重试。' WHERE state='running' AND
-            (heartbeat_at <= now()-interval '60 seconds' OR started_at <= now() - """ + LEASE_SQL + ')')
-
     def claim(self, lane):
-        if lane not in ('workflow', 'render'): raise StoreError('validation', 'Expected workflow or render lane')
-        kinds = ['agent'] if lane == 'workflow' else ['export']
+        from services.projects.usage import initial_usage
         with self.store.connection() as conn:
-            conn.execute("SELECT pg_advisory_xact_lock(hashtext('aicreater.visual.' || %s))", [lane])
-            self._recover(conn)
-            if conn.execute("SELECT id FROM visual_jobs WHERE state='running' AND kind=ANY(%s) LIMIT 1", [kinds]).fetchone(): return None
-            row = conn.execute("""SELECT * FROM visual_jobs WHERE state='queued' AND kind=ANY(%s)
-                ORDER BY created_at,id LIMIT 1 FOR UPDATE SKIP LOCKED""", [kinds]).fetchone()
-            if row is None: return None
-            token = str(uuid.uuid4())
-            conn.execute("""UPDATE visual_jobs SET state='running',stage=kind,attempt_id=%s,
-                started_at=now(),heartbeat_at=now() WHERE id=%s""", [token, row['id']])
-            return self._read(conn, str(row['project_id']), str(row['id']))
-
-    @staticmethod
-    def _active(conn, job_id, token):
-        row = conn.execute("""SELECT *, heartbeat_at > now()-interval '60 seconds'
-            AND started_at > now() - """ + LEASE_SQL + """ AS lease_valid
-            FROM visual_jobs WHERE id=%s FOR UPDATE""", [identifier(job_id)]).fetchone()
-        if row is None or row['state'] != 'running' or str(row['attempt_id']) != identifier(token) or not row['lease_valid']:
-            return None
-        return VisualJobs._raw(row)
+            return leases.claim(conn, lane, KINDS, initial_usage)
 
     def heartbeat(self, job_id, token, stage=None):
         # An optional progress line for the UI; bounded, and never a way to change the job's state.
+        # False tells the worker to stop: the lease is gone, or the user asked to cancel.
         if stage is not None and (not isinstance(stage, str) or not 0 < len(stage) <= 120): raise StoreError('validation', 'Invalid stage')
         with self.store.connection() as conn:
-            self._recover(conn)
-            if self._active(conn, job_id, token) is None: return False
-            if stage is None: conn.execute('UPDATE visual_jobs SET heartbeat_at=now() WHERE id=%s', [job_id])
-            else: conn.execute('UPDATE visual_jobs SET heartbeat_at=now(),stage=%s WHERE id=%s', [stage, job_id])
-            return True
+            leases.recover(conn)
+            row = leases.active(conn, job_id, token)
+            if row is None or row['kind'] not in KINDS: return False
+            if stage is None: conn.execute('UPDATE jobs SET heartbeat_at=now() WHERE id=%s', [job_id])
+            else: conn.execute('UPDATE jobs SET heartbeat_at=now(),stage=%s WHERE id=%s', [stage, job_id])
+            return not row['cancel_requested']
 
     @staticmethod
     def _valid_result(row, result):
@@ -361,11 +332,14 @@ class VisualJobs:
         if not isinstance(result, dict): raise StoreError('validation', 'Expected a JSON result object')
         unicode_valid(result)
         with self.store.connection() as conn:
-            initial = conn.execute('SELECT project_id FROM visual_jobs WHERE id=%s', [identifier(job_id)]).fetchone()
+            initial = conn.execute('SELECT project_id FROM jobs WHERE id=%s AND kind=ANY(%s)', [identifier(job_id), list(KINDS)]).fetchone()
             if initial is None: raise StoreError('not_found', 'Visual job not found')
             project = self.store._read(conn, str(initial['project_id']), lock=True)
-            row = self._active(conn, job_id, token)
+            row = leases.active(conn, job_id, token)
             if row is None: raise StoreError('conflict', 'Visual attempt is terminal or expired')
+            if row['cancel_requested']:
+                leases.terminal(conn, row, 'cancelled')
+                return self._public(self._read(conn, project['id'], job_id), self._current(conn, project, row))
             current = self._current(conn, project, row)
             failure = STALE if not current else (AGENT_ERRORS.get(error, AGENT_STOPPED) if isinstance(error,str) and error.startswith('agent_') else FAILURE) if error is not None else None
             if failure is None and not self._valid_result(row, result):
@@ -373,6 +347,8 @@ class VisualJobs:
             result = copy.deepcopy(result)
             result.pop('accepted', None)
             state = 'failed' if failure else 'succeeded'
-            conn.execute('''UPDATE visual_jobs SET state=%s,stage=%s,result=%s,error=%s,ended_at=now()
-                WHERE id=%s''', [state, 'stale' if not current else state, Jsonb(result), failure, job_id])
+            error = {'code': 'stale' if not current else 'failed', 'stage': row['stage'], 'message': failure, 'retryable': False} if failure else None
+            leases.terminal(conn, row, state, error)
+            conn.execute('UPDATE jobs SET stage=%s,result=%s,progress=%s WHERE id=%s',
+                         ['stale' if not current else state, Jsonb(result), 100 if state == 'succeeded' else 0, job_id])
             return self._public(self._read(conn, project['id'], job_id), current)

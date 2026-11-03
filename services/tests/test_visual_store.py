@@ -3,7 +3,6 @@ import os
 import tempfile
 import unittest
 import uuid
-from pathlib import Path
 
 from psycopg.types.json import Jsonb
 
@@ -43,9 +42,9 @@ class VisualStoreTests(unittest.TestCase):
         self.store = Store(os.environ['TEST_DATABASE_URL'], self.temp.name, PROFILE)
         self.store.initialize()
         with self.store.connection() as conn:
-            conn.execute(Path(__file__).parents[1].joinpath('visual/schema.sql').read_text())
-            # Each run owns a disposable database, never operate on a shared stack.
-            conn.execute('DELETE FROM visual_jobs')
+            # Each run owns a disposable database, never operate on a shared stack. Workers claim the oldest
+            # queued job of a lane, so start every test with an empty queue.
+            conn.execute("UPDATE jobs SET state='cancelled' WHERE state IN ('queued','running')")
         self.jobs = VisualJobs(self.store)
         self.project = self.store.create_project('Visual', 'Read then change.')
         self.pid = self.project['id']
@@ -85,15 +84,20 @@ class VisualStoreTests(unittest.TestCase):
         self.assertFalse(self.jobs.heartbeat(job['id'], str(uuid.uuid4())))
         self.assertTrue(self.jobs.heartbeat(job['id'], claim['attempt_id']))
         with self.store.connection() as conn:
-            conn.execute("UPDATE visual_jobs SET heartbeat_at=now()-interval '61 seconds' WHERE id=%s", [job['id']])
+            conn.execute("UPDATE jobs SET heartbeat_at=now()-interval '61 seconds' WHERE id=%s", [job['id']])
         with self.assertRaisesRegex(StoreError, 'conflict'):
             self.jobs.finish(job['id'], claim['attempt_id'], {})
         self.assertIsNone(self.jobs.claim('workflow'))
         self.assertEqual(self.jobs.get(self.pid, job['id'])['state'], 'failed')
 
-    def test_cancel_fences_late_finish(self):
+    def test_cancelling_a_queued_job_ends_it_and_a_running_one_stops_at_its_next_heartbeat(self):
+        queued = self.agent()
+        self.assertEqual(self.jobs.cancel(self.pid, queued['id'])['state'], 'cancelled')
         job = self.agent(); claim = self.jobs.claim('workflow')
-        self.assertEqual(self.jobs.cancel(self.pid, job['id'])['state'], 'cancelled')
+        self.assertEqual(self.jobs.cancel(self.pid, job['id'])['state'], 'running')  # the worker still owns it
+        self.assertFalse(self.jobs.heartbeat(job['id'], claim['attempt_id']))   # …and is told to stop
+        done = self.jobs.finish(job['id'], claim['attempt_id'], {'requests_dispatched': 2}, error='agent_budget_turns')
+        self.assertEqual(done['state'], 'cancelled')
         with self.assertRaisesRegex(StoreError, 'conflict'):
             self.jobs.finish(job['id'], claim['attempt_id'], {})
 
@@ -103,6 +107,8 @@ class VisualStoreTests(unittest.TestCase):
         claim = self.jobs.claim('workflow')
         self.assertEqual(self.agent()['id'], claim['id'])
         self.jobs.cancel(self.pid, job['id'])
+        self.assertEqual(self.agent()['id'], job['id'])  # still running until its worker stops
+        self.jobs.finish(job['id'], claim['attempt_id'], {'requests_dispatched': 1}, error='agent_internal')
         self.assertNotEqual(self.agent()['id'], job['id'])
 
     def test_snapshot_changes_before_finish_are_not_published(self):
@@ -120,20 +126,6 @@ class VisualStoreTests(unittest.TestCase):
         with self.assertRaisesRegex(StoreError, 'not_ready'):
             self.agent()
 
-    def test_template_flow_jobs_left_in_the_table_are_never_listed_read_or_claimed(self):
-        old = str(uuid.uuid4())
-        with self.store.connection() as conn:
-            for kind, lane_kind in (('generate', 'workflow'), ('preview', 'render')):
-                conn.execute('''INSERT INTO visual_jobs(id,project_id,scene_id,kind,input)
-                    VALUES (%s,%s,%s,%s,'{}')''', [old if kind == 'generate' else str(uuid.uuid4()), self.pid, self.sid, kind])
-        self.assertEqual(self.jobs.list(self.pid), [])
-        with self.assertRaisesRegex(StoreError, 'not_found'):
-            self.jobs.get_raw(self.pid, old)
-        self.assertIsNone(self.jobs.claim('workflow'))
-        self.assertIsNone(self.jobs.claim('render'))
-        with self.assertRaisesRegex(StoreError, 'not_ready'):
-            self.jobs.export(self.pid, 1, True)
-
     def test_course_list_counts_confirmed_chapters_and_shows_running_agent_jobs(self):
         row = lambda: next(p for p in self.store.list_projects() if p['id'] == self.pid)
         self.assertEqual((row()['confirmed_count'], row()['active_jobs']), (0, False))
@@ -141,11 +133,30 @@ class VisualStoreTests(unittest.TestCase):
         self.assertEqual((row()['active_job_kind'], row()['active_job_state']), ('agent', 'queued'))
         self.jobs.cancel(self.pid, job['id'])
         with self.store.connection() as conn:
-            conn.execute("""UPDATE visual_jobs SET state='succeeded',result='{"accepted":true}'::jsonb WHERE id=%s""", [job['id']])
+            conn.execute("""UPDATE jobs SET state='succeeded',result='{"accepted":true}'::jsonb WHERE id=%s""", [job['id']])
         self.assertEqual((row()['confirmed_count'], row()['active_jobs']), (1, False))
         with self.store.connection() as conn:  # a changed chapter no longer counts its old confirmation
             conn.execute("UPDATE scenes SET scene=jsonb_set(scene,'{duration_frames}','61') WHERE id=%s", [self.sid])
         self.assertEqual(row()['confirmed_count'], 0)
+
+    def test_voice_and_agent_jobs_share_the_workflow_slot_and_export_runs_on_render(self):
+        from services.projects.jobs import Jobs
+        voice = Jobs(self.store)
+        with self.store.connection() as conn:  # make the chapter voiceable again
+            conn.execute("UPDATE scenes SET state='needs_voice' WHERE id=%s", [self.sid])
+        voiced = voice.submit_voice(self.sid, 1)
+        with self.store.connection() as conn: conn.execute("UPDATE scenes SET state='ready' WHERE id=%s", [self.sid])
+        agent = self.agent()
+        first = voice.claim('workflow')
+        self.assertEqual(first['id'], voiced['id'])
+        self.assertIsNone(self.jobs.claim('workflow'))  # one running job per lane, whatever its kind
+        voice.fail(first['id'], first['attempt_id'], 'validation')
+        self.assertEqual(self.jobs.claim('workflow')['id'], agent['id'])
+        self.assertIsNone(voice.claim('workflow'))
+        with self.assertRaisesRegex(StoreError, 'not_found'):
+            voice.get(agent['id'])  # each module reads only its own kinds
+        with self.assertRaisesRegex(StoreError, 'not_found'):
+            self.jobs.get(self.pid, voiced['id'])
 
     def test_prepare_only_empty_and_preserves_all_narration(self):
         text = ('A sentence. ' * 150)
@@ -161,8 +172,9 @@ class VisualStoreTests(unittest.TestCase):
         prepared = self.jobs.prepare(project['id'], 1)
         scene = prepared['scenes'][0]
         with self.store.connection() as conn:
-            conn.execute('''INSERT INTO visual_jobs(id,project_id,scene_id,kind,input)
-                VALUES (%s,%s,%s,'agent','{}')''', [str(uuid.uuid4()), project['id'], scene['id']])
+            job_id = str(uuid.uuid4())
+            conn.execute('''INSERT INTO jobs(id,project_id,scene_id,kind,base_revision,input_hash,input)
+                VALUES (%s,%s,%s,'agent',1,%s,'{}')''', [job_id, project['id'], scene['id'], 'a' * 64])
         with self.assertRaisesRegex(StoreError, 'not_ready'):
             self.store.delete_project(project['id'], prepared['revision'], True)
         job = self.jobs.list(project['id'])[0]

@@ -23,19 +23,3 @@ ALTER TABLE projects ADD COLUMN IF NOT EXISTS source_text text NOT NULL DEFAULT 
 ALTER TABLE projects ADD COLUMN IF NOT EXISTS voice jsonb;
 ALTER TABLE scenes DROP CONSTRAINT IF EXISTS scenes_state_check;
 ALTER TABLE scenes ADD CONSTRAINT scenes_state_check CHECK (state IN ('ready', 'needs_voice', 'needs_timing'));
-CREATE TABLE IF NOT EXISTS scene_candidates (
-    id uuid PRIMARY KEY,
-    scene_id uuid NOT NULL REFERENCES scenes(id),
-    base_revision integer NOT NULL CHECK (base_revision > 0),
-    draft jsonb NOT NULL,
-    source_job_id uuid,
-    accepted boolean NOT NULL DEFAULT false
-);
-CREATE TABLE IF NOT EXISTS project_versions (
-    id uuid PRIMARY KEY,
-    project_id uuid NOT NULL REFERENCES projects(id),
-    revision integer NOT NULL CHECK (revision > 0),
-    dsl jsonb NOT NULL,
-    profile jsonb NOT NULL,
-    UNIQUE(project_id, revision)
-);

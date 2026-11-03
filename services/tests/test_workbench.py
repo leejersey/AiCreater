@@ -72,12 +72,11 @@ class WorkbenchTests(unittest.TestCase):
         from services import workbench
         self.w = workbench
 
-    def test_source_recovery_is_a_known_active_task(self):
+    def test_unknown_job_kinds_stop_the_launcher(self):
         db=MagicMock();db.__enter__.return_value=db
-        db.execute.return_value.fetchall.side_effect=[[],[('recover-source','running',1)]]
-        db.execute.return_value.fetchone.return_value=('aicreater.visual_jobs',)
-        with patch.object(self.w.psycopg,'connect',return_value=db):
-            self.assertEqual(self.w.activity({'DATABASE_URL':'postgresql://u:p@127.0.0.1:15432/db'}),[{'kind':'recover-source','state':'running','count':1}])
+        db.execute.return_value.fetchall.return_value=[('render','queued',1)]
+        with patch.object(self.w.psycopg,'connect',return_value=db), self.assertRaises(self.w.SafetyError):
+            self.w.activity({'DATABASE_URL':'postgresql://u:p@127.0.0.1:15432/db'})
 
     def test_trusted_configuration_rejects_public_or_symlink_files(self):
         with tempfile.TemporaryDirectory() as folder, patch.object(self.w, 'ROOT', Path(folder)):
@@ -91,21 +90,12 @@ class WorkbenchTests(unittest.TestCase):
 
     def test_activity_uses_readonly_bounded_local_connection(self):
         conn=MagicMock(); conn.__enter__.return_value=conn
-        conn.execute.return_value.fetchall.return_value=[('render','queued',2)]
-        conn.execute.return_value.fetchone.return_value=(None,)
+        conn.execute.return_value.fetchall.return_value=[('agent','running',1),('voice','queued',2)]
         with patch.object(self.w.psycopg,'connect',return_value=conn) as connect:
-            self.assertEqual(self.w.activity({'DATABASE_URL':'postgresql://u:private@127.0.0.1:15432/db'}),[{'kind':'render','state':'queued','count':2}])
+            self.assertEqual(self.w.activity({'DATABASE_URL':'postgresql://u:private@127.0.0.1:15432/db'}),[{'kind':'agent','state':'running','count':1},{'kind':'voice','state':'queued','count':2}])
         self.assertIn('default_transaction_read_only=on',connect.call_args.kwargs['options'])
         self.assertIn('statement_timeout',connect.call_args.kwargs['options'])
         self.assertLessEqual(connect.call_args.kwargs['connect_timeout'],5)
-
-    def test_activity_includes_visual_tasks_before_shutdown(self):
-        conn=MagicMock();conn.__enter__.return_value=conn
-        conn.execute.side_effect=[MagicMock(fetchall=lambda:[]),MagicMock(fetchone=lambda:('aicreater.visual_jobs',)),
-                                  MagicMock(fetchall=lambda:[('preview','running',1)])]
-        with patch.object(self.w.psycopg,'connect',return_value=conn):
-            self.assertEqual(self.w.activity({'DATABASE_URL':'postgresql://u:p@127.0.0.1:15432/db'}),
-                             [{'kind':'preview','state':'running','count':1}])
 
     def test_remote_database_is_rejected_without_connecting(self):
         with patch.object(self.w.psycopg,'connect') as connect:

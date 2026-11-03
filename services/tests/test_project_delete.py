@@ -33,14 +33,6 @@ class ProjectDeleteStoreTests(ProjectFixture, unittest.TestCase):
                     '(SELECT id FROM jobs WHERE project_id=%s)',
                     [project_id],
                 ).fetchone()['n'],
-                'scene_candidates': conn.execute(
-                    'SELECT count(*) AS n FROM scene_candidates WHERE scene_id IN '
-                    '(SELECT id FROM scenes WHERE project_id=%s)',
-                    [project_id],
-                ).fetchone()['n'],
-                'project_versions': conn.execute(
-                    'SELECT count(*) AS n FROM project_versions WHERE project_id=%s', [project_id]
-                ).fetchone()['n'],
             }
 
     def test_delete_rejects_unconfirmed_and_stale_revision(self):

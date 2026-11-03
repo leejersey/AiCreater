@@ -69,14 +69,14 @@ def migrate_chapters(conn):
         normalized = chapters.normalize(row['scene'])
         if normalized != row['scene']:
             conn.execute('UPDATE scenes SET scene=%s WHERE id=%s', [Jsonb(normalized), row['id']]); counts['scenes'] += 1
-    for row in conn.execute("SELECT id,kind,input FROM visual_jobs WHERE kind IN ('agent','export')").fetchall():
+    for row in conn.execute("SELECT id,kind,input FROM jobs WHERE kind IN ('agent','export')").fetchall():
         data = copy.deepcopy(row['input'])
         if row['kind'] == 'agent' and isinstance(data.get('scene'), dict):
             data['scene'] = chapters.normalize(data['scene'])
         for chapter in data.get('chapters', []) if row['kind'] == 'export' else []:
             if isinstance(chapter, dict) and isinstance(chapter.get('scene'), dict): chapter['scene'] = chapters.normalize(chapter['scene'])
         if data != row['input']:
-            conn.execute('UPDATE visual_jobs SET input=%s WHERE id=%s', [Jsonb(data), row['id']]); counts[row['kind'] + '_jobs'] += 1
+            conn.execute('UPDATE jobs SET input=%s WHERE id=%s', [Jsonb(data), row['id']]); counts[row['kind'] + '_jobs'] += 1
     return counts
 
 
@@ -108,7 +108,6 @@ class Store:
             conn.execute((Path(__file__).with_name('schema.sql')).read_text())
             conn.execute((Path(__file__).with_name('jobs.sql')).read_text())
             conn.execute((Path(__file__).parents[1] / 'accounts/schema.sql').read_text())
-            conn.execute((Path(__file__).parents[1] / 'visual/schema.sql').read_text())
             migrate_chapters(conn)
 
     def _asset_path(self, key):
@@ -158,13 +157,11 @@ class Store:
                 (SELECT count(*) FROM scenes WHERE project_id=p.id AND deleted_at IS NULL AND state='needs_voice') AS needs_voice,
                 (SELECT count(*) FROM scenes WHERE project_id=p.id AND deleted_at IS NULL AND state='needs_timing') AS needs_timing,
                 (SELECT count(*) FROM scenes s WHERE s.project_id=p.id AND s.deleted_at IS NULL AND EXISTS(
-                    SELECT 1 FROM visual_jobs v WHERE v.scene_id=s.id AND v.kind='agent' AND v.state='succeeded'
+                    SELECT 1 FROM jobs v WHERE v.scene_id=s.id AND v.kind='agent' AND v.state='succeeded'
                     AND v.result->'accepted'='true'::jsonb AND v.input->'scene'=s.scene)) AS confirmed_count,
                 a.kind AS active_job_kind, a.state AS active_job_state, a.kind IS NOT NULL AS active_jobs
                 FROM projects p LEFT JOIN LATERAL (
-                    SELECT kind,state,created_at,id FROM jobs WHERE project_id=p.id AND state IN ('queued','running') AND kind IN ('voice','timing')
-                    UNION ALL
-                    SELECT kind,state,created_at,id FROM visual_jobs WHERE project_id=p.id AND state IN ('queued','running') AND kind IN ('agent','export')
+                    SELECT kind,state FROM jobs WHERE project_id=p.id AND state IN ('queued','running')
                     ORDER BY created_at DESC NULLS LAST, id DESC LIMIT 1) a ON true''' + (' WHERE p.owner_id=%s' if owner_id else '') +
                 ' ORDER BY p.updated_at DESC NULLS LAST,p.id DESC LIMIT 100', [identifier(owner_id)] if owner_id else []).fetchall()
             return [{**row, 'id': str(row['id']),'updated_at':row['updated_at'].isoformat() if row['updated_at'] else None} for row in rows]
@@ -258,17 +255,9 @@ class Store:
                     "SELECT id FROM jobs WHERE project_id=%s AND state IN ('queued','running') LIMIT 1",
                     [project['id']]).fetchone():
                 raise StoreError('not_ready', 'Wait for project jobs to finish or cancel them first')
-            if conn.execute(
-                    "SELECT id FROM visual_jobs WHERE project_id=%s AND state IN ('queued','running') LIMIT 1",
-                    [project['id']]).fetchone():
-                raise StoreError('not_ready', 'Wait for visual jobs to finish or cancel them first')
             pid = project['id']
-            conn.execute('DELETE FROM visual_jobs WHERE project_id=%s',[pid])
-            conn.execute('''DELETE FROM scene_candidates WHERE scene_id IN
-                (SELECT id FROM scenes WHERE project_id=%s)''', [pid])
             conn.execute('''DELETE FROM job_attempts WHERE job_id IN
                 (SELECT id FROM jobs WHERE project_id=%s)''', [pid])
             conn.execute('DELETE FROM jobs WHERE project_id=%s', [pid])
             conn.execute('DELETE FROM scenes WHERE project_id=%s', [pid])
-            conn.execute('DELETE FROM project_versions WHERE project_id=%s', [pid])
             conn.execute('DELETE FROM projects WHERE id=%s', [pid])

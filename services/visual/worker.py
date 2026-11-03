@@ -10,7 +10,7 @@ import subprocess
 import time
 
 from services.projects.store import ROOT, StoreError, identifier
-from services.visual.store import LEASE_SECONDS, DEFAULT_LEASE_SECONDS
+from services.projects.leases import LEASE_SECONDS
 
 WORK_ROOT=ROOT/'output/visual-workbench'
 PUBLIC_FILE=re.compile(r'(?:source\.txt|video\.mp4|video\.srt|stills/frame-\d+\.png)')
@@ -180,7 +180,7 @@ def run_once(jobs,lane='workflow',*,timeout=None,heartbeat_interval=5,launcher=N
             process=(launcher or subprocess.Popen)(command,cwd=ROOT,env=child_environment(job['kind']),stdin=subprocess.DEVNULL,stdout=log,stderr=log,start_new_session=True)
             started=time.monotonic();beat=0
             # Stop the child 60 s before its lease runs out, so the job is finished here rather than expired by recovery.
-            limit=timeout or LEASE_SECONDS.get(job['kind'],DEFAULT_LEASE_SECONDS)-60
+            limit=timeout or LEASE_SECONDS[job['kind']]-60
             while process.poll() is None:
                 now=time.monotonic()
                 if now-started>limit or log.tell()>2*1024**2:raise RuntimeError('Execution limit')

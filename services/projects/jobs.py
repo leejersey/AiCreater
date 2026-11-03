@@ -1,4 +1,4 @@
-"""Durable voice and timing job leases; no executor and no publication before attempt fencing."""
+"""Voice and timing jobs: inputs, failures, publication and retry. Leases are shared with Agent jobs (leases.py)."""
 import copy
 import hashlib
 import json
@@ -8,6 +8,7 @@ import uuid
 from psycopg.types.json import Jsonb
 
 from services import chapters
+from services.projects import leases
 from services.projects.store import StoreError, identifier, revision, unicode_valid
 
 
@@ -128,13 +129,7 @@ class Jobs:
             payload = self._timing_payload(project, row)
             return self._submit(conn, project['id'], scene_id, base_revision, payload)
 
-    @staticmethod
-    def _terminal(conn, job, state, error=None):
-        conn.execute('UPDATE jobs SET state=%s,error=%s,ended_at=now() WHERE id=%s',
-                     [state, Jsonb(error) if error else None, job['id']])
-        if job['attempt_id']:
-            conn.execute("UPDATE job_attempts SET state=%s,error=%s,ended_at=now() WHERE id=%s AND state='running'", 
-                         [state, Jsonb(error) if error else None, job['attempt_id']])
+    _terminal = staticmethod(leases.terminal)
 
     @staticmethod
     def _error(job, code):
@@ -144,51 +139,18 @@ class Jobs:
             error['message'] = 'Local timing worker heartbeat expired; explicit retry does not call a provider'
         return error
 
-    def _recover(self, conn):
-        rows = conn.execute('''SELECT *, started_at <= now()-interval '900 seconds' AS timed_out FROM jobs
-            WHERE (state='running' AND heartbeat_at <= now()-interval '60 seconds')
-                OR (state IN ('running','queued') AND started_at <= now()-interval '900 seconds') ORDER BY id FOR UPDATE''').fetchall()
-        for job in rows:
-            if job['cancel_requested']: self._terminal(conn, job, 'cancelled')
-            else:
-                code = 'timeout' if job['timed_out'] else 'worker_lost'
-                error = self._error(job, code)
-                if job['timed_out']: error['retryable'] = False
-                self._terminal(conn, job, 'failed', error)
-        return len(rows)
-
     def recover(self):
-        with self.store.connection() as conn: return self._recover(conn)
+        with self.store.connection() as conn: return leases.recover(conn)
 
     def claim(self, lane=None):
+        from services.projects.usage import initial_usage
         if lane not in [None, 'workflow', 'render']: raise StoreError('validation', 'Invalid execution lane')
-        # Voice and timing run on the workflow lane; template-flow kinds left in the table are never claimed.
-        if lane == 'render': return None
-        clause = " AND kind IN ('voice','timing')"
         with self.store.connection() as conn:
-            # Serialize claims; each production lane has its own single running slot.
-            conn.execute("SELECT pg_advisory_xact_lock(hashtext('aicreater.workflow'))")
-            self._recover(conn)
-            if conn.execute("SELECT id FROM jobs WHERE state='running'" + clause + ' LIMIT 1').fetchone(): return None
-            row = conn.execute("SELECT * FROM jobs WHERE state='queued' AND available_at<=now()" + clause +
-                               ' ORDER BY created_at,id LIMIT 1 FOR UPDATE').fetchone()
-            if not row: return None
-            attempt_id = str(uuid.uuid4())
-            from services.projects.usage import initial_usage
-            conn.execute('''INSERT INTO job_attempts (id,job_id,number,state,usage) VALUES (%s,%s,%s,'running',%s)''',
-                         [attempt_id, row['id'], row['attempts'] + 1, Jsonb(initial_usage(row['input']))])
-            conn.execute('''UPDATE jobs SET state='running',attempts=attempts+1,attempt_id=%s,
-                started_at=COALESCE(started_at,now()),heartbeat_at=now(),stage=CASE WHEN kind='timing' THEN 'timing' ELSE 'tts' END,
-                progress=0,error=NULL,ended_at=NULL WHERE id=%s''',
-                         [attempt_id, row['id']])
-            return self._read(conn, str(row['id']))
+            return leases.claim(conn, lane or 'workflow', ('voice', 'timing'), initial_usage)
 
     def _active(self, conn, job_id, attempt_id):
-        job = self._read(conn, job_id, lock=True)
-        lease = conn.execute("""SELECT heartbeat_at > now()-interval '60 seconds'
-            AND started_at > now()-interval '900 seconds' AS valid FROM jobs WHERE id=%s""", [job['id']]).fetchone()
-        if job['state'] != 'running' or job['attempt_id'] != identifier(attempt_id) or not lease['valid']:
-            raise StoreError('conflict', 'Attempt is terminal, expired or superseded')
+        job = leases.active(conn, job_id, attempt_id)
+        if job is None or job['kind'] not in ('voice', 'timing'): raise StoreError('conflict', 'Attempt is terminal, expired or superseded')
         return job
 
     def heartbeat(self, job_id, attempt_id, stage='tts', progress=0):
