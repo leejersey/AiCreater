@@ -6,7 +6,7 @@ from dotenv import load_dotenv
 from services.accounts.auth import Accounts
 from services.projects.manage import profile
 from services.projects.store import Store, StoreError
-from services.workflow.storyboard import ROOT
+from services.projects.store import ROOT
 
 
 def main():

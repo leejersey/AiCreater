@@ -1,5 +1,4 @@
 import base64
-import json
 import subprocess
 import tempfile
 import unittest
@@ -7,68 +6,54 @@ from pathlib import Path
 
 import httpx
 
+from services import chapters
 from services.tests.test_generation import outline, settings, tts_response
-from services.workflow.generate import generate_project
 from services.workflow.providers import ProviderError
-from services.workflow.storyboard import validator
+from services.workflow.voice import voice_chapter
+
+
+def tone(path, seconds=1):
+    subprocess.run(['ffmpeg', '-v', 'error', '-f', 'lavfi', '-i', f'sine=frequency=440:duration={seconds}', '-ar', '24000', str(path)], check=True)
+    return path.read_bytes()
 
 
 class PipelineTests(unittest.TestCase):
-    def test_voice_pipeline_outputs_real_wav_and_valid_dsl(self):
+    def test_voice_produces_a_real_wav_and_a_valid_voiced_chapter(self):
         with tempfile.TemporaryDirectory() as temp:
-            root = Path(temp)
-            source = root / 'source.wav'
-            subprocess.run(['ffmpeg', '-v', 'error', '-f', 'lavfi', '-i',
-                            'sine=frequency=440:duration=1', '-ar', '24000', str(source)], check=True)
-            audio = source.read_bytes()
-            draft = outline()
-            draft['scenes'][0]['id'] = 's' * 80  # Longest schema-valid scene ID must remain renderable.
+            root = Path(temp); public = root / 'public'; public.mkdir()
+            audio = tone(root / 'source.wav')
+            scene = outline()['scenes'][0]; scene['id'] = 's' * 80  # longest valid chapter id
             def handler(request):
                 self.assertNotEqual(request.url.host, 'api.deepseek.com')
                 return tts_response({'code': 0, 'data': base64.b64encode(audio).decode(),
                     'sentence': {'words': [{'word': '规则匹配', 'startTime': 0, 'endTime': 0.9}]}})
-            destination = root / 'project.json'
-            public = root / 'public'; public.mkdir()
             with httpx.Client(transport=httpx.MockTransport(handler)) as client:
-                result = generate_project('规则匹配。', destination, public, settings(), client, draft)
-            self.assertEqual(validator.validate_project(result), [])
-            self.assertEqual(json.loads(destination.read_text()), result)
-            asset = result['assets'][0]
+                result = voice_chapter(scene, public, settings(), client)
+            [asset], [voiced] = result['assets'], result['scenes']
+            chapters.validate(voiced, result['assets'])
+            self.assertEqual(set(voiced), {'id', 'narration', 'duration_frames', 'captions'})
             self.assertTrue((public / asset['storage_key']).is_file())
+            self.assertTrue((public / asset['storage_key']).with_name(scene['id'] + '-words.json').is_file())
             self.assertEqual(asset['duration_ms'], 1000)
-            # Preserving outputs must fail BEFORE another paid provider request.
-            with httpx.Client(transport=httpx.MockTransport(lambda r: self.fail('Provider called'))) as client:
-                with self.assertRaises(ProviderError):
-                    generate_project('规则匹配。', destination, public, settings(), client, draft)
 
-    def test_supplied_voice_draft_preserves_spaces_without_calling_llm(self):
+    def test_spaces_in_the_narration_are_kept(self):
         with tempfile.TemporaryDirectory() as temp:
             root = Path(temp); public = root / 'public'; public.mkdir()
-            audio_file = root / 'sound.wav'
-            subprocess.run(['ffmpeg', '-v', 'error', '-f', 'lavfi', '-i', 'sine=frequency=440:duration=1', str(audio_file)], check=True)
-            text = ' 规则匹配。 '
+            audio = tone(root / 'sound.wav'); text = ' 规则匹配。 '
             def handler(request):
-                self.assertNotEqual(request.url.host, 'api.deepseek.com')
-                return tts_response({'code': 0, 'data': base64.b64encode(audio_file.read_bytes()).decode(),
+                return tts_response({'code': 0, 'data': base64.b64encode(audio).decode(),
                     'sentence': {'words': [{'word': '规则匹配', 'startTime': 0, 'endTime': 0.9}]}})
             with httpx.Client(transport=httpx.MockTransport(handler)) as client:
-                result = generate_project(text, root / 'project.json', public, settings(), client, draft=outline(text))
+                result = voice_chapter(outline(text)['scenes'][0], public, settings(), client)
             self.assertEqual(result['scenes'][0]['narration']['text'], text)
-            self.assertEqual(validator.validate_project(result), [])
 
-    def test_failed_alignment_keeps_audio_but_does_not_publish_dsl(self):
+    def test_failed_alignment_keeps_the_audio_but_publishes_nothing(self):
         with tempfile.TemporaryDirectory() as temp:
             root = Path(temp); public = root / 'public'; public.mkdir()
-            audio_file = root / 'sound.wav'
-            subprocess.run(['ffmpeg', '-v', 'error', '-f', 'lavfi', '-i',
-                            'sine=frequency=440:duration=1', str(audio_file)], check=True)
-            def handler(request):
-                return tts_response({'code': 0, 'data': base64.b64encode(audio_file.read_bytes()).decode()})
-            destination = root / 'project.json'
-            with httpx.Client(transport=httpx.MockTransport(handler)) as client:
+            audio = tone(root / 'sound.wav')
+            with httpx.Client(transport=httpx.MockTransport(lambda r: tts_response({'code': 0, 'data': base64.b64encode(audio).decode()}))) as client:
                 with self.assertRaisesRegex(ProviderError, 'alignment'):
-                    generate_project('规则匹配。', destination, public, settings(), client, outline())
-            self.assertFalse(destination.exists())
+                    voice_chapter(outline()['scenes'][0], public, settings(), client)
             self.assertTrue(list(public.glob('generated/*/*.wav')))
 
     def test_process_exit_race_still_reaps_child(self):
@@ -80,13 +65,13 @@ class PipelineTests(unittest.TestCase):
             _stop_process(process)
         process.wait.assert_called_once()
 
-    def test_invalid_script_rejected_before_requests(self):
+    def test_invalid_narration_is_rejected_before_any_request(self):
         with tempfile.TemporaryDirectory() as temp:
             with httpx.Client(transport=httpx.MockTransport(lambda r: self.fail('Provider called'))) as client:
                 for text in ['', ' ' * 5, '字' * 4001]:
                     with self.subTest(text_length=len(text)):
                         with self.assertRaises(ProviderError):
-                            generate_project(text, Path(temp) / 'result.json', Path(temp), settings(), client, outline(text or '规则匹配。'))
+                            voice_chapter(chapters.chapter(text, 'scene_1'), Path(temp), settings(), client)
 
 
 if __name__ == '__main__': unittest.main()

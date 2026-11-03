@@ -8,14 +8,11 @@ import uuid
 from dataclasses import dataclass
 
 import httpx
-from services.workflow.schema_diagnostics import safe_schema_errors, safe_cue_error
 
 
 class ProviderError(ValueError):
-    def __init__(self, stage, code, message, schema_errors=None, cue_error=None):
+    def __init__(self, stage, code, message):
         self.stage, self.code = stage, code
-        self.schema_errors = safe_schema_errors(schema_errors)
-        self.cue_error = safe_cue_error(cue_error) if stage == 'storyboard' and code == 'invalid_cue' else None
         super().__init__(f'{stage}: {code}: {message}')
 
 

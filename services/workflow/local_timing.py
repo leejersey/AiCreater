@@ -4,10 +4,10 @@ import hashlib
 import json
 from pathlib import Path
 
-from services.tts.timing import align_words, time_scene
-from services.workflow.generate import _duration
+from services import chapters
+from services.tts.timing import align_words
 from services.workflow.providers import ProviderError
-from services.workflow.storyboard import validator
+from services.workflow.voice import _duration
 
 
 def _read(public, key, limit):
@@ -51,9 +51,9 @@ def timing_document(payload, public):
         duration = asset['duration_ms']
     except (ValueError, TypeError, ProviderError):
         raise ProviderError('timing', 'cache_unavailable', 'Local timing cache unavailable') from None
-    segments = align_words(payload['scene']['narration']['text'], words, duration)
-    scene = time_scene(payload['scene'], asset['id'], duration, segments)
-    document = {**copy.deepcopy(payload['config']), 'assets': [copy.deepcopy(asset)], 'scenes': [scene]}
-    if validator.validate_project(document):
-        raise ProviderError('timing', 'validation', 'Local timing validation failed')
-    return document
+    scene = chapters.unvoiced(payload['scene'])
+    segments = align_words(scene['narration']['text'], words, duration)
+    voiced = chapters.time_chapter(scene, asset['id'], duration, segments)
+    try: chapters.validate(voiced, [asset])
+    except chapters.ChapterError: raise ProviderError('timing', 'validation', 'Local timing validation failed') from None
+    return {'assets': [copy.deepcopy(asset)], 'scenes': [voiced]}

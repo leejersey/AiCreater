@@ -1,4 +1,3 @@
-import copy
 from contextlib import ExitStack
 import json
 import os
@@ -8,11 +7,6 @@ from fastapi.testclient import TestClient
 
 from services.tests.test_projects import ProjectFixture
 
-
-def draft_of(scene):
-    draft = {k: copy.deepcopy(v) for k, v in scene.items() if k in ['id', 'type', 'elements', 'edges', 'code']}
-    draft['narration'] = {'text': scene['narration']['text']}
-    return draft
 
 
 @unittest.skipUnless(os.environ.get('TEST_DATABASE_URL'), 'Use run_project_tests.py for real PostgreSQL')
@@ -80,11 +74,12 @@ class ApiTests(ProjectFixture, unittest.TestCase):
 
     def test_local_timing_endpoint_is_separate_and_rejects_missing_cache(self):
         row=self.project['scenes'][0];url='/api/scenes/'+row['id']+'/timing'
+        scene=row['scene'];asset=next(a for a in self.dsl['assets'] if a['id']==scene['narration']['audio_asset_id'])
+        path=self.public/asset['storage_key'];path.with_name(path.stem+'-words.json').unlink()  # the fixture writes a cache; start without it
         response=self.client.post(url,json={'expected_revision':1})
         self.assertEqual(response.status_code,422);self.assertEqual(response.json()['code'],'timing_cache')
         self.assertEqual(self.client.post(url,json={'expected_revision':1,'words_checksum':'forged'}).status_code,422)
-        scene=row['scene'];asset=next(a for a in self.dsl['assets'] if a['id']==scene['narration']['audio_asset_id'])
-        path=self.public/asset['storage_key'];path.with_name(path.stem+'-words.json').write_text(json.dumps([{'word':scene['narration']['text'],'startTime':0,'endTime':asset['duration_ms']/1000}]))
+        path.with_name(path.stem+'-words.json').write_text(json.dumps([{'word':scene['narration']['text'],'startTime':0,'endTime':asset['duration_ms']/1000}]))
         response=self.client.post(url,json={'expected_revision':1})
         self.assertEqual(response.status_code,202);self.assertEqual(response.json()['kind'],'timing');self.assertNotIn('input',response.json())
         self.client.app.state.jobs.cancel(response.json()['job_id'])
@@ -193,7 +188,7 @@ class ApiTests(ProjectFixture, unittest.TestCase):
         self.assertEqual(submitted.status_code, 202)
         self.assertEqual(submitted.json()['kind'], 'voice')
         self.assertEqual(submitted.json()['stage'], 'tts')
-        document = dict(self.dsl, scenes=self.dsl['scenes'][:1])
+        document = self.voice_document()
         result = run_once(self.client.app.state.jobs, [sys.executable, '-c', 'print(' + repr(json.dumps({'document': document})) + ')'])
         self.assertEqual(result['state'], 'succeeded')
         self.assertTrue(result['result']['attached'])

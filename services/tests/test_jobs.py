@@ -2,7 +2,6 @@ import copy
 import json
 import os
 import unittest
-from concurrent.futures import ThreadPoolExecutor
 
 from services.tests.test_projects import ProjectFixture
 from services.projects.store import StoreError
@@ -50,7 +49,7 @@ class JobTests(ProjectFixture, unittest.TestCase):
     def test_project_voice_old_job_cannot_overwrite_and_new_voice_can_publish(self):
         old=self.jobs.submit_voice(self.scene_id,1);attempt=self.jobs.claim()
         changed=self.store.set_voice(self.project['id'],1,'voice_A')
-        document={**copy.deepcopy(self.dsl),'scenes':[copy.deepcopy(self.dsl['scenes'][0])]}
+        document=self.voice_document()
         stale=self.jobs.publish_voice(old['id'],attempt['attempt_id'],document)
         self.assertFalse(stale['result']['attached']);self.assertEqual(self.store.get_project(self.project['id']),changed)
         new=self.jobs.submit_voice(self.scene_id,1);attempt=self.jobs.claim()
@@ -82,8 +81,7 @@ class JobTests(ProjectFixture, unittest.TestCase):
     def test_voice_invalid_assets_cancel_and_wrong_scene_cannot_publish(self):
         job = self.jobs.submit_voice(self.scene_id, 1)
         attempt = self.jobs.claim()
-        document = copy.deepcopy(self.dsl)
-        document['scenes'] = document['scenes'][:1]
+        document = self.voice_document()
         wrong = copy.deepcopy(document)
         wrong['scenes'][0]['id'] = 'wrong_scene'
         with self.assertRaises(StoreError): self.jobs.publish_voice(job['id'], attempt['attempt_id'], wrong)
@@ -93,9 +91,3 @@ class JobTests(ProjectFixture, unittest.TestCase):
         self.jobs.cancel(job['id'])
         self.assertEqual(self.jobs.publish_voice(job['id'], attempt['attempt_id'], document)['state'], 'cancelled')
         self.assertEqual(self.store.get_project(self.project['id']), self.project)
-
-    def draft(self):
-        scene = self.project['scenes'][0]['scene']
-        draft = {k: copy.deepcopy(v) for k, v in scene.items() if k in ['id', 'type', 'elements', 'edges', 'code']}
-        draft['narration'] = {'text': scene['narration']['text']}
-        return draft

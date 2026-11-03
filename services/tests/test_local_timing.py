@@ -22,8 +22,7 @@ class LocalTimingTests(unittest.TestCase):
         self.asset = {'id':'audio_1','type':'audio','storage_key':'generated/cache/scene.wav',
                       'checksum':hashlib.sha256(self.audio.read_bytes()).hexdigest(),'duration_ms':3000}
         self.payload = {'scene':outline()['scenes'][0], 'asset':self.asset,
-                        'words_checksum':hashlib.sha256(self.words.read_bytes()).hexdigest(),
-                        'config':{'schema_version':'1.0','video_config':{'width':1920,'height':1080,'fps':30,'language':'zh-CN'},'theme':'tech_explainer'}}
+                        'words_checksum':hashlib.sha256(self.words.read_bytes()).hexdigest()}
 
     def test_recompute_without_http_or_tts_preserves_audio_and_source(self):
         from services.workflow.local_timing import timing_document
@@ -33,13 +32,11 @@ class LocalTimingTests(unittest.TestCase):
         self.assertEqual(result['scenes'][0]['narration']['text'],'规则匹配。')
         self.assertEqual(result['scenes'][0]['captions'][-1]['end_frame'],96)
 
-    def test_local_timing_preserves_explicit_topic_and_audio(self):
+    def test_a_chapter_frozen_as_an_old_template_scene_is_retimed_as_a_chapter(self):
         from services.workflow.local_timing import timing_document
-        self.payload['scene']['elements'][0]['role']='topic'
-        result=timing_document(self.payload,self.public);scene=result['scenes'][0]
-        self.assertEqual(scene['elements'][0]['role'],'topic')
-        self.assertEqual(scene['animations'][0]['start_frame'],6);self.assertEqual(scene['animations'][0]['duration_frames'],1)
-        self.assertEqual(result['assets'],[self.asset])
+        self.payload['scene']={**self.payload['scene'],'type':'card_sequence','elements':[{'id':'a','content':'规则','cue':{'text_start':0,'text_end':4}}]}
+        scene=timing_document(self.payload,self.public)['scenes'][0]
+        self.assertEqual(set(scene),{'id','narration','duration_frames','captions'})
 
     def test_legacy_millisecond_rounding_keeps_frozen_asset_duration(self):
         from services.workflow.local_timing import timing_document

@@ -33,14 +33,12 @@ def child():
             print(json.dumps({'document': document}, ensure_ascii=False))
             return
         if payload['kind'] == 'voice':
-            from services.workflow.generate import generate_project
+            from services.workflow.voice import voice_chapter
             voice = payload['profile']['voice']
             settings = Settings.from_env({**os.environ, 'DEEPSEEK_API_KEY': 'unused-for-voice',
                 'VOLCENGINE_RESOURCE_ID': voice['resource_id'], 'VOLCENGINE_SPEAKER': voice['speaker']})
-            draft = {'scenes': [payload['scene']]}
-            with tempfile.TemporaryDirectory(prefix='aicreater-voice-') as folder, httpx.Client(timeout=120) as client:
-                document = generate_project(payload['scene']['narration']['text'], Path(folder) / 'project.json',
-                                            Path(payload['public_root']), settings, client, draft=draft, **usage_options)
+            with httpx.Client(timeout=120) as client:
+                document = voice_chapter(payload['scene'], Path(payload['public_root']), settings, client, **usage_options)
             print(json.dumps({'document': document}, ensure_ascii=False))
             return
         raise ProviderError('worker', 'validation', 'Unsupported job kind')

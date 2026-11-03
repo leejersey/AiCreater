@@ -219,7 +219,7 @@ npm run test:workflow    # Python 后端测试（未设置 TEST_DATABASE_URL 时
 python3 services/tests/run_project_tests.py services.tests.test_api …   # 在一次性 Docker PostgreSQL 中跑指定模块
 ```
 
-`services/tests/test_projects.py` 的夹具读取本机的 `examples/demo.json` 及其配音文件（不在仓库中）；缺少时这些数据库用例会失败。
+数据库用例的夹具用 ffmpeg 现场生成短音频与字级时间，不依赖本机文件。
 
 ---
 
@@ -277,7 +277,6 @@ apps/
 packages/
   scene-agent/             Scene Agent：模型适配层、工具、循环与关卡、skill、评测用例、渲染
   custom-scenes/           场景源码约定、cue 解析、类型检查、几何审计、字幕与整课渲染宿主
-  video-schema/            章节数据 JSON Schema 与校验（配音任务按它校验章节）
 
 services/
   api/                     FastAPI 后端（账号、项目、配音、视觉任务路由）
@@ -286,13 +285,12 @@ services/
   visual/                  Agent 与整课导出任务的存储与 Worker
   workflow/                Celery 调度、文稿生成、配音与本地对齐
   tts/                     火山 TTS 2.0 配音与字级时间戳
+  chapters.py              章节数据结构：口播、配音音频、时长与实测字幕的校验和计时
   workbench.py             `npm run workbench` 的 API + 网页启动器
 
-scripts/                   Scene Agent 命令行与 Worker 入口、媒体校验、类型生成、本机回环
+scripts/                   Scene Agent 命令行与 Worker 入口、配音音频校验、本机回环
 docs/                      Scene Agent 设计、本地运维、依赖许可，及仍在使用的功能的设计记录
 ```
-
-修改 Schema 后运行 `npm run schema:types` 重新生成类型，不要手动修改 `packages/video-schema/src/types.ts`。
 
 ---
 

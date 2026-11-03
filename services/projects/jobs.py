@@ -7,6 +7,7 @@ import uuid
 
 from psycopg.types.json import Jsonb
 
+from services import chapters
 from services.projects.store import StoreError, identifier, revision, unicode_valid
 
 
@@ -81,13 +82,8 @@ class Jobs:
 
     @staticmethod
     def _draft_scene(scene):
-        # shortcut: image transformations await batch 2; never silently discard a binding.
-        if scene.get('images'): raise StoreError('validation', 'Teaching images currently support preview/export, not voice or timing changes')
-        result = {k: copy.deepcopy(v) for k, v in scene.items() if k in ['id', 'type', 'elements', 'edges', 'code', 'structure', 'timeline', 'chart', 'motif', 'visual_actions', 'dialogue', 'process', 'funnel', 'camera', 'vector', 'section']}
-        for action in result.get('visual_actions', []):
-            action.pop('start_frame', None); action.pop('duration_frames', None)
-        result['narration'] = {'text': scene['narration']['text']}
-        return result
+        # Older jobs froze template scenes; compare chapters by what voicing needs.
+        return chapters.unvoiced(chapters.normalize(scene))
 
     def submit_voice(self, scene_id, base_revision):
         revision(base_revision)
@@ -116,7 +112,6 @@ class Jobs:
         except ProviderError: raise StoreError('timing_cache', ERRORS['timing_cache']) from None
         return {'kind': 'timing', 'scene_id': row['id'], 'base_revision': row['revision'],
                 'scene': self._draft_scene(row['scene']), 'asset': copy.deepcopy(asset), 'words_checksum': checksum,
-                'config': {k: copy.deepcopy(v) for k, v in project['config'].items() if k not in ['assets','visual_style','teaching_style','manuscript','image_plans']},
                 'profile': self.store.profile_for(project), 'protocol_version': 'local-timing:1'}
 
     def submit_timing(self, scene_id, base_revision):
@@ -214,15 +209,18 @@ class Jobs:
             return self._read(conn, job['id'])
 
     def publish_voice(self, job_id, attempt_id, document, callback=None):
-        from services.projects.store import final_valid, draft_valid
         initial = self.get(job_id)
         if initial['kind'] not in ['voice', 'timing']: raise StoreError('validation', 'Expected scene media job')
         if initial['kind'] == 'timing' and document.get('assets') != [initial['input']['asset']]:
             raise StoreError('validation', 'Local timing must preserve the frozen audio asset')
-        final_valid(document)
-        draft_valid(document)
-        if len(document['scenes']) != 1 or self._draft_scene(document['scenes'][0]) != initial['input']['scene']:
-            raise StoreError('validation', 'Voice must preserve the frozen teaching scene')
+        if (not isinstance(document, dict) or set(document) != {'assets', 'scenes'} or not isinstance(document['assets'], list) or
+                len(document['assets']) != 1 or not isinstance(document['scenes'], list) or len(document['scenes']) != 1):
+            raise StoreError('validation', 'Expected one voiced chapter and its audio')
+        unicode_valid(document)
+        try: chapters.validate(document['scenes'][0], document['assets'])
+        except chapters.ChapterError: raise StoreError('validation', 'Invalid voiced chapter') from None
+        if self._draft_scene(document['scenes'][0]) != self._draft_scene(initial['input']['scene']):
+            raise StoreError('validation', 'Voice must preserve the frozen chapter')
         self.store._assets(document, callback, local_only=initial['kind'] == 'timing')
         with self.store.connection() as conn:
             project = self.store._read(conn, initial['project_id'], lock=True)

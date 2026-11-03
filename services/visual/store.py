@@ -5,7 +5,8 @@ import uuid
 
 from psycopg.types.json import Jsonb
 
-from services.projects.store import StoreError, draft_valid, identifier, revision, unicode_valid
+from services import chapters
+from services.projects.store import StoreError, identifier, revision, unicode_valid
 from services.visual.contract import measured_input, partition_narration
 
 
@@ -46,13 +47,6 @@ STALE = 'stale: 章节版本或冻结素材已改变，请重新生成并确认�
 
 MAX_CHAPTER_TEXT = 800
 MAX_CHAPTERS = 20
-
-
-def chapter_scene(text):
-    """A chapter as stored: its narration plus the placeholder element the voice/alignment pipeline validates."""
-    return {'type': 'card_sequence', 'narration': {'text': text},
-            'elements': [{'id': 'narration', 'content': text[:40].strip() or 'Narration',
-                          'cue': {'text_start': 0, 'text_end': len(text)}}]}
 
 
 def chapter_text(text):
@@ -141,7 +135,7 @@ class VisualJobs:
             parts = [part for text in texts for part in partition_narration(text)]
             if len(parts) > 20: raise StoreError('validation', 'At most 20 narration chapters are supported')
             for part in parts:
-                project = self.store._insert_scene(conn, project, chapter_scene(part), len(project['scenes']), 'needs_voice')
+                project = self.store._insert_scene(conn, project, chapters.chapter(part, None), len(project['scenes']), 'needs_voice')
             return project
 
     # Chapter editing. Any change to the narration drops the chapter's audio, captions and videos: it goes back to
@@ -156,8 +150,8 @@ class VisualJobs:
         return project, row
 
     def _rewrite(self, conn, row, text):
-        scene = {**chapter_scene(text), 'id': row['scene']['id']}
-        draft_valid({'scenes': [scene]})
+        scene = chapters.chapter(text, row['scene']['id'])
+        chapters.validate(scene)
         conn.execute("""UPDATE scenes SET scene=%s,state='needs_voice',revision=revision+1,user_revision=user_revision+1
             WHERE id=%s""", [Jsonb(scene), row['id']])
 
@@ -186,7 +180,7 @@ class VisualJobs:
             if len(project['scenes']) >= MAX_CHAPTERS: raise StoreError('validation', f'最多 {MAX_CHAPTERS} 章')
             self._rewrite(conn, row, text[:at])
             project = self.store._read(conn, project['id'])
-            return self.store._insert_scene(conn, project, chapter_scene(text[at:]), row['position'] + 1, 'needs_voice')
+            return self.store._insert_scene(conn, project, chapters.chapter(text[at:], None), row['position'] + 1, 'needs_voice')
 
     def merge_next_chapter(self, project_id, expected_revision, scene_id):
         with self.store.connection() as conn:

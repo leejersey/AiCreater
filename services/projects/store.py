@@ -13,8 +13,9 @@ import psycopg
 from psycopg.rows import dict_row
 from psycopg.types.json import Jsonb
 
-from services.workflow.providers import ProviderError
-from services.workflow.storyboard import ROOT, validate_storyboard, validator
+from services import chapters
+
+ROOT = Path(__file__).resolve().parents[2]
 
 
 class StoreError(ValueError):
@@ -60,27 +61,23 @@ def unicode_valid(value):
                          [{'path': '/', 'code': 'unicode_json', 'message': 'Invalid Unicode JSON'}]) from None
 
 
-def final_valid(document):
-    unicode_valid(document)
-    errors = validator.validate_project(document)
-    if errors:
-        raise StoreError('validation', 'Invalid final DSL', errors)
-
-
-def draft_valid(document):
-    unicode_valid(document)
-    scenes = []
-    for scene in document['scenes']:
-        image_errors = validator.validate_scene_images(scene, {a['id']: a for a in document['assets']} if 'assets' in document else None, '/scenes')
-        if image_errors: raise StoreError('validation', 'Invalid teaching images', image_errors)
-        draft = {k: copy.deepcopy(v) for k, v in scene.items() if k in ['id', 'type', 'elements', 'edges', 'code', 'structure', 'timeline', 'chart', 'motif', 'visual_actions', 'dialogue', 'process', 'funnel']}
-        for action in draft.get('visual_actions', []):
-            action.pop('start_frame', None); action.pop('duration_frames', None)
-        draft['narration'] = {'text': scene['narration']['text']}
-        scenes.append(draft)
-    try: validate_storyboard({'scenes': scenes}, ''.join(s['narration']['text'] for s in scenes))
-    except ProviderError:
-        raise StoreError('validation', 'Invalid teaching draft') from None
+def migrate_chapters(conn):
+    """Rewrites chapters stored as template scenes (type, elements, animations…) to the chapter shape, together with
+    the chapter snapshots inside Agent and export jobs, so confirmations stay valid. Idempotent; returns the counts."""
+    counts = {'scenes': 0, 'agent_jobs': 0, 'export_jobs': 0}
+    for row in conn.execute('SELECT id,scene FROM scenes').fetchall():
+        normalized = chapters.normalize(row['scene'])
+        if normalized != row['scene']:
+            conn.execute('UPDATE scenes SET scene=%s WHERE id=%s', [Jsonb(normalized), row['id']]); counts['scenes'] += 1
+    for row in conn.execute("SELECT id,kind,input FROM visual_jobs WHERE kind IN ('agent','export')").fetchall():
+        data = copy.deepcopy(row['input'])
+        if row['kind'] == 'agent' and isinstance(data.get('scene'), dict):
+            data['scene'] = chapters.normalize(data['scene'])
+        for chapter in data.get('chapters', []) if row['kind'] == 'export' else []:
+            if isinstance(chapter, dict) and isinstance(chapter.get('scene'), dict): chapter['scene'] = chapters.normalize(chapter['scene'])
+        if data != row['input']:
+            conn.execute('UPDATE visual_jobs SET input=%s WHERE id=%s', [Jsonb(data), row['id']]); counts[row['kind'] + '_jobs'] += 1
+    return counts
 
 
 class Store:
@@ -112,6 +109,7 @@ class Store:
             conn.execute((Path(__file__).with_name('jobs.sql')).read_text())
             conn.execute((Path(__file__).parents[1] / 'accounts/schema.sql').read_text())
             conn.execute((Path(__file__).parents[1] / 'visual/schema.sql').read_text())
+            migrate_chapters(conn)
 
     def _asset_path(self, key):
         file = self.public / key
@@ -124,8 +122,8 @@ class Store:
             for asset in document['assets']:
                 self.objects.ensure(self._asset_path(asset['storage_key']), asset['checksum'], (10 if asset['type'] == 'image' else 50) * 1024**2, callback)
         try:
-            subprocess.run([str(ROOT / 'node_modules/.bin/tsx'), str(ROOT / 'scripts/verify-project.ts'), str(self.public)],
-                input=json.dumps(document, ensure_ascii=False), text=True, capture_output=True, check=True, timeout=120,
+            subprocess.run([str(ROOT / 'node_modules/.bin/tsx'), str(ROOT / 'scripts/verify-assets.ts'), str(self.public)],
+                input=json.dumps({'assets': document['assets']}, ensure_ascii=False), text=True, capture_output=True, check=True, timeout=120,
                 env={k: v for k, v in os.environ.items() if k not in ['DATABASE_URL', 'POSTGRES_PASSWORD',
                      'PGPASSWORD', 'DEEPSEEK_API_KEY', 'OPENAI_API_KEY', 'ACCOUNT_CREDENTIALS_KEY', 'VOLCENGINE_API_KEY', 'VOLCENGINE_ACCESS_KEY'] and not k.startswith(('MINIO_', 'RUSTFS_'))})
         except (subprocess.SubprocessError, OSError):
@@ -151,11 +149,6 @@ class Store:
 
     def profile_for(self, project):
         return {**copy.deepcopy(self.profile), 'voice': copy.deepcopy(project.get('voice') or self.profile['voice'])}
-
-    @staticmethod
-    def _dsl(project):
-        config={k:copy.deepcopy(v) for k,v in project['config'].items() if k not in ('visual_style', 'teaching_style', 'manuscript', 'image_plans')}
-        return {**config, 'scenes': [copy.deepcopy(s['scene']) for s in project['scenes']]}
 
     def list_projects(self, owner_id=None):
         with self.connection() as conn:
@@ -206,9 +199,7 @@ class Store:
         unicode_valid([title, source_text])
         style = normalize_teaching_style(teaching_style)
         project_id = str(uuid.uuid4())
-        config = {'schema_version': '1.0', 'theme': 'tech_explainer', 'assets': [],
-                  'video_config': {'width': 1920, 'height': 1080, 'fps': 30, 'language': 'zh-CN'},
-                  'teaching_style': style}
+        config = {'assets': [], 'teaching_style': style}
         if document is not None:
             config['manuscript'] = document
         with self.connection() as conn:
@@ -247,11 +238,8 @@ class Store:
     def _insert_scene(self, conn, project, scene, position, state):
         scene = copy.deepcopy(scene)
         scene_id = str(uuid.uuid4()); scene['id'] = 'scene_' + scene_id.replace('-', '')
-        project['scenes'].insert(position, {'scene': scene, 'state': state})
-        document = self._dsl(project)
-        draft_valid(document)
-        ready = [s['scene'] for s in project['scenes'] if s['state'] == 'ready']
-        if ready: final_valid({**document, 'scenes': ready})
+        try: chapters.validate(scene, project['config'].get('assets', []))
+        except chapters.ChapterError as error: raise StoreError('validation', str(error)) from None
         conn.execute('UPDATE scenes SET position=position+1 WHERE project_id=%s AND deleted_at IS NULL AND position>=%s', [project['id'], position])
         conn.execute('''INSERT INTO scenes (id,project_id,scene_key,position,state,scene,generated_revision,user_revision)
             VALUES (%s,%s,%s,%s,%s,%s,0,1)''', [scene_id, project['id'], scene['id'], position, state, Jsonb(scene)])

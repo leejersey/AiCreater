@@ -10,7 +10,6 @@
     "test": "tsx --test packages/*/tests/*.test.ts apps/web/tests/*.test.ts",
     "test:workflow": "python3 -m unittest discover -s services/tests -v",
     "typecheck": "tsc --noEmit",
-    "schema:types": "tsx scripts/generate-types.ts",
     "scene-agent": "tsx scripts/scene-agent.ts",
     "web": "next dev apps/web --hostname 127.0.0.1 --port 3000 --webpack",
     "web:build": "next build apps/web",
@@ -34,7 +33,6 @@
     "@types/node": "24.10.0",
     "@types/react": "19.2.2",
     "@types/react-dom": "19.2.2",
-    "json-schema-to-typescript": "15.0.4",
     "tsx": "4.20.6",
     "typescript": "5.9.3"
   }

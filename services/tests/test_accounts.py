@@ -7,7 +7,6 @@ import unittest
 import uuid
 
 from fastapi.testclient import TestClient
-from psycopg.types.json import Jsonb
 
 from services.projects.store import Store
 from services.tests.test_projects import PROFILE
