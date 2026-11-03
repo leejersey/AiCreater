@@ -1,4 +1,4 @@
-import type {Cue} from './design';
+import type {Cue} from './cues';
 import {assemblyCaptionLines} from './assembly-captions';
 export type WorkbenchCaption={text:string;start_frame:number;end_frame:number};
 // Match Python str.isspace(), including its C0 separators but excluding BOM.

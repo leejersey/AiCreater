@@ -2,7 +2,7 @@ import {mkdir,readFile,writeFile} from 'node:fs/promises';
 import path from 'node:path';
 import {checkSource} from '../../../custom-scenes/src/contract';
 import {SourceTypecheckError,typecheckSource} from '../../../custom-scenes/src/files';
-import type {Cue} from '../../../custom-scenes/src/design';
+import type {Cue} from '../../../custom-scenes/src/cues';
 import type {ContentPart} from '../provider/types';
 import {conciseError,sourceSha256,type StillsResult} from '../render/stills';
 import {SCENE_FILE} from '../workspace';

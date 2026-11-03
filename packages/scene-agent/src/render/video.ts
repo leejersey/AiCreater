@@ -7,7 +7,7 @@ import {copyFile,mkdir,mkdtemp,rm,writeFile} from 'node:fs/promises';
 import {existsSync} from 'node:fs';
 import path from 'node:path';
 import {checkSource,type SceneBrief} from '../../../custom-scenes/src/contract';
-import type {Cue} from '../../../custom-scenes/src/design';
+import type {Cue} from '../../../custom-scenes/src/cues';
 import {repositoryRoot,typecheckSource} from '../../../custom-scenes/src/files';
 import {renderTimeouts} from '../../../custom-scenes/src/render-timeout';
 import {assertCaptionCueBinding,workbenchCaptionLines,type WorkbenchCaption} from '../../../custom-scenes/src/workbench-captions';

@@ -2,7 +2,7 @@
 import {cp,lstat,mkdir,readFile,realpath,writeFile} from 'node:fs/promises';
 import path from 'node:path';
 import {parseBrief,type SceneBrief} from '../../custom-scenes/src/contract';
-import {parseCues,type Cue} from '../../custom-scenes/src/design';
+import {parseCues,type Cue} from '../../custom-scenes/src/cues';
 
 export const SCENE_FILE='scene/Scene.tsx';
 const READABLE=[/^brief\.json$/,/^cues\.json$/,/^skill(\/.*)?$/,/^scene(\/.*)?$/];

@@ -4,7 +4,7 @@
 import {mkdir,readFile,writeFile} from 'node:fs/promises';
 import path from 'node:path';
 import {parseBrief} from '../packages/custom-scenes/src/contract';
-import {parseCues} from '../packages/custom-scenes/src/design';
+import {parseCues} from '../packages/custom-scenes/src/cues';
 import {renderCourseVideo,type AgentVideoInput} from '../packages/scene-agent/src/render/video';
 import {sourceSha256} from '../packages/scene-agent/src/render/stills';
 
