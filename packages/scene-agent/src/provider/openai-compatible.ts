@@ -40,12 +40,13 @@ export class OpenAICompatibleProvider implements Provider{
  private async post(body:unknown,signal?:AbortSignal):Promise<unknown>{
   const doFetch=this.transport.fetch??fetch;
   const sleep=this.transport.sleep??(ms=>new Promise(r=>setTimeout(r,ms)));
-  const retries=this.config.retries??2;
+  const retries=this.config.retries??4;
   const url=this.config.baseUrl.replace(/\/+$/,'')+'/chat/completions';
   let last:ProviderError=new ProviderError('unavailable','no attempt made');
   let retryAfter:number|undefined;
   for(let attempt=0;attempt<=retries;attempt++){
-   if(attempt>0)await sleep(Math.min(retryAfter??1000*2**(attempt-1),30000));
+   // 2, 4, 8, 16 s: DeepSeek's "Service is too busy" 503s last longer than a couple of seconds.
+   if(attempt>0)await sleep(Math.min(retryAfter??2000*2**(attempt-1),30000));
    retryAfter=undefined;
    if(signal?.aborted)throw new ProviderError('aborted','request aborted');
    let response:Response,text:string;

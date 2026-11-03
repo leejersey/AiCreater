@@ -194,6 +194,17 @@ test('a run that ends without finish falls back to its last gate-clean version, 
  assert.equal(result.cleanCheckpoint,undefined);
 });
 
+test('a provider outage after a gate-clean version keeps that version; before one, the run stops',async()=>{
+ const {workspace,renderer}=await setup(scene(140));
+ const provider=new ScriptedProvider([[call('render_stills')],new ProviderError('unavailable','HTTP 503: Service is too busy',503)]);
+ const result=await runLoop({provider,workspace,renderer,budget});
+ assert.deepEqual([result.status,result.reason,result.finish?.by],['passed','checkpoint','harness']);
+ assert.match(result.finish!.summary,/provider_unavailable/);
+ const early=await setup(scene(140));
+ const none=await runLoop({provider:new ScriptedProvider([new ProviderError('unavailable','HTTP 503',503)]),...early,budget});
+ assert.deepEqual([none.status,none.reason],['stopped','provider_unavailable']);
+});
+
 test('without any clean version the run still stops honestly',async()=>{
  const {workspace,renderer}=await setup(scene(1040));
  const provider=new ScriptedProvider([[call('render_stills')],[call('get_timing')]]);

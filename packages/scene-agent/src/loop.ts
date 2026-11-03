@@ -35,7 +35,8 @@ export type LoopOptions={
 
 // Stop when the scene file has not changed for this many turns after it was first written.
 const STALL_TURNS=6;
-const FALLBACK_REASONS=new Set(['budget_turns','budget_tokens','stalled','no_finish','max_tokens']);
+// Also when the provider fails after a gate-clean version exists: the scene is done, only the sign-off is missing.
+const FALLBACK_REASONS=new Set(['budget_turns','budget_tokens','stalled','no_finish','max_tokens','provider_unavailable']);
 const CLEAN_STREAK_NUDGE=2;
 const NUDGE_LIMIT=2;
 

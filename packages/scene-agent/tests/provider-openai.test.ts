@@ -55,14 +55,15 @@ test('retries rate limits and 5xx with backoff, then succeeds',async()=>{
  }});
  const result=await provider.turn(request);
  assert.equal(result.stop,'end_turn');
- assert.deepEqual(sleeps,[3000,2000]);
+ assert.deepEqual(sleeps,[3000,4000]);
 });
 
 test('gives up after the retry budget with an unavailable error',async()=>{
- let attempts=0;
- const provider=new OpenAICompatibleProvider(config,{sleep:async()=>{},fetch:async()=>{attempts++;return json(500,{error:{message:'down'}});}});
+ let attempts=0;const sleeps:number[]=[];
+ const provider=new OpenAICompatibleProvider(config,{sleep:async ms=>{sleeps.push(ms);},fetch:async()=>{attempts++;return json(500,{error:{message:'down'}});}});
  await assert.rejects(provider.turn(request),(e:unknown)=>e instanceof ProviderError&&e.code==='unavailable'&&e.status===500);
- assert.equal(attempts,3);
+ assert.equal(attempts,5);
+ assert.deepEqual(sleeps,[2000,4000,8000,16000]);
 });
 
 test('auth and balance failures stop immediately and never echo the key',async()=>{
