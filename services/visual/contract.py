@@ -1,14 +1,8 @@
 import hashlib
 import json
 import re
-import copy
 
 from services.projects.store import StoreError
-
-
-def require_budget(confirmed, maximum, expected):
-    if confirmed is not True or type(maximum) is not int or maximum!=expected:
-        raise StoreError('validation','必须明确确认本次请求上限；失败不自动重试')
 
 
 def partition_narration(text):
@@ -79,26 +73,3 @@ def measured_input(project,row):
            'width':1920,'height':1080,'fps':30,'durationInFrames':duration}
     return {'brief':brief,'cues':cues,'scene':scene,'asset':asset,'fingerprint':fingerprint(row,asset)}
 
-
-def draft_input(project,row):
-    text=row['scene']['narration']['text']
-    if not isinstance(text,str) or not text.strip() or len(text)>800:
-        raise StoreError('validation','视觉草稿口播须为1–800字，请先拆分章节')
-    parts=re.findall(r'.{1,50}?(?:[。！？!?\n]|$)|.{1,50}',text,re.DOTALL)
-    captions=[];cursor=6
-    for part in parts:
-        if not part.strip():
-            if captions:captions[-1]['text']+=part
-            continue
-        end=cursor+max(15,round(len(part.strip())*30*60/280))
-        captions.append({'text':part,'start_frame':cursor,'end_frame':end});cursor=end+3
-    duration=max(30,cursor+3)
-    if duration>3600:raise StoreError('validation','草稿估时超过120秒，请拆分章节')
-    scene={'duration_frames':duration,'narration':{'text':text,'audio_start_frame':6},'captions':captions}
-    synthetic=copy.deepcopy(project);synthetic['config']['assets']=[{'id':'draft-only'}]
-    scene['narration']['audio_asset_id']='draft-only'
-    result=measured_input(synthetic,{'id':row['id'],'revision':0,'state':'ready','scene':scene})
-    scene['narration'].pop('audio_asset_id')
-    result.update(asset=None,timing_mode='draft')
-    result['fingerprint']=hashlib.sha256(json.dumps({'brief':result['brief'],'cues':result['cues']},ensure_ascii=False,sort_keys=True,separators=(',',':')).encode()).hexdigest()
-    return result

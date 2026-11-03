@@ -1,12 +1,11 @@
-"""Local teaching API with PostgreSQL-owned, Celery-dispatched regeneration jobs."""
+"""Local teaching API: accounts, projects, voice and timing jobs, and the visual (Scene Agent) routes."""
 from contextlib import asynccontextmanager
 import os
-import re
-from typing import Any, Literal
+from typing import Literal
 
 import httpx
 from dotenv import load_dotenv
-from fastapi import FastAPI, Request, Query, Response, Depends
+from fastapi import FastAPI, Request, Depends
 from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse, FileResponse
@@ -15,7 +14,6 @@ from pydantic import BaseModel, ConfigDict, Field
 from services.api.local import LocalRequestsMiddleware, ORIGINS
 from services.api.accounts import access, router as account_routes
 from services.api.visual import router as visual_routes
-from services.api.teaching import router as teaching_routes
 from services.visual.store import VisualJobs
 from services.accounts.auth import Accounts
 from services.projects.manage import profile
@@ -25,8 +23,7 @@ from services.projects.store import Store, StoreError
 from services.projects.storage import ObjectStore
 from services.workflow.manuscript import generate_manuscript
 from services.workflow.providers import ProviderError, Settings
-from services.workflow.storyboard import ROOT
-from services.workflow.readiness import inspect_consumers
+from services.projects.store import ROOT
 
 
 class Body(BaseModel):
@@ -50,48 +47,16 @@ class CreateProject(Body):
     teaching_style: Literal['popular', 'technical'] = 'popular'
 
 
-class ImportProject(Body):
-    title: str = Field(min_length=1, max_length=80)
-    dsl: dict[str, Any]
-
-
-class Render(Body):
-    version_id: str
-
-
 class Revision(Body):
     expected_revision: int = Field(ge=1)
-
-
-class NewScene(Revision):
-    narration_text: str = Field(min_length=1, max_length=4000)
-    content: str = Field(min_length=1, max_length=40)
-
-
-class NewConceptScene(Revision):
-    narration_text: str = Field(min_length=1, max_length=4000)
-    elements: list[dict[str, Any]] = Field(min_length=1, max_length=6)
-
-
-class SceneRevision(Revision):
-    expected_scene_revision: int = Field(ge=1)
-
-
-class DeleteScene(SceneRevision):
-    confirmed: bool
 
 
 class VoiceScene(Revision):
     scene_id: str
 
 
-class BatchVoice(Revision):
-    confirmed: bool
-    scenes: list[VoiceScene] = Field(min_length=1, max_length=20)
-
-
 class CostEstimate(Revision):
-    operation: Literal['generate', 'regenerate', 'voice', 'batch_voice']
+    operation: Literal['voice']
     scenes: list[VoiceScene] = Field(default_factory=list, max_length=20)
 
 
@@ -99,34 +64,8 @@ class ProjectVoice(Revision):
     speaker: str = Field(min_length=1, max_length=200)
 
 
-class VisualStyle(Revision):
-    visual_style: str = Field(min_length=1,max_length=80)
-
-
-class TeachingStyle(Revision):
-    teaching_style: Literal['popular', 'technical']
-
-
 class DeleteProject(Revision):
     confirmed: bool
-
-
-class Theme(Revision):
-    theme: Literal['tech_explainer', 'tech_multicolor', 'light_teaching', 'color_infographic']
-
-
-class ChartConfiguration(Revision):
-    confirmed: bool
-    chart: dict[str, Any]
-    elements: list[dict[str, Any]]
-
-
-class EditScene(Revision):
-    changes: dict[str, Any]
-
-
-class Reorder(Revision):
-    scene_ids: list[str]
 
 
 def _provider_error_status(code):
@@ -137,7 +76,7 @@ def _provider_error_status(code):
     return 502
 
 
-def create_app(store=None, *, authentication=True, teaching_plan=False, teaching_provider=None, teaching_require_workers=False):
+def create_app(store=None, *, authentication=True):
     @asynccontextmanager
     async def lifespan(app):
         configured = store
@@ -152,15 +91,6 @@ def create_app(store=None, *, authentication=True, teaching_plan=False, teaching
         app.state.accounts = Accounts(configured)
         app.state.jobs = Jobs(configured, model=os.getenv('DEEPSEEK_MODEL', 'deepseek-flash'))
         app.state.visual = VisualJobs(configured)
-        if teaching_plan:
-            from services.visual.teaching_workbench import TeachingWorkbench
-            app.state.teaching = TeachingWorkbench(configured, teaching_provider)
-            app.state.teaching.tasks.initialize()
-            if teaching_require_workers:
-                from services.visual.teaching_health import WorkerHealth
-                from services.visual.teaching_runtime import require_ready
-                WorkerHealth(configured).initialize()
-                app.state.teaching.readiness=lambda:require_ready(configured)
         yield
 
     app = FastAPI(title='Teaching Projects', lifespan=lifespan, docs_url=None, redoc_url=None,
@@ -168,7 +98,6 @@ def create_app(store=None, *, authentication=True, teaching_plan=False, teaching
     app.state.authentication = authentication
     app.include_router(account_routes)
     app.include_router(visual_routes)
-    app.include_router(teaching_routes)
     app.add_middleware(CORSMiddleware, allow_origins=sorted(ORIGINS),
                        allow_methods=['GET', 'POST', 'PATCH'], allow_headers=['Content-Type'])
     app.add_middleware(LocalRequestsMiddleware)
@@ -177,7 +106,7 @@ def create_app(store=None, *, authentication=True, teaching_plan=False, teaching
     async def store_error(request, error):
         status = {'not_found': 404, 'conflict': 409, 'not_ready': 409, 'validation': 422,
                   'assets': 422, 'timing_cache': 422, 'database': 503, 'storage': 503, 'invalid_profile': 503,
-                  'unauthorized': 401, 'rate_limit': 429, 'content_type': 415, 'teaching_executor_disabled': 503, 'teaching_unavailable':503}.get(error.code, 400)
+                  'unauthorized': 401, 'rate_limit': 429, 'content_type': 415}.get(error.code, 400)
         response = {'code': error.code, 'message': str(error)}
         if error.code == 'validation':
             response['validation_errors'] = [
@@ -199,10 +128,6 @@ def create_app(store=None, *, authentication=True, teaching_plan=False, teaching
         with request.app.state.store.connection() as conn: conn.execute('SELECT 1')
         return {'status': 'ready'}
 
-    @app.get('/api/consumers')
-    def consumers():
-        return JSONResponse(inspect_consumers(), headers={'Cache-Control': 'no-store'})
-
     @app.post('/api/manuscripts/generate')
     def manuscript_generate(body: GenerateManuscript, request: Request):
         try:
@@ -223,10 +148,6 @@ def create_app(store=None, *, authentication=True, teaching_plan=False, teaching
             getattr(request.state, 'user', {}).get('id'), teaching_style=body.teaching_style,
             **({'manuscript_format': 'markdown'} if body.manuscript_format == 'markdown' else {}))
 
-    @app.post('/api/projects/import', status_code=201)
-    def import_ready(body: ImportProject, request: Request):
-        return request.app.state.store.import_project(body.title, body.dsl, getattr(request.state,'user',{}).get('id'))
-
     @app.get('/api/projects/{project_id}')
     def get_project(project_id: str, request: Request):
         return request.app.state.store.get_project(project_id)
@@ -241,92 +162,24 @@ def create_app(store=None, *, authentication=True, teaching_plan=False, teaching
         mime = {'.png':'image/png', '.jpg':'image/jpeg', '.jpeg':'image/jpeg', '.mp3':'audio/mpeg', '.m4a':'audio/mp4'}.get(file.suffix.lower(), 'audio/wav')
         return FileResponse(file, media_type=mime, headers={'X-Content-Type-Options':'nosniff'})
 
-    @app.get('/api/projects/{project_id}/usage')
-    def project_usage(project_id: str, request: Request, response: Response):
-        response.headers['Cache-Control'] = 'no-store'
-        return request.app.state.jobs.project_usage(project_id)
-
     @app.get('/api/projects/{project_id}/jobs')
     def project_jobs(project_id: str, request: Request):
         request.app.state.jobs.recover()
         return [public_job(row) for row in request.app.state.jobs.list_project(project_id)]
 
-    @app.patch('/api/scenes/{scene_id}')
-    def edit_scene(scene_id: str, body: EditScene, request: Request):
-        return request.app.state.store.edit_scene(scene_id, body.expected_revision, body.changes)
-
-    @app.patch('/api/scenes/{scene_id}/chart')
-    def chart(scene_id: str, body: ChartConfiguration, request: Request):
-        return request.app.state.store.set_chart(scene_id, body.expected_revision, body.chart, body.elements, body.confirmed)
-
-    @app.patch('/api/projects/{project_id}/visual-style')
-    def project_visual_style(project_id:str,body:VisualStyle,request:Request):
-        return request.app.state.store.set_visual_style(project_id,body.expected_revision,body.visual_style)
-
-    @app.patch('/api/projects/{project_id}/teaching-style')
-    def project_teaching_style(project_id: str, body: TeachingStyle, request: Request):
-        return request.app.state.store.set_teaching_style(project_id, body.expected_revision, body.teaching_style)
-
     @app.patch('/api/projects/{project_id}/voice')
     def project_voice(project_id: str, body: ProjectVoice, request: Request):
         return request.app.state.store.set_voice(project_id, body.expected_revision, body.speaker)
-
-    @app.patch('/api/projects/{project_id}/theme')
-    def theme(project_id: str, body: Theme, request: Request):
-        return request.app.state.store.set_theme(project_id, body.expected_revision, body.theme)
 
     @app.post('/api/projects/{project_id}/delete')
     def delete_project(project_id: str, body: DeleteProject, request: Request):
         request.app.state.store.delete_project(project_id, body.expected_revision, body.confirmed)
         return {'ok': True}
 
-    @app.post('/api/projects/{project_id}/scenes', status_code=201)
-    def add_scene(project_id: str, body: NewScene, request: Request):
-        return request.app.state.store.add_scene(project_id, body.expected_revision, body.narration_text, body.content)
-
-    @app.post('/api/projects/{project_id}/scenes/concept', status_code=201)
-    def add_concept_scene(project_id: str, body: NewConceptScene, request: Request):
-        return request.app.state.store.add_concept_scene(project_id, body.expected_revision, body.narration_text, body.elements)
-
-    @app.post('/api/projects/{project_id}/scenes/{scene_id}/duplicate', status_code=201)
-    def duplicate_scene(project_id: str, scene_id: str, body: SceneRevision, request: Request):
-        return request.app.state.store.duplicate_scene(project_id, body.expected_revision, scene_id, body.expected_scene_revision)
-
-    @app.post('/api/projects/{project_id}/scenes/{scene_id}/delete')
-    def delete_scene(project_id: str, scene_id: str, body: DeleteScene, request: Request):
-        return request.app.state.store.delete_scene(project_id, body.expected_revision, scene_id, body.expected_scene_revision, body.confirmed)
-
-    @app.post('/api/projects/{project_id}/scenes/reorder')
-    def reorder(project_id: str, body: Reorder, request: Request):
-        return request.app.state.store.reorder(project_id, body.expected_revision, body.scene_ids)
-
-    @app.post('/api/projects/{project_id}/versions', status_code=201)
-    def version(project_id: str, body: Revision, request: Request):
-        return request.app.state.store.create_version(project_id, body.expected_revision)
-
-    @app.get('/api/projects/{project_id}/versions')
-    def versions(project_id: str, request: Request, before_revision: int | None = Query(default=None, ge=1, le=2147483647)):
-        return request.app.state.store.list_versions(project_id, before_revision)
-
-    @app.get('/api/versions/{version_id}')
-    def get_version(version_id: str, request: Request):
-        return request.app.state.store.get_version(version_id)
-
-    @app.get('/api/scenes/{scene_id}/candidates')
-    def candidates(scene_id: str, request: Request):
-        return request.app.state.store.get_candidates(scene_id)
-
-    @app.post('/api/scenes/{scene_id}/candidates/{candidate_id}/accept')
-    def accept(scene_id: str, candidate_id: str, body: Revision, request: Request):
-        return request.app.state.store.accept_candidate(scene_id, candidate_id, body.expected_revision)
-
     def public_job(row):
         keys = ['project_id', 'scene_id', 'kind', 'state', 'stage', 'progress', 'base_revision', 'attempts',
                 'cancel_requested', 'created_at', 'started_at', 'ended_at', 'heartbeat_at', 'error', 'result', 'voice_current']
-        result = {'job_id': row['id'], **{k: row.get(k) for k in keys}}
-        if (row.get('input') or {}).get('protocol_version') in ['scene-preview:1','scene-preview:2']:
-            result.update(scope='scene', preview_scene_id=row['input']['scene_id'])
-        return result
+        return {'job_id': row['id'], **{k: row.get(k) for k in keys}}
 
     @app.post('/api/projects/{project_id}/estimate')
     def project_estimate(project_id: str, body: CostEstimate, request: Request):
@@ -338,63 +191,13 @@ def create_app(store=None, *, authentication=True, teaching_plan=False, teaching
     def job_estimate(job_id: str, request: Request):
         return JSONResponse(estimate_retry(request.app.state.store, job_id), headers={'Cache-Control': 'no-store'})
 
-    @app.post('/api/projects/{project_id}/generate', status_code=202)
-    def generate(project_id: str, body: Revision, request: Request):
-        return public_job(request.app.state.jobs.submit_generate(project_id, body.expected_revision))
-
-    @app.post('/api/scenes/{scene_id}/preview', status_code=202)
-    def preview(scene_id: str, body: Revision, request: Request):
-        return public_job(request.app.state.jobs.submit_preview(scene_id, body.expected_revision))
-
     @app.post('/api/scenes/{scene_id}/timing', status_code=202)
     def timing(scene_id: str, body: Revision, request: Request):
         return public_job(request.app.state.jobs.submit_timing(scene_id, body.expected_revision))
 
-    @app.post('/api/projects/{project_id}/timing', status_code=202)
-    def batch_timing(project_id: str, body: BatchVoice, request: Request):
-        rows = request.app.state.jobs.submit_batch_timing(project_id, body.expected_revision,
-            [scene.model_dump() for scene in body.scenes], body.confirmed)
-        return [public_job(row) for row in rows]
-
-    @app.post('/api/projects/{project_id}/voice', status_code=202)
-    def batch_voice(project_id: str, body: BatchVoice, request: Request):
-        rows = request.app.state.jobs.submit_batch_voice(project_id, body.expected_revision,
-            [scene.model_dump() for scene in body.scenes], body.confirmed)
-        return [public_job(row) for row in rows]
-
     @app.post('/api/scenes/{scene_id}/voice', status_code=202)
     def voice(scene_id: str, body: Revision, request: Request):
         return public_job(request.app.state.jobs.submit_voice(scene_id, body.expected_revision))
-
-    @app.post('/api/scenes/{scene_id}/regenerate', status_code=202)
-    def regenerate(scene_id: str, body: Revision, request: Request):
-        return public_job(request.app.state.jobs.submit_regenerate(scene_id, body.expected_revision))
-
-    @app.post('/api/projects/{project_id}/render', status_code=202)
-    def render(project_id: str, body: Render, request: Request):
-        return public_job(request.app.state.jobs.submit_render(project_id, body.version_id))
-
-    @app.get('/api/renders/{job_id}')
-    def render_info(job_id: str, request: Request):
-        job = request.app.state.jobs.get(job_id)
-        if job['kind'] != 'render': raise StoreError('not_found', 'Render not found')
-        downloads = []
-        if job['state'] == 'succeeded':
-            result = job.get('result')
-            checksums = result.get('checksums') if isinstance(result, dict) else None
-            for extension in ['mp4', 'srt']:
-                digest = checksums.get(extension) if isinstance(checksums, dict) else None
-                if not isinstance(digest, str) or not re.fullmatch('[0-9a-f]{64}', digest):
-                    raise StoreError('assets', 'Published render metadata unavailable')
-                downloads.append({'extension': extension, 'url': f"/api/jobs/{job['id']}/files/{extension}", 'sha256': digest})
-        return {**public_job(job), 'downloads': downloads}
-
-    @app.get('/api/jobs/{job_id}/files/{extension}')
-    def download(job_id: str, extension: Literal['mp4', 'srt'], request: Request):
-        file = request.app.state.jobs.render_file(job_id, extension)
-        # Captions are burned into the MP4; a same-stem .srt in the download folder makes players show them twice.
-        return FileResponse(file, filename='teaching.mp4' if extension == 'mp4' else 'teaching-captions.srt',
-                            media_type='video/mp4' if extension == 'mp4' else 'application/x-subrip')
 
     @app.get('/api/jobs/{job_id}')
     def get_job(job_id: str, request: Request):
@@ -410,13 +213,6 @@ def create_app(store=None, *, authentication=True, teaching_plan=False, teaching
         return public_job(request.app.state.jobs.retry(job_id))
 
     return app
-
-
-def create_teaching_app():
-    """Explicit experimental server factory; never selected by the default entry."""
-    load_dotenv(ROOT / '.env', override=False)
-    from services.visual.teaching_provider import TeachingPlanProvider
-    return create_app(teaching_plan=True,teaching_provider=TeachingPlanProvider.from_env(),teaching_require_workers=True)
 
 
 app = create_app()

@@ -1,20 +1,14 @@
 """Read-only reference prices; no provider requests, task dispatch or billing cap."""
-import copy
 from datetime import date
 from decimal import Decimal, ROUND_CEILING
-import math
 
 from services.projects.jobs import Jobs
 from services.projects.store import StoreError, identifier, revision
-from services.workflow.image_plans import image_planning_enabled
-from services.workflow.providers import ProviderError, storyboard_request
 
 PRICES_CHECKED_ON = date(2026, 10, 15)
-LLM_SOURCE = 'https://api-docs.deepseek.com/zh-cn/quick_start/pricing/'
 TTS_SOURCE = 'https://docs.volcengine.com/docs/DoubaoVoice/Billinginstructions-21?lang=zh'
 DISCLAIMER = '仅公开按量参考价，非供应商账单、非扣费上限；未扣免费额度、套餐或折扣，重试可能再计费。'
 QUANTITIES = ('calls', 'reused_jobs', 'characters', 'input_tokens_min', 'input_tokens_max', 'output_tokens_max')
-LLM_RATES = {'cached_min': '.02', 'cached_max': '.04', 'uncached_min': '1', 'uncached_max': '2', 'output_min': '4', 'output_max': '8'}
 TTS_RATES = {'per_10000': '3'}
 
 
@@ -33,56 +27,20 @@ def estimate_payload(payload, *, reused=False, now=None):
     if reused:
         return _result('no_new_call', ['复用已登记任务：本次不新增调用；不包含已有任务未来执行的费用，显式重试另算。'], 0, 0, reused_jobs=1)
     kind = payload.get('kind')
-    if kind in ['render', 'timing']:
-        return _result('no_new_call', ['本地渲染/音频缓存对齐，不新增模型或配音调用费；不包含机器成本。'], 0, 0)
+    if kind == 'timing':
+        return _result('no_new_call', ['本地音频缓存对齐，不新增模型或配音调用费；不包含机器成本。'], 0, 0)
     if not 0 <= ((now or date.today()) - PRICES_CHECKED_ON).days <= 30:
         return _result('unknown', ['参考价格已过期或本机日期异常，请先核对官方价格。'], calls=1)
-    if kind == 'voice':
-        if payload.get('protocol_version') != 'native-voice:1' or payload.get('profile', {}).get('voice', {}).get('resource_id') != 'seed-tts-2.0':
-            return _result('unknown', ['未核对当前配音型号/协议的价格，暂无法估算。'], calls=1)
-        text = payload.get('scene', {}).get('narration', {}).get('text')
-        if not isinstance(text, str) or not text.strip() or len(text) > 4000:
-            return _result('unknown', ['配音文本数量无法可靠计算。'], calls=1)
-        cost = _amount(Decimal(len(text)) * Decimal(TTS_RATES['per_10000']) / Decimal(10000))
-        return _result('estimated', ['seed-tts-2.0公开按量参考价：3元/万字符；含字母、标点、空格和换行，按Unicode码点参考。'],
-                       cost, cost, [TTS_SOURCE], calls=1, characters=len(text))
-    protocols = {'generate': ['teaching-outline:1', 'teaching-outline:2', 'teaching-outline:3', 'teaching-outline:4', 'teaching-outline:5', 'teaching-outline:6', 'teaching-outline:7', 'teaching-outline:8', 'teaching-outline:9'], 'regenerate': ['scene-candidate:1', 'scene-candidate:2', 'scene-candidate:3', 'scene-candidate:4', 'scene-candidate:5', 'scene-candidate:6', 'scene-candidate:7', 'scene-candidate:8', 'scene-candidate:9']}
-    if kind not in protocols or payload.get('protocol_version') not in protocols[kind] or payload.get('model') != 'deepseek-flash':
-        return _result('unknown', ['未核对当前模型/任务协议的价格，暂无法估算。'], calls=1)
-    try:
-        director = payload['protocol_version'] in ['teaching-outline:4','scene-candidate:4','teaching-outline:5','scene-candidate:5','teaching-outline:6','scene-candidate:6','teaching-outline:7','scene-candidate:7','teaching-outline:8','scene-candidate:8','teaching-outline:9','scene-candidate:9']
-        original = None
-        if kind == 'regenerate':
-            original = {k: copy.deepcopy(v) for k, v in payload['scene'].items() if k in ['id', 'type', 'narration', 'elements', 'edges', 'code', 'structure', 'timeline', 'chart']}
-            if director: original = Jobs.model_original(payload['scene'])
-            original['narration'] = {'text': original['narration']['text']}
-        text = payload['source_text'] if original is None else original['narration']['text']
-        body, _ = storyboard_request(text, payload['model'], original, cue_quotes=payload['protocol_version'].endswith((':2', ':3', ':4', ':5', ':6', ':7', ':8', ':9')), semantic_graphics=director, **({'compact_director':True,'role_director':payload['protocol_version'].endswith(':6')} if payload['protocol_version'].endswith((':5',':6')) else {}), teaching_style=payload.get('teaching_style') or 'popular', materials=payload.get('materials'), image_planning=image_planning_enabled(payload['protocol_version'], payload.get('visual_style')))
-        contents = [message['content'] for message in body['messages']]
-        fallback=None
-        if payload['protocol_version'].endswith((':5',':6')):
-            import json
-            contents=[json.dumps(body,ensure_ascii=False)]
-            fallback,_=storyboard_request(text,payload['model'],original,teaching_style=payload.get('teaching_style') or 'popular')
-        lower = math.ceil(sum(len(content) for content in contents) / 4)
-        upper = sum(len(content.encode('utf-8')) for content in contents) + 32
-        if fallback:
-            from services.workflow.director import request,plan_schema
-            layouts={k:{'layout':max(v['anyOf'],key=lambda choice:len(json.dumps(choice,ensure_ascii=False).encode('utf-8')))['properties']['layout']['enum'][0]} for k,v in plan_schema(text,roles=payload['protocol_version'].endswith(':6'))['properties'].items()}
-            detailed,_=request(text,payload['model'],original,payload.get('teaching_style') or 'popular',layouts=layouts,roles=payload['protocol_version'].endswith(':6'))
-            upper+=max(sum(len(m['content'].encode('utf-8')) for m in fallback['messages']),len(json.dumps(detailed,ensure_ascii=False).encode('utf-8')))+32
-        calls=2 if fallback else 1
-    except (KeyError, TypeError, ValueError, UnicodeError, ProviderError):
-        return _result('unknown', ['当前请求无法可靠计算token数量。'], calls=1)
-    # shortcut: byte/character heuristics, replace with the provider tokenizer when available.
-    minimum = _amount((Decimal(lower) * Decimal(LLM_RATES['cached_min']) + Decimal(LLM_RATES['output_min'])) / Decimal(1000000))
-    maximum = _amount((Decimal(upper) * Decimal(LLM_RATES['uncached_max']) + Decimal(body['max_tokens']*calls) * Decimal(LLM_RATES['output_max'])) / Decimal(1000000))
-    return _result('estimated', [
-        'deepseek-flash公开参考：缓存命中输入0.02–0.04、未命中1–2、输出4–8元/百万token，覆盖峰谷价格。',
-        '完整提示词/schema与请求数据均已计入；输入字符/4至UTF8字节+32为经验区间，不是实测或保证上下界。',
-        '输出按1至请求max_tokens设置参考；本次分镜估价不含后续配音费。',
-        'v5最多两次模型请求：先选表达方式，再按所选方式规划源片段；专用内容第二次转既有模板，不额外重试。' if calls==2 else '一次模型请求。'], minimum, maximum, [LLM_SOURCE],
-        calls=calls, input_tokens_min=lower, input_tokens_max=upper, output_tokens_max=body['max_tokens']*calls)
+    if kind != 'voice':
+        return _result('unknown', ['未核对此任务的价格，暂无法估算。'], calls=1)
+    if payload.get('protocol_version') != 'native-voice:1' or payload.get('profile', {}).get('voice', {}).get('resource_id') != 'seed-tts-2.0':
+        return _result('unknown', ['未核对当前配音型号/协议的价格，暂无法估算。'], calls=1)
+    text = payload.get('scene', {}).get('narration', {}).get('text')
+    if not isinstance(text, str) or not text.strip() or len(text) > 4000:
+        return _result('unknown', ['配音文本数量无法可靠计算。'], calls=1)
+    cost = _amount(Decimal(len(text)) * Decimal(TTS_RATES['per_10000']) / Decimal(10000))
+    return _result('estimated', ['seed-tts-2.0公开按量参考价：3元/万字符；含字母、标点、空格和换行，按Unicode码点参考。'],
+                   cost, cost, [TTS_SOURCE], calls=1, characters=len(text))
 
 
 def combine_estimates(quotes):
@@ -99,52 +57,22 @@ def combine_estimates(quotes):
 
 def estimate_project(store, model, project_id, expected_revision, operation, scenes):
     revision(expected_revision)
-    if operation not in ['generate', 'regenerate', 'voice', 'batch_voice'] or not isinstance(scenes, list) or len(scenes) > 20:
+    if operation != 'voice' or not isinstance(scenes, list) or len(scenes) != 1:
         raise StoreError('validation', 'Invalid estimate selection')
-    if (operation == 'generate' and scenes) or (operation != 'generate' and not scenes) or (operation in ['regenerate', 'voice'] and len(scenes) != 1):
-        raise StoreError('validation', 'Invalid estimate scene count')
     with store.connection() as conn:
         conn.execute('SET TRANSACTION ISOLATION LEVEL REPEATABLE READ, READ ONLY')
         project = store._read(conn, project_id)
         if project['revision'] != expected_revision: raise StoreError('conflict', 'Project revision changed')
-        payloads = []
-        if operation == 'generate':
-            materials = project['config'].get('manuscript', {}).get('sections', [])
-            if project['scenes']: raise StoreError('conflict', 'Use scene regeneration for an existing outline')
-            payloads.append({'kind': 'generate', 'project_id': project['id'], 'base_revision': expected_revision,
-                'source_text': project['source_text'], 'profile': store.profile, 'model': model, 'protocol_version': 'teaching-outline:9' if materials else 'teaching-outline:8', 'teaching_style':project['teaching_style'],
-                **({'materials':materials} if materials else {}), **Jobs.paper_style_field(project)})
-        selected = set()
-        for item in scenes:
-            if not isinstance(item, dict) or set(item) != {'scene_id', 'expected_revision'}: raise StoreError('validation', 'Invalid scene selection')
-            scene_id = identifier(item['scene_id']); revision(item['expected_revision'])
-            if scene_id in selected: raise StoreError('validation', 'Duplicate scene selection')
-            selected.add(scene_id)
-            row = next((s for s in project['scenes'] if s['id'] == scene_id), None)
-            if row is None: raise StoreError('validation', 'Scene does not belong to project')
-            if row['revision'] != item['expected_revision']: raise StoreError('conflict', 'Scene revision changed')
-            if operation == 'batch_voice' and row['state'] != 'needs_voice': raise StoreError('not_ready', 'Batch voice only accepts scenes needing voice')
-            if operation == 'regenerate' and row['scene']['type'] == 'data_chart': raise StoreError('validation', 'Confirmed chart cannot use model regeneration')
-            voice = operation in ['voice', 'batch_voice']
-            payload = {'kind': 'voice' if voice else 'regenerate', 'scene_id': row['id'], 'base_revision': row['revision'],
-                'scene': Jobs._draft_scene(row['scene']) if voice else row['scene'], 'profile': store.profile_for(project) if voice else store.profile,
-                'protocol_version': 'native-voice:1' if voice else 'scene-candidate:8'}
-            if not voice:
-                from services.workflow.manuscript_document import scene_materials
-                materials = scene_materials(project['config'].get('manuscript', {}), row['scene']['narration']['text'])
-                payload.update(model=model,teaching_style=project['teaching_style'], **Jobs.paper_style_field(project))
-                if materials:
-                    payload.update(materials=materials,protocol_version='scene-candidate:9')
-            payloads.append(payload)
-        quotes = []
-        for payload in payloads:
-            # Share actual batch lookup so a newly selected project voice is never priced as reused.
-            if operation == 'batch_voice':
-                existing = Jobs.batch_voice_id(conn, project, payload['scene_id'], payload['base_revision'], payload['profile'])
-            else:
-                existing = conn.execute('SELECT id FROM jobs WHERE input_hash=%s', [Jobs.input_hash(payload)]).fetchone()
-            quotes.append(estimate_payload(payload, reused=bool(existing)))
-        return combine_estimates(quotes)
+        item = scenes[0]
+        if not isinstance(item, dict) or set(item) != {'scene_id', 'expected_revision'}: raise StoreError('validation', 'Invalid scene selection')
+        scene_id = identifier(item['scene_id']); revision(item['expected_revision'])
+        row = next((s for s in project['scenes'] if s['id'] == scene_id), None)
+        if row is None: raise StoreError('validation', 'Scene does not belong to project')
+        if row['revision'] != item['expected_revision']: raise StoreError('conflict', 'Scene revision changed')
+        payload = {'kind': 'voice', 'scene_id': row['id'], 'base_revision': row['revision'],
+            'scene': Jobs._draft_scene(row['scene']), 'profile': store.profile_for(project), 'protocol_version': 'native-voice:1'}
+        existing = conn.execute('SELECT id FROM jobs WHERE input_hash=%s', [Jobs.input_hash(payload)]).fetchone()
+        return combine_estimates([estimate_payload(payload, reused=bool(existing))])
 
 
 def estimate_retry(store, job_id):

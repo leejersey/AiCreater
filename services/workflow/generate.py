@@ -1,22 +1,19 @@
-"""Local paid-provider workflow: python3 -m services.workflow.generate script.txt output.json."""
-import argparse
+"""Voice a validated chapter draft: TTS, measured word timing and captions, published as a one-scene project document."""
 import hashlib
 import json
 import math
 import os
 import subprocess
-import sys
 import tempfile
 import time
 import uuid
 from pathlib import Path
 
 import httpx
-from dotenv import load_dotenv
 
 from services.tts.timing import align_words, time_scene
-from services.workflow.providers import ProviderError, Settings, deepseek_storyboard, volcengine_speech
-from services.workflow.storyboard import ROOT, validator, validate_storyboard
+from services.workflow.providers import ProviderError, volcengine_speech
+from services.workflow.storyboard import validator, validate_storyboard
 
 
 def _duration(path):
@@ -33,8 +30,7 @@ def _duration(path):
         raise ProviderError('tts', 'invalid_audio', 'Could not measure valid provider audio') from None
 
 
-def generate_project(text, destination, public, settings, client, draft=None, *, on_usage=None):
-    text = text.strip() if draft is None else text
+def generate_project(text, destination, public, settings, client, draft, *, on_usage=None):
     if not text.strip() or len(text) > 4000:
         raise ProviderError('storyboard', 'input_limit', 'Use 1–4000 code points')
     if destination.exists() or destination.is_symlink():
@@ -46,10 +42,7 @@ def generate_project(text, destination, public, settings, client, draft=None, *,
     destination.parent.mkdir(parents=True, exist_ok=True)
     # ponytail: budget checks cannot interrupt blocked I/O; add worker process hard deadlines in phase 3.
     deadline = time.monotonic() + 900
-    if draft is None:
-        draft = deepseek_storyboard(text, settings, client, **({'on_usage':on_usage} if on_usage else {}))
-    else:
-        validate_storyboard(draft, text)
+    validate_storyboard(draft, text)
     run = uuid.uuid4().hex
     directory = generated / run
     directory.mkdir(parents=True, mode=0o700)
@@ -109,42 +102,3 @@ def generate_project(text, destination, public, settings, client, draft=None, *,
             temp.unlink(missing_ok=True)
     return project
 
-
-def main():
-    parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument('script', type=Path)
-    parser.add_argument('output', type=Path)
-    parser.add_argument('--storyboard', type=Path, help='Use a validated teaching storyboard instead of calling the LLM')
-    args = parser.parse_args()
-    try:
-        load_dotenv(ROOT / '.env', override=False)
-        settings = Settings.from_env()
-        if args.script.stat().st_size > 32 * 1024:
-            raise ProviderError('input', 'input_limit', 'Script file exceeds 32 KiB')
-        text = args.script.read_text(encoding='utf-8-sig')
-        draft = None
-        if args.storyboard:
-            if args.storyboard.stat().st_size > 64 * 1024:
-                raise ProviderError('storyboard', 'input_limit', 'Storyboard exceeds 64 KiB')
-            try:
-                draft = json.loads(args.storyboard.read_text(encoding='utf-8-sig'))
-            except json.JSONDecodeError:
-                raise ProviderError('storyboard', 'invalid_response', 'Storyboard must be JSON') from None
-            validate_storyboard(draft, text.strip())
-        with httpx.Client(timeout=120, follow_redirects=False) as client:
-            project = generate_project(text, args.output, ROOT / 'apps/renderer/public', settings, client, draft=draft)
-        print(json.dumps({'dsl': str(args.output), 'scenes': len(project['scenes']),
-                          'duration_frames': sum(s['duration_frames'] for s in project['scenes'])}, ensure_ascii=False))
-        return 0
-    except ProviderError as error:
-        print(json.dumps({'stage': error.stage, 'code': error.code, 'message': str(error),
-                          'scene_id': getattr(error, 'scene_id', None),
-                          'artifact_dir': getattr(error, 'artifact_dir', None)}, ensure_ascii=False), file=sys.stderr)
-        return 1
-    except (OSError, UnicodeError):
-        print('{"stage":"input","code":"file_error","message":"Cannot read input or write output"}', file=sys.stderr)
-        return 1
-
-
-if __name__ == '__main__':
-    sys.exit(main())

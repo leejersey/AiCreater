@@ -44,21 +44,9 @@ class VisualApiTests(unittest.TestCase):
 
     def test_pending_audio_blocks_paid_visual_dispatch(self):
         project=self.client.post(self.path+'/prepare',json={'expected_revision':1}).json()
-        body={'scene_id':project['scenes'][0]['id'],'expected_revision':project['revision'],'confirmed':True,'max_requests':2}
-        self.assertEqual(self.client.post(self.path+'/generate',json=body).status_code,409)
+        body={'scene_id':project['scenes'][0]['id'],'expected_revision':project['revision'],'confirmed':True,'max_turns':25}
+        self.assertEqual(self.client.post(self.path+'/agent',json=body).status_code,409)
         self.assertEqual(self.client.get(self.path).json(),{'jobs':[]})
-
-    def test_queue_executor_publishes_authenticated_text_not_executable_source(self):
-        self.check_queue_executor('source')
-
-    def test_host_mode_survives_api_queue_and_published_result(self):
-        self.check_queue_executor('host-motion')
-
-    def test_intent_mode_survives_api_queue_and_published_result(self):
-        self.check_queue_executor('host-intent')
-
-    def test_components_mode_survives_api_queue_and_published_result(self):
-        self.check_queue_executor('host-components')
 
     def ready_scene(self,project=None):
         """A prepared scene with real measured audio on disk, as voicing and alignment would leave it."""
@@ -249,49 +237,5 @@ class VisualApiTests(unittest.TestCase):
                 'usage':{'inputTokens':1,'outputTokens':1,'cachedInputTokens':0},'sha256':'c'*64,'finish_by':'model','frames':[],'video':'video.mp4','srt':'video.srt'}))
         _,done,_,_=self.run_agent_job(write)
         self.assertEqual(done['state'],'failed')
-
-    def check_queue_executor(self,mode):
-        from services.visual import worker
-        project=self.client.post(self.path+'/prepare',json={'expected_revision':1}).json()
-        row=project['scenes'][0];scene=row['scene'];text=scene['narration']['text']
-        scene.update(duration_frames=60,captions=[{'text':text,'start_frame':0,'end_frame':60}])
-        scene['narration'].update(audio_asset_id='voice',audio_start_frame=0)
-        config=project['config'];config['assets']=[{'id':'voice','type':'audio','checksum':'a'*64,'storage_key':'generated/voice.wav','duration_ms':2000}]
-        with self.store.connection() as conn:
-            conn.execute("UPDATE scenes SET scene=%s,state='ready' WHERE id=%s",[Jsonb(scene),row['id']])
-            conn.execute('UPDATE projects SET config=%s WHERE id=%s',[Jsonb(config),self.pid])
-        response=self.client.post(self.path+'/generate',json={'scene_id':row['id'],'expected_revision':project['revision'],'confirmed':True,'max_requests':2,'generation_mode':mode})
-        self.assertEqual(response.status_code,202,response.text)
-        job=response.json();source='export default function Scene(){return null;}'
-        # Synthetic provider output checks the queue boundary without dispatching a paid request.
-        def launcher(command,**options):
-            self.assertNotIn('DATABASE_URL',options['env']);self.assertNotIn('VOLCENGINE_API_KEY',options['env'])
-            data=json.loads(Path(command[-2]).read_text());self.assertEqual(data['brief']['narration'],text)
-            self.assertEqual(data.get('generation_mode','source'),mode)
-            output=Path(command[-1]);output.mkdir()
-            (output/'source.txt').write_text(source);(output/'design.json').write_text('{}')
-            result={'sha256':'b'*64,'design_sha256':'d'*64,'source':source,'design':{},'requests_dispatched':2}
-            if mode!='source':result.update(generation_mode=mode,assembly_sha256='e'*64)
-            if mode in ('host-intent','host-components'):result['intent_sha256']='f'*64
-            (output/'result.json').write_text(json.dumps(result))
-            process=Mock();process.poll.return_value=0;process.returncode=0
-            return process
-        root=self.store.public.resolve()/'visual'
-        with patch.object(worker,'WORK_ROOT',root),patch.object(worker,'_stop'):
-            done=worker.run_once(self.client.app.state.visual,launcher=launcher)
-            self.assertEqual(done['state'],'succeeded')
-            public=self.client.get(self.path).json()['jobs'][0]
-            self.assertEqual(public['input_summary']['generation_mode'],mode)
-            if mode!='source':self.assertEqual(public['result']['assembly_sha256'],'e'*64)
-            if mode in ('host-intent','host-components'):self.assertEqual(public['result']['intent_sha256'],'f'*64)
-            self.assertNotIn('_files',public['result']);self.assertNotIn('input',public)
-            file=self.client.get(self.path+'/'+job['id']+'/files/source.txt')
-            self.assertEqual(file.status_code,200,file.text);self.assertEqual(file.text,source)
-            self.assertTrue(file.headers['content-type'].startswith('text/plain'))
-            self.assertEqual(file.headers['x-content-type-options'],'nosniff')
-            self.assertEqual(self.client.get(self.path+'/'+job['id']+'/files/provider-1.json').status_code,404)
-            (root/job['id']/'source.txt').write_text('changed')
-            self.assertEqual(self.client.get(self.path+'/'+job['id']+'/files/source.txt').status_code,422)
-
 
 if __name__=='__main__':unittest.main()

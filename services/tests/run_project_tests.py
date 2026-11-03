@@ -35,7 +35,7 @@ def main():
                 time.sleep(0.5)
         else: raise RuntimeError('Temporary PostgreSQL did not become ready')
         modules=sys.argv[1:] or ['services.tests.test_projects','services.tests.test_api','services.tests.test_jobs',
-            'services.tests.test_data_chart.ChartStoreTests','services.tests.test_visual_store','services.tests.test_visual_api']
+            'services.tests.test_visual_store','services.tests.test_visual_api']
         return subprocess.run([sys.executable, '-m', 'unittest', *modules, '-v'],
                               cwd=ROOT, env=env, timeout=600).returncode
     except (subprocess.SubprocessError, OSError, RuntimeError):

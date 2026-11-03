@@ -99,30 +99,6 @@ class AccountTests(unittest.TestCase):
         with self.store.connection() as conn:conn.execute("UPDATE user_sessions SET expires_at=now()-interval '1 second' WHERE user_id=%s",[user['id']])
         self.assertEqual(self.client.get('/api/auth/me').status_code,401)
 
-    def test_cross_account_all_resource_families_are_denied_before_side_effects(self):
-        first=self.register();project=self.create();pid=project['id']
-        project=self.store.add_scene(pid,1,'蒸发发生在液体表面。','蒸发发生在液体表面。');sid=project['scenes'][0]['id']
-        version=str(uuid.uuid4());candidate=str(uuid.uuid4())
-        with self.store.connection() as conn:
-            conn.execute('INSERT INTO project_versions(id,project_id,revision,dsl,profile) VALUES(%s,%s,1,%s,%s)',[version,pid,Jsonb({}),Jsonb({})])
-            conn.execute('INSERT INTO scene_candidates(id,scene_id,base_revision,draft) VALUES(%s,%s,1,%s)',[candidate,sid,Jsonb({})])
-        job=self.client.app.state.jobs.submit_regenerate(sid,1)
-        self.addCleanup(self.client.app.state.jobs.cancel,job['id'])
-        self.client.cookies.clear();self.register('other_'+uuid.uuid4().hex[:16])
-        self.assertEqual(self.client.get('/api/projects').json(),[])
-        for path in [f'/api/projects/{pid}',f'/api/projects/{pid}/jobs',f'/api/projects/{pid}/usage',f'/api/projects/{pid}/versions',
-                     f'/api/projects/{pid}/assets/audio',f'/api/scenes/{sid}/candidates',f'/api/versions/{version}',
-                     f'/api/jobs/{job["id"]}',f'/api/jobs/{job["id"]}/estimate',f'/api/jobs/{job["id"]}/files/mp4',f'/api/renders/{job["id"]}']:
-            with self.subTest(path=path):self.assertEqual(self.client.get(path).status_code,404,path)
-        for path,body in [(f'/api/projects/{pid}/generate',{'expected_revision':project['revision']}),
-                          (f'/api/jobs/{job["id"]}/cancel',{}),(f'/api/jobs/{job["id"]}/retry',{}),
-                          (f'/api/scenes/{sid}/voice',{'expected_revision':1}),
-                          (f'/api/scenes/{sid}/candidates/{candidate}/accept',{'expected_revision':1})]:
-            self.assertEqual(self.client.post(path,json=body).status_code,404,path)
-        self.assertEqual(self.client.patch(f'/api/scenes/{sid}',json={'expected_revision':1,'changes':{'narration_text':'不允许。'}}).status_code,404)
-        self.assertEqual(self.store.get_project(pid),project)
-        self.assertEqual(self.client.app.state.jobs.get(job['id'])['state'],'queued')
-
     def test_untrusted_origin_invalid_input_tampering_and_auth_limit(self):
         for fields in [{'username':'x','password':self.password},{'username':self.username,'password':'short'},
                        {'username':self.username,'password':self.password,'owner_id':'fake'}]:
@@ -138,7 +114,7 @@ class AccountTests(unittest.TestCase):
         project=self.client.post('/api/projects',json={'title':'概念课','source_text':'蒸发是液体表面汽化。','mode':'script'}).json()
         row=next(p for p in self.client.get('/api/projects').json() if p['id']==project['id'])
         self.assertEqual(row['scene_count'],0);self.assertFalse(row['active_jobs']);self.assertIsNotNone(row['updated_at']);created_at=row['updated_at']
-        project=self.client.post('/api/projects/'+project['id']+'/scenes',json={'expected_revision':project['revision'],'narration_text':'蒸发是液体表面汽化。','content':'蒸发'}).json()
+        project=self.client.post('/api/projects/'+project['id']+'/visual/prepare',json={'expected_revision':project['revision']}).json()
         row=next(p for p in self.client.get('/api/projects').json() if p['id']==project['id'])
         self.assertEqual(row['scene_count'],1);self.assertEqual(row['needs_voice'],1);self.assertGreater(row['updated_at'],created_at)
 

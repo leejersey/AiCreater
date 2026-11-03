@@ -7,14 +7,14 @@ from pathlib import Path
 
 import httpx
 
-from services.tests.test_generation import outline, settings, tts_response, quoted_wire
+from services.tests.test_generation import outline, settings, tts_response
 from services.workflow.generate import generate_project
 from services.workflow.providers import ProviderError
 from services.workflow.storyboard import validator
 
 
 class PipelineTests(unittest.TestCase):
-    def test_http_protocol_pipeline_outputs_real_wav_and_valid_dsl(self):
+    def test_voice_pipeline_outputs_real_wav_and_valid_dsl(self):
         with tempfile.TemporaryDirectory() as temp:
             root = Path(temp)
             source = root / 'source.wav'
@@ -24,15 +24,13 @@ class PipelineTests(unittest.TestCase):
             draft = outline()
             draft['scenes'][0]['id'] = 's' * 80  # Longest schema-valid scene ID must remain renderable.
             def handler(request):
-                if request.url.host == 'api.deepseek.com':
-                    return httpx.Response(200, json={'choices': [{'finish_reason': 'stop',
-                        'message': {'content': json.dumps(quoted_wire(draft))}}]})
+                self.assertNotEqual(request.url.host, 'api.deepseek.com')
                 return tts_response({'code': 0, 'data': base64.b64encode(audio).decode(),
                     'sentence': {'words': [{'word': '规则匹配', 'startTime': 0, 'endTime': 0.9}]}})
             destination = root / 'project.json'
             public = root / 'public'; public.mkdir()
             with httpx.Client(transport=httpx.MockTransport(handler)) as client:
-                result = generate_project('规则匹配。', destination, public, settings(), client)
+                result = generate_project('规则匹配。', destination, public, settings(), client, draft)
             self.assertEqual(validator.validate_project(result), [])
             self.assertEqual(json.loads(destination.read_text()), result)
             asset = result['assets'][0]
@@ -41,7 +39,7 @@ class PipelineTests(unittest.TestCase):
             # Preserving outputs must fail BEFORE another paid provider request.
             with httpx.Client(transport=httpx.MockTransport(lambda r: self.fail('Provider called'))) as client:
                 with self.assertRaises(ProviderError):
-                    generate_project('规则匹配。', destination, public, settings(), client)
+                    generate_project('规则匹配。', destination, public, settings(), client, draft)
 
     def test_supplied_voice_draft_preserves_spaces_without_calling_llm(self):
         with tempfile.TemporaryDirectory() as temp:
@@ -65,14 +63,11 @@ class PipelineTests(unittest.TestCase):
             subprocess.run(['ffmpeg', '-v', 'error', '-f', 'lavfi', '-i',
                             'sine=frequency=440:duration=1', str(audio_file)], check=True)
             def handler(request):
-                if request.url.host == 'api.deepseek.com':
-                    return httpx.Response(200, json={'choices': [{'finish_reason': 'stop',
-                        'message': {'content': json.dumps(quoted_wire(outline()))}}]})
                 return tts_response({'code': 0, 'data': base64.b64encode(audio_file.read_bytes()).decode()})
             destination = root / 'project.json'
             with httpx.Client(transport=httpx.MockTransport(handler)) as client:
                 with self.assertRaisesRegex(ProviderError, 'alignment'):
-                    generate_project('规则匹配。', destination, public, settings(), client)
+                    generate_project('规则匹配。', destination, public, settings(), client, outline())
             self.assertFalse(destination.exists())
             self.assertTrue(list(public.glob('generated/*/*.wav')))
 
@@ -91,7 +86,7 @@ class PipelineTests(unittest.TestCase):
                 for text in ['', ' ' * 5, '字' * 4001]:
                     with self.subTest(text_length=len(text)):
                         with self.assertRaises(ProviderError):
-                            generate_project(text, Path(temp) / 'result.json', Path(temp), settings(), client)
+                            generate_project(text, Path(temp) / 'result.json', Path(temp), settings(), client, outline(text or '规则匹配。'))
 
 
 if __name__ == '__main__': unittest.main()

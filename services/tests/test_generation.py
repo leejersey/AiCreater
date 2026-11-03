@@ -6,7 +6,7 @@ from unittest.mock import patch
 
 import httpx
 
-from services.workflow.providers import Settings, ProviderError, deepseek_storyboard, volcengine_speech
+from services.workflow.providers import Settings, ProviderError, volcengine_speech
 from services.workflow.storyboard import validate_storyboard
 from services.tts.timing import align_words, time_scene
 
@@ -59,61 +59,6 @@ class ProviderTests(unittest.TestCase):
         with self.assertRaises(ProviderError):
             settings(VOLCENGINE_APP_ID='app', VOLCENGINE_ACCESS_KEY='access')
 
-    def test_deepseek_request_and_validated_original(self):
-        expected = outline()
-        def handler(request):
-            body = json.loads(request.content)
-            self.assertEqual(str(request.url), 'https://api.deepseek.com/chat/completions')
-            self.assertEqual(body['response_format'], {'type': 'json_object'})
-            self.assertEqual(request.headers['Authorization'], 'Bearer secret-llm')
-            self.assertIn('JSON', body['messages'][0]['content'])
-            return httpx.Response(200, json={'choices': [{'finish_reason': 'stop', 'message': {'content': json.dumps(quoted_wire(expected))}}]})
-        with httpx.Client(transport=httpx.MockTransport(handler)) as client:
-            self.assertEqual(deepseek_storyboard('规则匹配。', settings(), client), expected)
-
-    def test_complete_lesson_request_keeps_paragraphs_and_teaching_actions(self):
-        paragraphs = ['第' + str(i) + '步：先说明问题，再解释这个教学动作和结果。\n' for i in range(1, 11)]
-        source = ''.join(paragraphs)
-        expected = {'scenes': [{'id': 'part_' + str(i), 'type': 'card_sequence',
-                    'narration': {'text': text}, 'elements': [{'id': 'point', 'content': '教学动作',
-                    'cue': {'text_start': 0, 'text_end': 3}}]} for i, text in enumerate(paragraphs)]}
-        def handler(request):
-            body = json.loads(request.content)
-            prompt = body['messages'][0]['content']
-            self.assertEqual(''.join(p['text'] for p in json.loads(body['messages'][1]['content'])['source_parts']), source)
-            self.assertNotIn('prefer around 5 scenes for a 60-second script', prompt)
-            self.assertIn('at most 20 scenes', prompt)
-            self.assertIn('separate cues for taking a value and adding it', prompt)
-            self.assertIn('Preserve applicability conditions', prompt)
-            self.assertIn('Every element.content in EVERY scene type is limited to 40 Unicode code points', prompt)
-            self.assertIn('Do not remove applicability conditions', prompt)
-            return httpx.Response(200, json={'choices': [{'finish_reason': 'stop', 'message': {'content': json.dumps(quoted_wire(expected))}}]})
-        with httpx.Client(transport=httpx.MockTransport(handler)) as client:
-            result = deepseek_storyboard(source, settings(), client)
-        self.assertEqual(len(result['scenes']), 10)
-        self.assertEqual(''.join(s['narration']['text'] for s in result['scenes']), source)
-
-    def test_comparison_prompt_uses_paired_labels_not_multiline_code(self):
-        def handler(request):
-            prompt = json.loads(request.content)['messages'][0]['content']
-            self.assertIn('comparison_panel', prompt)
-            self.assertIn('2, 4 or 6 elements', prompt)
-            self.assertIn('left title, right title', prompt)
-            self.assertIn('multiline code stays in code_walkthrough', prompt)
-            return httpx.Response(200, json={'choices': [{'finish_reason': 'stop', 'message': {'content': json.dumps(quoted_wire(outline()))}}]})
-        with httpx.Client(transport=httpx.MockTransport(handler)) as client:
-            deepseek_storyboard('规则匹配。', settings(), client)
-
-    def test_short_script_is_not_required_to_become_a_full_length_course(self):
-        source = '规则匹配。'
-        def handler(request):
-            prompt = json.loads(request.content)['messages'][0]['content']
-            self.assertIn('Do not pad short scripts', prompt)
-            self.assertIn('not a mandatory six-part structure', prompt)
-            return httpx.Response(200, json={'choices': [{'finish_reason': 'stop', 'message': {'content': json.dumps(quoted_wire(outline(source)))}}]})
-        with httpx.Client(transport=httpx.MockTransport(handler)) as client:
-            self.assertEqual(deepseek_storyboard(source, settings(), client), outline(source))
-
     def test_voice_child_uses_frozen_voice_without_llm_credentials(self):
         import io
         from contextlib import redirect_stdout
@@ -122,9 +67,8 @@ class ProviderTests(unittest.TestCase):
         payload = {'kind': 'voice', 'scene': outline()['scenes'][0], 'public_root': '/tmp/voice-test',
                    'profile': {'voice': {'resource_id': 'seed-tts-2.0', 'speaker': 'frozen_voice'}}}
         output = io.StringIO()
-        with patch('sys.stdin', io.StringIO(json.dumps(payload))), patch.dict('os.environ', {'VOLCENGINE_API_KEY': 'test-voice'}, clear=True), patch('services.workflow.generate.generate_project', return_value={'test': 'document'}) as generate, patch('services.workflow.providers.deepseek_storyboard') as llm, redirect_stdout(output):
+        with patch('sys.stdin', io.StringIO(json.dumps(payload))), patch.dict('os.environ', {'VOLCENGINE_API_KEY': 'test-voice'}, clear=True), patch('services.workflow.generate.generate_project', return_value={'test': 'document'}) as generate, redirect_stdout(output):
             child()
-        llm.assert_not_called()
         self.assertEqual(generate.call_args.args[3].speaker, 'frozen_voice')
         self.assertEqual(generate.call_args.kwargs['draft']['scenes'], [payload['scene']])
         validate_storyboard(generate.call_args.kwargs['draft'], payload['scene']['narration']['text'])
@@ -143,71 +87,6 @@ class ProviderTests(unittest.TestCase):
                 child()
             tts.assert_called_once()
             self.assertEqual(json.loads(output.getvalue()), {'error': 'transport_error'})
-
-    def test_worker_child_initial_outline_uses_whole_document(self):
-        import io
-        from contextlib import redirect_stdout
-        from unittest.mock import patch
-        from services.workflow.worker import child
-        output = io.StringIO()
-        payload = {'kind': 'generate', 'model': 'test-model', 'source_text': ' 规则匹配。 '}
-        with patch('sys.stdin', io.StringIO(json.dumps(payload))), patch.dict('os.environ', {'DEEPSEEK_API_KEY': 'test-key'}), patch('services.workflow.providers.deepseek_storyboard', return_value=outline(payload['source_text'])) as model, redirect_stdout(output):
-            child()
-        self.assertEqual(model.call_args.args[0], payload['source_text'])
-        self.assertEqual(len(model.call_args.args), 3)
-        self.assertEqual(json.loads(output.getvalue())['draft'], outline(payload['source_text']))
-
-    def test_worker_child_missing_credentials_is_not_teaching_validation(self):
-        import io
-        from contextlib import redirect_stdout
-        from unittest.mock import patch
-        from services.workflow.worker import child
-        output = io.StringIO()
-        with patch('sys.stdin', io.StringIO(json.dumps({'kind': 'generate', 'model': 'test-model', 'source_text': '规则匹配。'}))), patch.dict('os.environ', {'DEEPSEEK_API_KEY': ''}), redirect_stdout(output):
-            child()
-        self.assertEqual(json.loads(output.getvalue()), {'error': 'configuration'})
-
-    def test_initial_outline_preserves_whitespace_exactly(self):
-        expected = outline(' 规则匹配。 ')
-        def handler(request):
-            self.assertEqual(''.join(p['text'] for p in json.loads(json.loads(request.content)['messages'][1]['content'])['source_parts']), ' 规则匹配。 ')
-            return httpx.Response(200, json={'choices': [{'finish_reason': 'stop', 'message': {'content': json.dumps(quoted_wire(expected))}}]})
-        with httpx.Client(transport=httpx.MockTransport(handler)) as client:
-            self.assertEqual(deepseek_storyboard(' 规则匹配。 ', settings(), client), expected)
-
-    def test_regenerate_preserves_single_scene_id_and_whitespace(self):
-        expected = outline(' 规则匹配。 ')
-        original = expected['scenes'][0]
-        for wrong_id in [False, True]:
-            response = copy.deepcopy(expected)
-            if wrong_id: response['scenes'][0]['id'] = 'different_scene'
-            def handler(request):
-                body = json.loads(request.content)
-                self.assertIn('exactly ONE scene', body['messages'][0]['content'])
-                self.assertEqual(json.loads(body['messages'][1]['content'])['source_parts'], [{'id': 1, 'text': ' 规则匹配。 '}])
-                return httpx.Response(200, json={'choices': [{'finish_reason': 'stop', 'message': {'content': json.dumps(quoted_wire(response, [{'id': 1, 'text': response['scenes'][0]['narration']['text']}]))}}]})
-            with httpx.Client(transport=httpx.MockTransport(handler)) as client:
-                if wrong_id:
-                    with self.assertRaises(ProviderError): deepseek_storyboard(' 规则匹配。 ', settings(), client, original)
-                else:
-                    self.assertEqual(deepseek_storyboard(' 规则匹配。 ', settings(), client, original), expected)
-
-    def test_deepseek_truncated_or_blank_json_rejected(self):
-        for reason, content in [('length', '{}'), ('stop', ''), ('stop', 'not JSON')]:
-            with self.subTest(reason=reason, content=content):
-                with httpx.Client(transport=httpx.MockTransport(lambda r: httpx.Response(200, json={
-                    'choices': [{'finish_reason': reason, 'message': {'content': content}}]}))) as client:
-                    with self.assertRaises(ProviderError):
-                        deepseek_storyboard('规则匹配。', settings(), client)
-
-    def test_http_failure_is_sanitized_and_does_not_follow_redirect(self):
-        for status in [401, 429, 500, 302]:
-            with self.subTest(status=status):
-                with httpx.Client(transport=httpx.MockTransport(lambda r: httpx.Response(
-                    status, text='secret-llm', headers={'Location': 'https://evil.example'}))) as client:
-                    with self.assertRaises(ProviderError) as caught:
-                        deepseek_storyboard('规则匹配。', settings(), client)
-                    self.assertNotIn('secret-llm', str(caught.exception))
 
     def test_tts_request_audio_and_timestamp_response(self):
         words = [{'word': '规则匹配', 'startTime': 0, 'endTime': 1.01}]
@@ -381,17 +260,6 @@ class TimingTests(unittest.TestCase):
         self.assertEqual(titled['animations'][0]['effect'], 'scale_pop')
         self.assertEqual(titled['animations'][0]['start_frame'], 6)
         self.assertEqual(titled['animations'][0]['duration_frames'], 30)
-
-    def test_model_wire_hides_renderer_only_fields(self):
-        from services.workflow.storyboard import DIRECTOR_REFERENCE_SCHEMA, DRAFT_SCHEMA, LEGACY_REFERENCE_SCHEMA, REFERENCE_SCHEMA
-        self.assertIn('entrance', DRAFT_SCHEMA['definitions']['Element']['properties'])
-        self.assertIn('camera', DRAFT_SCHEMA['definitions']['Scene']['properties'])
-        self.assertIn('section', DRAFT_SCHEMA['definitions']['Scene']['properties'])
-        for schema in (REFERENCE_SCHEMA, LEGACY_REFERENCE_SCHEMA, DIRECTOR_REFERENCE_SCHEMA):
-            self.assertNotIn('entrance', schema['definitions']['Element']['properties'])
-            for key in ('camera', 'vector', 'section'):
-                self.assertNotIn(key, schema['definitions']['Scene']['properties'])
-
 
 if __name__ == '__main__':
     unittest.main()

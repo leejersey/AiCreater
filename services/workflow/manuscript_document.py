@@ -88,19 +88,3 @@ def format_document(document):
     if parse_document(text) != document:
         invalid()
     return text
-
-
-def scene_materials(document, text):
-    """Only reuse unchanged spoken passages; edited narration must not silently inherit stale assets."""
-    sections = document.get('sections', [])
-    source = narration_text({'sections': sections})
-    start = source.find(text) if text.strip() else -1
-    if start < 0 or source.find(text, start + 1) >= 0:
-        return []
-    end, offset, matched = start + len(text), 0, []
-    for section in sections:
-        section_end = offset + len(section['narration'])
-        if start < section_end and end > offset:
-            matched.append(dict(section))
-        offset = section_end + 2  # narration_text joins sections with two newlines
-    return matched
