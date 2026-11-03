@@ -26,6 +26,8 @@
 .vw-narration { white-space:pre-wrap; overflow-wrap:anywhere; }
 .vw-chapter-editor textarea { width:100%; min-height:140px; resize:vertical; margin:8px 0; line-height:1.7; }
 .vw-chapter-editor summary { cursor:pointer; }
+.vw-revise textarea { width:100%; margin-top:6px; resize:vertical; }
+.vw-revise { margin:12px 0; }
 .vw-warning { color:var(--warning); }
 .vw-error { color:var(--error); }
 .visual-workbench video { display:block; width:100%; aspect-ratio:16/9; background:#000; }

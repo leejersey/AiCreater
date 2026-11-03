@@ -18,7 +18,9 @@ How to work:
 
 Keep replies short. Spend your turns on tool calls.`;
 
-export function initialMessage(brief:SceneBrief):string{
+export type Revision={feedback:string};
+
+export function initialMessage(brief:SceneBrief,revision?:Revision):string{
  return [
   `Scene: ${brief.title}`,
   `Duration: ${brief.durationInFrames} frames (${(brief.durationInFrames/brief.fps).toFixed(1)}s)`,
@@ -26,6 +28,10 @@ export function initialMessage(brief:SceneBrief):string{
   `Visual goal: ${brief.visualGoal}`,
   `Facts that must stay accurate:\n${brief.facts.map(f=>`- ${f.trim()}`).join('\n')}`,
   `Materials: ${brief.materials.join('; ')}`,
-  'Begin with get_timing and read_skill.',
+  ...(revision?[
+   'This is a revision. scene/Scene.tsx already holds the previous version, which passed the checks and was reviewed by a person. Their feedback:',
+   revision.feedback.trim(),
+   'Read scene/Scene.tsx and get_timing, then change what the feedback asks for with edit_file. Keep everything the feedback does not mention; do not rewrite the file. If the feedback asks for something the brief does not support (an invented fact or number), keep to the brief.',
+  ]:['Begin with get_timing and read_skill.']),
  ].join('\n\n');
 }

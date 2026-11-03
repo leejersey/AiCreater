@@ -40,6 +40,7 @@ DEFAULT_LEASE_SECONDS = 240
 LEASE_SQL = ('CASE kind ' + ' '.join(f"WHEN '{kind}' THEN interval '{seconds} seconds'" for kind, seconds in LEASE_SECONDS.items()) +
              f" ELSE interval '{DEFAULT_LEASE_SECONDS} seconds' END")
 AGENT_MAX_TURNS = 25
+MAX_FEEDBACK = 2000
 STALE = 'stale: 章节版本或冻结素材已改变，请重新生成并确认当前版本。'
 
 
@@ -81,6 +82,8 @@ class VisualJobs:
         summary = {k: data[k] for k in ('fingerprint',) if k in data}
         if row['kind'] == 'export': summary['chapter_count'] = len(data.get('chapters', []))
         if row['kind'] == 'agent': summary.update(model=data.get('model'), max_turns=data.get('max_turns'))
+        if row['kind'] == 'agent' and isinstance(data.get('revision'), dict):
+            summary.update(revision_of=data['revision'].get('job_id'), feedback=data['revision'].get('feedback'))
         created = row.get('created_at')
         public_error=row.get('error')
         return {'id': str(row['id']), 'project_id': str(row['project_id']),
@@ -205,10 +208,13 @@ class VisualJobs:
             conn.execute('UPDATE projects SET revision=revision+1 WHERE id=%s', [project['id']])
             return self.store._read(conn, project['id'])
 
-    def agent(self, project_id, scene_id, expected_revision, confirmed, max_turns):
+    def agent(self, project_id, scene_id, expected_revision, confirmed, max_turns, revise=None, feedback=None):
         # One job: the scene-agent loop (paid model turns, capped) and, if it passes, the voiced chapter video.
+        # With `revise`, the loop starts from that passed Agent version of this chapter plus the person's feedback.
         if confirmed is not True or type(max_turns) is not int or not 1 <= max_turns <= AGENT_MAX_TURNS:
             raise StoreError('validation', f'必须明确确认本次 Agent 轮数上限（1–{AGENT_MAX_TURNS}）；失败不自动重试')
+        if (revise is None) != (feedback is None) or (feedback is not None and (not isinstance(feedback, str) or not feedback.strip() or len(feedback) > MAX_FEEDBACK)):
+            raise StoreError('validation', f'按意见修改须同时给出要修改的版本和 1–{MAX_FEEDBACK} 字的修改意见')
         revision(expected_revision)
         with self.store.connection() as conn:
             project = self.store._read(conn, project_id, lock=True)
@@ -216,6 +222,13 @@ class VisualJobs:
             if project['revision'] != expected_revision: raise StoreError('conflict', 'Project revision changed')
             data = measured_input(project, scene)
             data.update(model=AGENT_MODEL, max_turns=max_turns)
+            if revise is not None:
+                base = self._read(conn, project['id'], revise)
+                result = base.get('result') or {}
+                if (base['kind'] != 'agent' or base['scene_id'] != scene['id'] or base['state'] != 'succeeded' or
+                        result.get('status') != 'passed' or 'source.txt' not in (result.get('_files') or {}) or not self._current(conn, project, base)):
+                    raise StoreError('conflict', '只能在本章当前有效、已通过检查的 Agent 版本上修改')
+                data['revision'] = {'job_id': base['id'], 'sha256': result['sha256'], 'feedback': feedback.strip()}
             return self._submit(conn, project, scene['id'], 'agent', data)
 
     @staticmethod

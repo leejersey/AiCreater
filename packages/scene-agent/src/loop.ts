@@ -5,7 +5,7 @@ import {ProviderError,type Message,type Provider,type ToolCall,type ToolMessage,
 import type {Budget} from './provider/registry';
 import type {StillRenderer} from './render/stills';
 import {sourceSha256} from './render/stills';
-import {initialMessage,systemPrompt} from './prompt';
+import {initialMessage,systemPrompt,type Revision} from './prompt';
 import {finishTool,type FinishRecord} from './tools/finish';
 import {buildTools,executeTool,toolSpecs} from './tools/index';
 import type {Tool,ToolContext} from './tools/types';
@@ -30,6 +30,7 @@ export type LoopOptions={
  renderer:StillRenderer;
  budget:Budget;
  signal?:AbortSignal;
+ revision?:Revision; // a person's feedback on the version already in scene/Scene.tsx
  onTurn?:(event:{turn:number;stop:string;toolCalls:string[];usage:Usage})=>void;
 };
 
@@ -50,7 +51,7 @@ export async function runLoop(options:LoopOptions):Promise<RunResult>{
  const tools:Tool[]=[...buildTools(provider.capabilities),finishTool(record=>{finished=record;})];
  const specs=toolSpecs(tools);
  const system=systemPrompt(provider.capabilities);
- const messages:Message[]=[{role:'user',content:[{type:'text',text:initialMessage(workspace.brief)}]}];
+ const messages:Message[]=[{role:'user',content:[{type:'text',text:initialMessage(workspace.brief,options.revision)}]}];
  const usage:Usage={inputTokens:0,outputTokens:0,cachedInputTokens:0};
  let turns=0,nudges=0,truncations=0,unchangedTurns=0,cleanStreak=0;
  let lastScene:string|undefined=await sceneHash(workspace);

@@ -126,6 +126,36 @@ class VisualApiTests(unittest.TestCase):
             check(job)  # files live under the patched work root
         return job,done,seen,text
 
+    def test_a_passed_agent_version_can_be_revised_with_feedback(self):
+        from services.visual import worker
+        import hashlib
+        source='export default function Scene(){return null;}'
+        sha=hashlib.sha256(source.encode()).hexdigest()
+        def write(output):
+            (output/'source.txt').write_text(source);(output/'video.mp4').write_bytes(b'mp4');(output/'video.srt').write_text('1\n')
+            (output/'stills').mkdir();(output/'stills'/'frame-30.png').write_bytes(b'png')
+            (output/'result.json').write_text(json.dumps({'status':'passed','model':'deepseek-flash-thinking','turns':4,'requests_dispatched':4,
+                'usage':{'inputTokens':1,'outputTokens':1,'cachedInputTokens':0},'sha256':sha,'finish_by':'model',
+                'frames':['stills/frame-30.png'],'video':'video.mp4','srt':'video.srt'}))
+        def check(job):
+            project=self.client.get('/api/projects/'+self.pid).json();row=project['scenes'][0]
+            body={'scene_id':row['id'],'expected_revision':project['revision'],'confirmed':True,'max_turns':25}
+            for bad in [{'revise':job['id']},{'feedback':'放大'},{'revise':job['id'],'feedback':'   '},{'revise':job['id'],'feedback':'x'*2001},{'revise':str(uuid.uuid4()),'feedback':'放大'}]:
+                self.assertIn(self.client.post(self.path+'/agent',json={**body,**bad}).status_code,(404,409,422),bad)
+            revised=self.client.post(self.path+'/agent',json={**body,'revise':job['id'],'feedback':' 把流程图画大一些 '})
+            self.assertEqual(revised.status_code,202,revised.text);revised=revised.json()
+            self.assertEqual((revised['input_summary']['revision_of'],revised['input_summary']['feedback']),(job['id'],'把流程图画大一些'))
+            seen={}
+            def launcher(command,**options):
+                seen.update(input=json.loads(Path(command[-2]).read_text()))
+                process=Mock();process.poll.return_value=0;process.returncode=0;return process
+            worker.run_once(self.client.app.state.visual,launcher=launcher)
+            self.assertEqual(seen['input']['revision']['feedback'],'把流程图画大一些')
+            self.assertEqual(seen['input']['revision']['sha256'],sha)
+            self.assertEqual(Path(seen['input']['revision']['source_file']).read_text(),source)
+        job,done,_,_=self.run_agent_job(write,check)
+        self.assertEqual(done['state'],'succeeded',done.get('error'))
+
     def test_agent_job_runs_the_scene_agent_and_publishes_a_voiced_video(self):
         source='export default function Scene(){return null;}'
         def write(output):

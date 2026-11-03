@@ -112,8 +112,14 @@ def command_input(jobs,job):
     if job['kind']=='agent':
         audio=jobs.store.asset_file(job['project_id'],data['asset']['id'])
         if _hash(audio)!=data['asset']['checksum']:raise StoreError('assets','配音已改变')
-        return {'brief':data['brief'],'cues':data['cues'],'scene':data['scene'],'audio_file':str(audio),
-                'model':data['model'],'max_turns':data['max_turns']}
+        command={'brief':data['brief'],'cues':data['cues'],'scene':data['scene'],'audio_file':str(audio),
+                 'model':data['model'],'max_turns':data['max_turns']}
+        if data.get('revision'):
+            base=jobs.get_raw(job['project_id'],data['revision']['job_id'])
+            source=checked_file(job_directory(base['id']),'source.txt')
+            if _hash(source)!=(base.get('result') or {}).get('_files',{}).get('source.txt'):raise ValueError('The version to revise changed on disk')
+            command['revision']={'feedback':data['revision']['feedback'],'source_file':str(source),'sha256':data['revision']['sha256']}
+        return command
     if any('agent_id' not in chapter for chapter in data['chapters']):raise StoreError('conflict','导出章节必须都是已确认的 Agent 视频')
     return {'chapters':[_agent_chapter(jobs,job['project_id'],chapter) for chapter in data['chapters']]}
 

@@ -2,14 +2,14 @@ import {canRetime,type SceneRow,type Job} from './editor';
 
 export type VisualJob = {
   id:string; project_id:string; scene_id:string|null; kind:'agent'|'export';
-  agent?:{model:string;max_turns:number};
+  agent?:{model:string;max_turns:number;revision?:{of:string;feedback:string}};
   state:'queued'|'running'|'succeeded'|'failed'|'cancelled';
   stage?:string|null; error?:string|null;current?:boolean;
   created_at?:string;
   result:{sha256?:string;frames?:string[];video?:string;srt?:string;accepted?:boolean;requests_dispatched?:number|null;
    agent?:{status:'passed';turns:number;finish_by:'model'|'harness';output_tokens:number}}|null;
 };
-export const AGENT_MAX_TURNS=25;
+export const AGENT_MAX_TURNS=25,MAX_FEEDBACK=2000;
 const object=(v:unknown):v is Record<string,unknown>=>!!v&&typeof v==='object'&&!Array.isArray(v);
 const identifier=(v:unknown):v is string=>typeof v==='string'&&/^[A-Za-z0-9_-]+$/.test(v);
 const file=(v:unknown):v is string=>typeof v==='string'&&/^(?:source\.txt|video\.mp4|video\.srt|stills\/frame-\d+\.png)$/.test(v);
@@ -34,7 +34,8 @@ export function parseVisualJobs(value:unknown,projectId:string):VisualJob[] {
     if(v.kind==='agent'){
       // Any configured model name; a strict value here would hide the whole job list when the default changes.
       if(typeof summary.model!=='string'||!/^[a-z0-9][a-z0-9._-]{0,79}$/.test(summary.model)||!Number.isInteger(summary.max_turns)||Number(summary.max_turns)<1||Number(summary.max_turns)>AGENT_MAX_TURNS)throw invalid();
-      agent={model:summary.model,max_turns:Number(summary.max_turns)};
+      if((summary.revision_of!==undefined||summary.feedback!==undefined)&&(!identifier(summary.revision_of)||typeof summary.feedback!=='string'||!summary.feedback.trim()||summary.feedback.length>MAX_FEEDBACK))throw invalid();
+      agent={model:summary.model,max_turns:Number(summary.max_turns),...(summary.revision_of!==undefined?{revision:{of:summary.revision_of as string,feedback:summary.feedback as string}}:{})};
     }else if(Object.hasOwn(summary,'max_turns'))throw invalid();
     let result:VisualJob['result']=null;
     if(v.result!=null){
@@ -122,9 +123,10 @@ export function visualError(error:unknown):string {
 export function latestAgentJob(jobs:VisualJob[]):VisualJob|undefined{
  return jobs.find(j=>j.kind==='agent'&&j.current!==false);
 }
-export function visualAgentBody(sceneId:string,revision:number){
+export function visualAgentBody(sceneId:string,revision:number,revise?:{job:string;feedback:string}){
  if(!identifier(sceneId)||!Number.isInteger(revision)||revision<1)throw invalid();
- return {scene_id:sceneId,expected_revision:revision,confirmed:true,max_turns:AGENT_MAX_TURNS};
+ if(revise&&(!identifier(revise.job)||!revise.feedback.trim()||revise.feedback.length>MAX_FEEDBACK))throw invalid();
+ return {scene_id:sceneId,expected_revision:revision,confirmed:true,max_turns:AGENT_MAX_TURNS,...(revise?{revise:revise.job,feedback:revise.feedback.trim()}:{})};
 }
 export function canAcceptAgent(job:VisualJob):boolean{
  return job.kind==='agent'&&job.state==='succeeded'&&job.current!==false&&job.result?.agent?.status==='passed'&&

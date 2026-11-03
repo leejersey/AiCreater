@@ -160,3 +160,21 @@ test('the chapter editor offers split, merge and delete only when they can work'
  assert.match(long,/偏长，建议拆分/);assert.match(long,/<details[^>]*open=""/);
  assert.match(html({blockedReason:'项目内有任务进行中，结束后再修改章节。'}),/项目内有任务进行中/);
 });
+
+test('a passed version can be revised with feedback: body, confirmation, parsing and panel',async()=>{
+ const {visualAgentReviseAction}=await import('../lib/visual-workbench-actions');
+ assert.deepEqual(visualAgentBody('s',3,{job:'a1',feedback:' 放大流程图 '}),{scene_id:'s',expected_revision:3,confirmed:true,max_turns:25,revise:'a1',feedback:'放大流程图'});
+ for(const bad of [{job:'bad id',feedback:'x'},{job:'a1',feedback:'  '},{job:'a1',feedback:'x'.repeat(2001)}])assert.throws(()=>visualAgentBody('s',3,bad));
+ const action=visualAgentReviseAction('s',3,'a1','放大流程图');
+ assert.match(String(action.confirmation.message),/只按你的意见修改[\s\S]*最多 25 轮/);
+ assert.equal(action.confirmation.detail,'修改意见：放大流程图');
+ const [revised]=parseVisualJobs({jobs:[{...passed,input_summary:{...passed.input_summary,revision_of:'a0',feedback:'放大流程图'}}]},'p');
+ assert.deepEqual(revised.agent?.revision,{of:'a0',feedback:'放大流程图'});
+ for(const summary of [{revision_of:'a0'},{feedback:'x'},{revision_of:'bad id',feedback:'x'}])
+  assert.throws(()=>parseVisualJobs({jobs:[{...passed,input_summary:{...passed.input_summary,...summary}}]},'p'),/视觉任务响应无效/);
+ const panel=(job:any,onRevise?:(t:string)=>void)=>renderToStaticMarkup(createElement(VisualAgentPanel,{projectId:'p',job,now:0,updatedAt:0,disabled:false,onStart(){},onRefresh(){},onCancel(){},onRevise}));
+ assert.match(panel(revised,()=>{}),/按意见修改自上一版：「放大流程图」/);
+ assert.match(panel(revised,()=>{}),/<button[^>]*disabled=""[^>]*>按意见修改（付费）/); // no feedback typed yet
+ const [failed]=parseVisualJobs({jobs:[{...passed,state:'failed',result:{requests_dispatched:3}}]},'p');
+ assert.doesNotMatch(panel(failed,()=>{}),/按意见修改（付费）/); // only a passed version can be revised
+});

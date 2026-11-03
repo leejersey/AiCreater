@@ -1,5 +1,6 @@
 // Worker entry for a visual job of kind "agent": tsx scripts/scene-agent-job.ts <input.json> <new output dir>
-// Input: {brief, cues, scene, audio_file, model, max_turns}. Runs the scene-agent loop in <out>/workspace and,
+// Input: {brief, cues, scene, audio_file, model, max_turns, revision?:{feedback, source_file, sha256}}. With revision, the run
+// starts from that earlier accepted-or-passed source and the person's feedback instead of an empty scene. Runs the scene-agent loop in <out>/workspace and,
 // if the scene passes the gates, renders the voiced chapter video. Calls a paid model API; the worker only
 // launches this for a job the user confirmed with a turn limit.
 import {copyFile,mkdir,readdir,readFile,writeFile} from 'node:fs/promises';
@@ -36,10 +37,16 @@ async function main(){
   console.log(JSON.stringify({status:'stopped',reason:'provider_auth',turns:0}));
   return;
  }
- const workspace=await createWorkspace(path.join(out,'workspace'),{brief,cues,skillDir:path.join(repositoryRoot,'packages/scene-agent/skill')});
+ let initialSource:string|undefined;
+ if(input.revision){
+  initialSource=await readFile(input.revision.source_file,'utf8');
+  if(sourceSha256(initialSource)!==input.revision.sha256)throw Error('the version to revise changed since it was published');
+  if(typeof input.revision.feedback!=='string'||!input.revision.feedback.trim())throw Error('revision feedback is empty');
+ }
+ const workspace=await createWorkspace(path.join(out,'workspace'),{brief,cues,skillDir:path.join(repositoryRoot,'packages/scene-agent/skill'),initialSource});
  const renderer=new RemotionStillRenderer(workspace.brief);
  let run;
- try{run=await runLoop({provider,workspace,renderer,budget:{...entry.budget,maxTurns:input.max_turns}});}
+ try{run=await runLoop({provider,workspace,renderer,budget:{...entry.budget,maxTurns:input.max_turns},...(input.revision?{revision:{feedback:input.revision.feedback}}:{})});}
  finally{await renderer.close();}
  const result:Record<string,unknown>={status:run.status,...(run.reason?{reason:run.reason}:{}),model:input.model,turns:run.turns,usage:run.usage,requests_dispatched:run.turns};
  if(run.status==='passed'&&run.finish){

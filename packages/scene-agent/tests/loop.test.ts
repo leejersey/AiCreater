@@ -254,3 +254,14 @@ test('calls after an accepted finish in the same reply do not run, so the gated 
  assert.equal(await workspace.readScene(),scene(140));
  assert.equal(result.sceneSha256,result.finish?.gates.sourceSha256);
 });
+
+test('a revision run opens with the person\'s feedback and asks for edits to the existing file',async()=>{
+ const {initialMessage}=await import('../src/prompt');
+ const {workspace}=await setup(scene(140));
+ const plain=initialMessage(workspace.brief);
+ const revised=initialMessage(workspace.brief,{feedback:'  把流程图画大一些 '});
+ assert.match(plain,/Begin with get_timing and read_skill/);
+ assert.doesNotMatch(plain,/This is a revision/);
+ assert.match(revised,/This is a revision[\s\S]*\n\n把流程图画大一些\n\n[\s\S]*with edit_file[\s\S]*do not rewrite the file/);
+ assert.doesNotMatch(revised,/Begin with get_timing and read_skill/);
+});

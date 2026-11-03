@@ -23,6 +23,8 @@ class AgentRun(Revision):
     scene_id:str=Field(min_length=1,max_length=80)
     confirmed:bool
     max_turns:int
+    revise:str|None=Field(default=None,min_length=1,max_length=80)  # an earlier passed Agent job of this chapter
+    feedback:str|None=Field(default=None,min_length=1,max_length=2000)
 
 
 class Approval(Body):
@@ -78,7 +80,7 @@ def delete_chapter(project_id:str,scene_id:str,body:ChapterDelete,request:Reques
 
 @router.post('/agent',status_code=202)
 def agent(project_id:str,body:AgentRun,request:Request):
-    return request.app.state.visual.agent(project_id,body.scene_id,body.expected_revision,body.confirmed,body.max_turns)
+    return request.app.state.visual.agent(project_id,body.scene_id,body.expected_revision,body.confirmed,body.max_turns,body.revise,body.feedback)
 
 
 @router.post('/export',status_code=202)
