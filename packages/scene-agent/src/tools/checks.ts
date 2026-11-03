@@ -167,7 +167,9 @@ export const renderStills:Tool={
    context.cleanCheckpoint={sourceSha256:render.sourceSha256,file};
   }
   if(clean)lines.push(fullSample
-   ?'No [high] findings: this version passes the final gates. If every cue has its visual, call finish now. Medium findings are optional polish, and further rewrites risk new problems.'
+   ?(context.capabilities.vision
+    ?'No [high] findings: this version passes the final gates. Now look at it with view_frames and check it against the visual-review list; fix what fails, or call finish if it holds up. Medium findings are optional polish.'
+    :'No [high] findings: this version passes the final gates. If every cue has its visual, call finish now. Medium findings are optional polish, and further rewrites risk new problems.')
    :'No [high] findings in these frames. Call render_stills without frames to check the full sample the gates use.');
   return render.failures.length?failure(lines.join('\n')):text(lines.join('\n'));
  },
@@ -204,6 +206,7 @@ export const viewFrames:Tool={
    const item=render.frames.find(f=>f.frame===frame)!;
    content.push({type:'text',text:`frame ${frame}`},{type:'image',mediaType:'image/png',data:(await readFile(item.file)).toString('base64')});
   }
+  context.viewedSha256=render.sourceSha256;
   return{content};
  },
 };

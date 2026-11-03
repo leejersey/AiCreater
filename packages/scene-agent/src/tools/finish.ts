@@ -14,6 +14,9 @@ export function finishTool(onPassed:(record:FinishRecord)=>void):Tool{
    },required:['summary','selfReview'],additionalProperties:false}},
   async run(input,context){
    const gates=await runGates(context);
+   // A model that can see is expected to have looked at what it ships; the gates alone cannot judge the picture.
+   if(gates.passed&&context.capabilities.vision&&context.viewedSha256!==gates.sourceSha256)
+    return failure('finish rejected: look at the frames of this version with view_frames first, and fix anything that fails the visual-review checklist.');
    const lines=gates.checks.map(c=>`${c.passed?'✓':'✗'} ${c.gate}: ${c.detail}`);
    if(!gates.passed)return failure(['finish rejected; fix these and call finish again:',...lines.filter(l=>l.startsWith('✗'))].join('\n'));
    onPassed({by:'model',summary:input.summary,selfReview:input.selfReview,gates});

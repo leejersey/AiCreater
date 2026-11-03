@@ -5,6 +5,7 @@ import {tmpdir} from 'node:os';
 import path from 'node:path';
 import {fileURLToPath} from 'node:url';
 import {buildTools,executeTool} from '../src/tools/index';
+import {finishTool} from '../src/tools/finish';
 import {defaultFrames,summarizeAudit} from '../src/tools/checks';
 import type {ToolContext,ToolOutput} from '../src/tools/types';
 import type {StillRenderer,StillsResult} from '../src/render/stills';
@@ -192,7 +193,7 @@ test('edit_file failures show the closest exact text with line numbers',async()=
 });
 
 test('a clean full-sample render is kept as a checkpoint and tells the model to finish',async()=>{
- const {workspace,call,context}=await setup({initialSource:MINIMAL});
+ const {workspace,call,context}=await setup({initialSource:MINIMAL,vision:false});
  const partial=out(await call('render_stills',{frames:[0]}));
  assert.match(partial,/without frames to check the full sample/);
  assert.equal(context.cleanCheckpoint,undefined);
@@ -230,4 +231,17 @@ test('when every frame fails the report says the audit is unavailable, not clean
  assert.match(out(result),/audit: not available, no frame rendered/);
  assert.doesNotMatch(out(result),/0 high|no geometry findings|passes the final gates/);
  assert.equal(context.cleanCheckpoint,undefined);
+});
+
+test('a model that can see must view the final version before finish; one that cannot is not asked to',async()=>{
+ const review={summary:'done',selfReview:[{item:'x',pass:true,evidence:'y'}]};
+ const finish=finishTool(()=>{});
+ const seeing=await setup({initialSource:MINIMAL});
+ assert.match(out(await seeing.call('render_stills')),/look at it with view_frames/);
+ assert.match(out(await finish.run(review,seeing.context)),/finish rejected: look at the frames of this version/);
+ await seeing.call('view_frames');
+ assert.match(out(await finish.run(review,seeing.context)),/finish accepted/);
+ const blind=await setup({initialSource:MINIMAL,vision:false});
+ assert.match(out(await blind.call('render_stills')),/call finish now/);
+ assert.match(out(await finish.run(review,blind.context)),/finish accepted/);
 });

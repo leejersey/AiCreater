@@ -10,6 +10,7 @@ export type ToolContext={
  capabilities:Capabilities;
  lastRender?:StillsResult; // updated by render_stills; audit_scene and view_frames read it
  cleanCheckpoint?:{sourceSha256:string;file:string}; // last version with no [high] findings, kept by the harness
+ viewedSha256?:string; // last version whose frames the model looked at with view_frames
 };
 
 export type Tool={
