@@ -134,6 +134,19 @@ class VisualStoreTests(unittest.TestCase):
         with self.assertRaisesRegex(StoreError, 'not_ready'):
             self.jobs.export(self.pid, 1, True)
 
+    def test_course_list_counts_confirmed_chapters_and_shows_running_agent_jobs(self):
+        row = lambda: next(p for p in self.store.list_projects() if p['id'] == self.pid)
+        self.assertEqual((row()['confirmed_count'], row()['active_jobs']), (0, False))
+        job = self.agent()
+        self.assertEqual((row()['active_job_kind'], row()['active_job_state']), ('agent', 'queued'))
+        self.jobs.cancel(self.pid, job['id'])
+        with self.store.connection() as conn:
+            conn.execute("""UPDATE visual_jobs SET state='succeeded',result='{"accepted":true}'::jsonb WHERE id=%s""", [job['id']])
+        self.assertEqual((row()['confirmed_count'], row()['active_jobs']), (1, False))
+        with self.store.connection() as conn:  # a changed chapter no longer counts its old confirmation
+            conn.execute("UPDATE scenes SET scene=jsonb_set(scene,'{duration_frames}','61') WHERE id=%s", [self.sid])
+        self.assertEqual(row()['confirmed_count'], 0)
+
     def test_prepare_only_empty_and_preserves_all_narration(self):
         text = ('A sentence. ' * 150)
         project = self.store.create_project('Prepare', text)

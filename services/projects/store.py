@@ -164,12 +164,15 @@ class Store:
                 (SELECT count(*) FROM scenes WHERE project_id=p.id AND deleted_at IS NULL) AS scene_count,
                 (SELECT count(*) FROM scenes WHERE project_id=p.id AND deleted_at IS NULL AND state='needs_voice') AS needs_voice,
                 (SELECT count(*) FROM scenes WHERE project_id=p.id AND deleted_at IS NULL AND state='needs_timing') AS needs_timing,
-                EXISTS(SELECT 1 FROM jobs WHERE project_id=p.id AND state IN ('queued','running')) AS active_jobs,
-                (SELECT kind FROM jobs WHERE project_id=p.id AND state IN ('queued','running')
-                 ORDER BY created_at DESC NULLS LAST, id DESC LIMIT 1) AS active_job_kind,
-                (SELECT state FROM jobs WHERE project_id=p.id AND state IN ('queued','running')
-                 ORDER BY created_at DESC NULLS LAST, id DESC LIMIT 1) AS active_job_state
-                FROM projects p''' + (' WHERE p.owner_id=%s' if owner_id else '') +
+                (SELECT count(*) FROM scenes s WHERE s.project_id=p.id AND s.deleted_at IS NULL AND EXISTS(
+                    SELECT 1 FROM visual_jobs v WHERE v.scene_id=s.id AND v.kind='agent' AND v.state='succeeded'
+                    AND v.result->'accepted'='true'::jsonb AND v.input->'scene'=s.scene)) AS confirmed_count,
+                a.kind AS active_job_kind, a.state AS active_job_state, a.kind IS NOT NULL AS active_jobs
+                FROM projects p LEFT JOIN LATERAL (
+                    SELECT kind,state,created_at,id FROM jobs WHERE project_id=p.id AND state IN ('queued','running') AND kind IN ('voice','timing')
+                    UNION ALL
+                    SELECT kind,state,created_at,id FROM visual_jobs WHERE project_id=p.id AND state IN ('queued','running') AND kind IN ('agent','export')
+                    ORDER BY created_at DESC NULLS LAST, id DESC LIMIT 1) a ON true''' + (' WHERE p.owner_id=%s' if owner_id else '') +
                 ' ORDER BY p.updated_at DESC NULLS LAST,p.id DESC LIMIT 100', [identifier(owner_id)] if owner_id else []).fetchall()
             return [{**row, 'id': str(row['id']),'updated_at':row['updated_at'].isoformat() if row['updated_at'] else None} for row in rows]
 

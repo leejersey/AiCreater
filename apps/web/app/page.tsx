@@ -18,7 +18,6 @@ export default function Home(){
       <header className="home-nav">
         <div className="home-brand">
           <b className="brand">AI CREATER</b>
-          <span className="home-brand-tag">Studio v2.0</span>
         </div>
         <nav className="home-nav-links">
           {user ? <>
@@ -50,7 +49,7 @@ export default function Home(){
         </h1>
 
         <p className="hero-desc">
-          专为知识教学、代码演练与原理科普打造。输入纯文本或主题，系统全自动完成智能分镜、9 种专业教学画面编排、字级毫秒配音对齐与 1080P 高清渲染。
+          专为知识教学与原理科普打造。输入讲稿或主题，系统拆分章节、配音并对齐字幕，再由 AI Agent 为每一章设计、检查并渲染讲解画面，输出 1080P 视频与字幕。
         </p>
 
         <div className="hero-cta-group">
@@ -68,16 +67,16 @@ export default function Home(){
             <div className="bento-icon-wrapper" style={{color:'#34d399'}}>
               <Sparkles size={18} />
             </div>
-            <h3>智能讲稿分镜</h3>
-            <p>DeepSeek 深度语义切分，按教学逻辑自动匹配表达模板，原稿不失真。</p>
+            <h3>AI 生成讲稿</h3>
+            <p>按主题、受众与讲解风格生成口播，可附画面素材与画面意图；原稿逐字保留。</p>
           </div>
 
           <div className="bento-card">
             <div className="bento-icon-wrapper" style={{color:'#60a5fa'}}>
               <Code size={18} />
             </div>
-            <h3>9 种教学场景图解</h3>
-            <p>涵盖代码单步追踪、无环流程图、定义解析卡片、数据对比与时间线。</p>
+            <h3>Agent 逐章设计画面</h3>
+            <p>Agent 自己写画面、渲染、检查重叠与留白并修改，通过检查后才出片。</p>
           </div>
 
           <div className="bento-card">
@@ -93,7 +92,7 @@ export default function Home(){
               <Film size={18} />
             </div>
             <h3>1080P/30FPS 实时渲染</h3>
-            <p>基于 Remotion 的工程级合成引擎，支持静音草稿试播与整课高质量导出。</p>
+            <p>基于 Remotion 本机渲染，每章确认后一键导出整课 MP4 与 SRT。</p>
           </div>
         </div>
       </section>

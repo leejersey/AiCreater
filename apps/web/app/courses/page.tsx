@@ -8,9 +8,15 @@ import {useRouter} from 'next/navigation';
 import {useConfirm} from '../ConfirmContext';
 import {Plus, Search, RefreshCw, BookOpen, Clock, AlertCircle, Mic, CheckCircle, Spinner, ChevronRight, Trash2} from '../Icons';
 
+/** Where a course is on the way to an exported video, for the list filters. */
+function projectStage(p:ProjectSummary):'needs_voice'|'to_confirm'|'done'{
+  if(!p.scene_count||p.needs_voice||p.needs_timing)return 'needs_voice';
+  return (p.confirmed_count??0)>=p.scene_count?'done':'to_confirm';
+}
+
 export default function Courses(){
   const [projects,setProjects]=useState<ProjectSummary[]>([]),[query,setQuery]=useState(''),[loading,setLoading]=useState(true),[error,setError]=useState(''),[deletingId,setDeletingId]=useState<string|null>(null);
-  const [statusFilter,setStatusFilter]=useState<'all'|'running'|'needs_voice'|'ready'>('all');
+  const [statusFilter,setStatusFilter]=useState<'all'|'running'|'needs_voice'|'to_confirm'|'done'>('all');
   const router=useRouter();const confirmDialog=useConfirm();
   async function load(){setLoading(true);setError('');try{setProjects(parseProjectSummaries(await request('/api/projects')));}catch(e){setError(e instanceof Error?e.message:'读取课程失败');}finally{setLoading(false);}}
   useEffect(()=>{void load();},[]);
@@ -36,14 +42,14 @@ export default function Courses(){
 
   const queryFiltered = filterProjects(projects,query);
   const visible = queryFiltered.filter(p => {
+    if (statusFilter === 'all') return true;
     if (statusFilter === 'running') return Boolean(activeJobLabel(p));
-    if (statusFilter === 'needs_voice') return p.needs_voice || p.scene_count === 0;
-    if (statusFilter === 'ready') return (p.scene_count??0) > 0 && !p.needs_voice && !p.needs_timing && !activeJobLabel(p);
-    return true;
+    return projectStage(p) === statusFilter;
   });
 
   const countRunning = projects.filter(p => Boolean(activeJobLabel(p))).length;
-  const countNeeds = projects.filter(p => p.needs_voice || p.scene_count === 0).length;
+  const count = (stage: ReturnType<typeof projectStage>) => projects.filter(p => projectStage(p) === stage).length;
+  const countNeeds = count('needs_voice'), countToConfirm = count('to_confirm'), countDone = count('done');
 
   return <main className="courses-page">
     <div className="studio-topbar">
@@ -72,10 +78,13 @@ export default function Courses(){
           进行中 {countRunning > 0 ? `(${countRunning})` : ''}
         </button>
         <button type="button" className={`course-filter-pill ${statusFilter==='needs_voice'?'active':''}`} onClick={()=>setStatusFilter('needs_voice')}>
-          待分镜/配音 {countNeeds > 0 ? `(${countNeeds})` : ''}
+          待配音 {countNeeds > 0 ? `(${countNeeds})` : ''}
         </button>
-        <button type="button" className={`course-filter-pill ${statusFilter==='ready'?'active':''}`} onClick={()=>setStatusFilter('ready')}>
-          已就绪
+        <button type="button" className={`course-filter-pill ${statusFilter==='to_confirm'?'active':''}`} onClick={()=>setStatusFilter('to_confirm')}>
+          待生成/确认 {countToConfirm > 0 ? `(${countToConfirm})` : ''}
+        </button>
+        <button type="button" className={`course-filter-pill ${statusFilter==='done'?'active':''}`} onClick={()=>setStatusFilter('done')}>
+          可导出 {countDone > 0 ? `(${countDone})` : ''}
         </button>
       </div>
 
@@ -98,19 +107,20 @@ export default function Courses(){
 
     {loading&&<p role="status"><Spinner size={16} className="icon-spin" /> 正在读取课程…</p>}
     {error&&<p role="alert"><AlertCircle size={16} /> {error} 可点击刷新重试，已有列表保留。</p>}
-    {!loading&&!error&&!projects.length&&<section className="empty"><h2><BookOpen size={24} /> 还没有视频</h2><p>点击“新建视频”，生成或填写讲稿，再选择画面表达。</p><Link href="/courses/new"><Plus size={16} />创建第一堂课</Link></section>}
+    {!loading&&!error&&!projects.length&&<section className="empty"><h2><BookOpen size={24} /> 还没有视频</h2><p>点击“新建视频”，生成或填写讲稿；进入工作台后配音，再由 Agent 生成每章画面。</p><Link href="/courses/new"><Plus size={16} />创建第一堂课</Link></section>}
     {!loading&&projects.length>0&&!visible.length&&<p className="muted" style={{textAlign:'center',padding:'32px'}}>没有符合当前条件的视频项目。</p>}
     <div className="course-grid">{visible.map(p=>{const job=activeJobLabel(p);return <article key={p.id} style={{display:'flex',flexDirection:'column'}}><h2>{p.title}</h2>
       <div className="scene-meta">
         {job?<span className="status-pill running"><Spinner size={12} className="icon-spin" />{job}</span>:
-         p.scene_count===0?<span className="status-pill"><AlertCircle size={12} />待分镜</span>:
+         p.scene_count===0?<span className="status-pill"><AlertCircle size={12} />待整理章节</span>:
          p.needs_voice?<span className="status-pill needs_voice"><Mic size={12} />待配音</span>:
          p.needs_timing?<span className="status-pill needs_timing"><Clock size={12} />待对齐</span>:
-         p.scene_count?<span className="status-pill ready"><CheckCircle size={12} />就绪</span>:<span className="status-pill">待检查</span>}
+         projectStage(p)==='done'?<span className="status-pill ready"><CheckCircle size={12} />已全部确认</span>:
+         <span className="status-pill">已确认 {p.confirmed_count??0}/{p.scene_count}</span>}
         <span className="scene-type-badge"><BookOpen size={12} /> {p.scene_count??'—'}章</span>
         <span className="scene-type-badge">r{p.revision??'—'}</span>
       </div>
-      {p.active_job_state==='queued'&&<p className="hint">任务在排队。未启动 workflow 消费者时会一直等待；可进课程查看「持久任务」或取消。</p>}
+      {p.active_job_state==='queued'&&<p className="hint">任务在排队。未启动 Worker 时会一直等待；可进课程查看进度或取消。</p>}
       <p className="hint" style={{marginTop:'8px'}}><Clock size={12} /> 最近修改：{p.updated_at?new Date(p.updated_at).toLocaleString('zh-CN'):'旧项目时间未知'}</p>
       <div style={{display:'flex',gap:'12px',alignItems:'center',flexWrap:'wrap',marginTop:'auto',paddingTop:'12px'}}>
         <Link href={'/courses/'+p.id} className="primary-link" style={{fontSize:'12.5px',padding:'6px 12px'}}>继续制作 <ChevronRight size={14} /></Link>

@@ -150,7 +150,7 @@ export default function NewCourse(){
 
             <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',flexWrap:'wrap',gap:'10px',marginTop:'4px'}}>
               <p className="hint" style={{margin:0}}>
-                确认讲稿后创建草稿免费；Markdown 全文最多24000字符、20段，口播合计最多4000字符。进入工作台后再生成分镜与配音。
+                确认讲稿后创建草稿免费；Markdown 全文最多24000字符、20段，口播合计最多4000字符。进入工作台后整理章节、配音并由 Agent 生成画面。
               </p>
               <button type="submit" className="primary-link" style={{background:'var(--accent)',color:'#0b0f17',fontWeight:600,padding:'10px 20px'}} disabled={!draft.value.title.trim()||!draft.value.source.trim()||blocked}>
                 {busy ? <Spinner size={14} className="icon-spin"/> : <Sparkles size={14}/>} {createButtonLabel(busy)}

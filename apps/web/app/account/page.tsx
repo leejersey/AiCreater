@@ -243,7 +243,7 @@ function AccountPanel() {
                     <span className="meta-dot dot-online" /> 本地安全会话已连接
                   </span>
                   <span className="account-meta-divider">•</span>
-                  <span className="account-meta-item">AI Creater Studio v2.0</span>
+                  <span className="account-meta-item">AI Creater</span>
                 </div>
               </div>
             </div>
