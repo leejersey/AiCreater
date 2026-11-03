@@ -238,8 +238,8 @@ python3 services/tests/run_project_tests.py services.tests.test_api …   # 在�
 └──────┬───────────────────┬───────────────────────┬───────────────┘
        │                   │                       │
   PostgreSQL            Redis                   RustFS
-  项目版本 · jobs ·      Celery 消息            配音音频
-  visual_jobs（租约）        │
+  项目 · 章节 ·          Celery 消息            配音音频
+  jobs（统一租约）           │
        │      ┌────────────┴─────────────┐   Beat 每 2 秒唤醒
        │      ▼                          ▼
   ┌────┴──────────────────────┐ ┌──────────────────────────────┐
@@ -263,7 +263,7 @@ python3 services/tests/run_project_tests.py services.tests.test_api …   # 在�
   └──────────────────────────────────────────────────────────────┘
 ```
 
-每个视觉任务一行 `visual_jobs`，租约时限按类型设定（Agent 与导出 30 分钟，超时由 Worker 回收），运行中靠心跳续租，并把进度写给页面显示。付费任务（配音、Agent）只在用户确认后入队；Agent 未通过检查时停止并保留运行记录，不自动重试。
+配音、对齐、Agent 与导出任务都在同一张 `jobs` 表里，由 `services/projects/leases.py` 统一领取与续租：租约时限按类型设定（配音与对齐 15 分钟，Agent 与导出 30 分钟，超时由 Worker 回收），运行中靠心跳续租，每条队列（workflow / render）同时只运行一个任务；取消运行中的 Agent 任务时，Worker 在下一次心跳停止。付费任务（配音、Agent）只在用户确认后入队；Agent 未通过检查时停止并保留运行记录，不自动重试。
 
 ---
 
@@ -281,8 +281,8 @@ packages/
 services/
   api/                     FastAPI 后端（账号、项目、配音、视觉任务路由）
   accounts/                用户注册、认证与会话管理
-  projects/                项目、配音/对齐任务、费用参考与存储
-  visual/                  Agent 与整课导出任务的存储与 Worker
+  projects/                项目、配音/对齐任务、统一任务表与租约（leases.py）、费用参考与存储
+  visual/                  Agent 与整课导出任务、章节编辑与 Worker
   workflow/                Celery 调度、文稿生成、配音与本地对齐
   tts/                     火山 TTS 2.0 配音与字级时间戳
   chapters.py              章节数据结构：口播、配音音频、时长与实测字幕的校验和计时
