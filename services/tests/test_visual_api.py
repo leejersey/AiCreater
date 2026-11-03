@@ -62,6 +62,38 @@ class VisualApiTests(unittest.TestCase):
             conn.execute('UPDATE projects SET config=%s WHERE id=%s',[Jsonb(config),self.pid])
         return project,row,text
 
+    def test_chapters_can_be_edited_split_merged_and_deleted_and_lose_their_voice(self):
+        project,row,text=self.ready_scene()  # '先读代码。再修改文件。' as one voiced chapter
+        base=self.path+'/chapters/'+row['id']
+        texts=lambda p:[s['scene']['narration']['text'] for s in p['scenes']]
+        for body in [{'expected_revision':project['revision'],'narration':''},{'expected_revision':project['revision'],'narration':'x'*801},{'expected_revision':project['revision']}]:
+            self.assertEqual(self.client.patch(base,json=body).status_code,422)
+        self.assertEqual(self.client.patch(base,json={'expected_revision':project['revision']+1,'narration':'改'}).status_code,409)
+        edited=self.client.patch(base,json={'expected_revision':project['revision'],'narration':'先读代码。然后修改文件。'})
+        self.assertEqual(edited.status_code,200,edited.text);edited=edited.json()
+        chapter=edited['scenes'][0]
+        self.assertEqual((chapter['state'],chapter['revision']),('needs_voice',row['revision']+1))
+        self.assertNotIn('audio_asset_id',chapter['scene']['narration']);self.assertNotIn('captions',chapter['scene'])
+        split=self.client.post(base+'/split',json={'expected_revision':edited['revision'],'at':5}).json()
+        self.assertEqual(texts(split),['先读代码。','然后修改文件。'])
+        self.assertTrue(all(s['state']=='needs_voice' for s in split['scenes']))
+        for at in [0,13]:self.assertEqual(self.client.post(base+'/split',json={'expected_revision':split['revision'],'at':at}).status_code,422)
+        last=split['scenes'][1]['id']
+        self.assertEqual(self.client.post(self.path+'/chapters/'+last+'/merge-next',json={'expected_revision':split['revision']}).status_code,422)
+        merged=self.client.post(base+'/merge-next',json={'expected_revision':split['revision']}).json()
+        self.assertEqual(texts(merged),['先读代码。然后修改文件。'])
+        self.assertEqual(self.client.post(base+'/delete',json={'expected_revision':merged['revision'],'confirmed':True}).status_code,422)  # keep one
+        again=self.client.post(base+'/split',json={'expected_revision':merged['revision'],'at':5}).json()
+        self.assertEqual(self.client.post(base+'/delete',json={'expected_revision':again['revision'],'confirmed':False}).status_code,422)
+        deleted=self.client.post(base+'/delete',json={'expected_revision':again['revision'],'confirmed':True}).json()
+        self.assertEqual(texts(deleted),['然后修改文件。'])
+        # A queued job blocks editing; another user's project is not reachable.
+        _,ready,_=self.ready_scene(deleted)
+        current=self.client.get('/api/projects/'+self.pid).json()
+        job=self.client.post(self.path+'/agent',json={'scene_id':ready['id'],'expected_revision':current['revision'],'confirmed':True,'max_turns':25}).json()
+        self.assertEqual(self.client.patch(self.path+'/chapters/'+ready['id'],json={'expected_revision':current['revision'],'narration':'改'}).status_code,409)
+        self.client.post(self.path+'/'+job['id']+'/cancel',json={})
+
     def test_agent_request_requires_confirmed_turn_limit_and_measured_audio(self):
         project=self.client.post(self.path+'/prepare',json={'expected_revision':1}).json()
         body={'scene_id':project['scenes'][0]['id'],'expected_revision':project['revision'],'confirmed':True,'max_turns':25}

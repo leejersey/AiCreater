@@ -5,7 +5,7 @@ import uuid
 
 from psycopg.types.json import Jsonb
 
-from services.projects.store import StoreError, identifier, revision, unicode_valid
+from services.projects.store import StoreError, draft_valid, identifier, revision, unicode_valid
 from services.visual.contract import measured_input, partition_narration
 
 
@@ -41,6 +41,24 @@ LEASE_SQL = ('CASE kind ' + ' '.join(f"WHEN '{kind}' THEN interval '{seconds} se
              f" ELSE interval '{DEFAULT_LEASE_SECONDS} seconds' END")
 AGENT_MAX_TURNS = 25
 STALE = 'stale: 章节版本或冻结素材已改变，请重新生成并确认当前版本。'
+
+
+MAX_CHAPTER_TEXT = 800
+MAX_CHAPTERS = 20
+
+
+def chapter_scene(text):
+    """A chapter as stored: its narration plus the placeholder element the voice/alignment pipeline validates."""
+    return {'type': 'card_sequence', 'narration': {'text': text},
+            'elements': [{'id': 'narration', 'content': text[:40].strip() or 'Narration',
+                          'cue': {'text_start': 0, 'text_end': len(text)}}]}
+
+
+def chapter_text(text):
+    if not isinstance(text, str) or not text.strip() or len(text) > MAX_CHAPTER_TEXT:
+        raise StoreError('validation', f'每章口播须为 1–{MAX_CHAPTER_TEXT} 字')
+    unicode_valid(text)
+    return text
 
 
 class VisualJobs:
@@ -120,12 +138,72 @@ class VisualJobs:
             parts = [part for text in texts for part in partition_narration(text)]
             if len(parts) > 20: raise StoreError('validation', 'At most 20 narration chapters are supported')
             for part in parts:
-                # Placeholder is only for the existing voice/alignment pipeline, never visual output.
-                scene = {'type': 'card_sequence', 'narration': {'text': part},
-                         'elements': [{'id': 'narration', 'content': part[:40].strip() or 'Narration',
-                                       'cue': {'text_start': 0, 'text_end': len(part)}}]}
-                project = self.store._insert_scene(conn, project, scene, len(project['scenes']), 'needs_voice')
+                project = self.store._insert_scene(conn, project, chapter_scene(part), len(project['scenes']), 'needs_voice')
             return project
+
+    # Chapter editing. Any change to the narration drops the chapter's audio, captions and videos: it goes back to
+    # needs_voice, and older Agent videos stop matching it, so they can no longer be confirmed or exported.
+    def _editable(self, conn, project_id, expected_revision, scene_id):
+        project = self.store._structure_project(conn, project_id, expected_revision)
+        row = self.store._scene(project, scene_id)
+        busy = conn.execute("""SELECT 1 FROM jobs WHERE project_id=%s AND state IN ('queued','running')
+            UNION ALL SELECT 1 FROM visual_jobs WHERE project_id=%s AND state IN ('queued','running') LIMIT 1""",
+            [project['id'], project['id']]).fetchone()
+        if busy: raise StoreError('not_ready', '项目内有任务进行中，结束后再修改章节')
+        return project, row
+
+    def _rewrite(self, conn, row, text):
+        scene = {**chapter_scene(text), 'id': row['scene']['id']}
+        draft_valid({'scenes': [scene]})
+        conn.execute("""UPDATE scenes SET scene=%s,state='needs_voice',revision=revision+1,user_revision=user_revision+1
+            WHERE id=%s""", [Jsonb(scene), row['id']])
+
+    def _remove(self, conn, project, row):
+        # Soft delete keeps job history; positions >= 20 are reserved for removed rows.
+        conn.execute("""UPDATE scenes SET deleted_at=now(),position=(SELECT GREATEST(20,COALESCE(MAX(position),19)+1)
+            FROM scenes WHERE project_id=%s) WHERE id=%s""", [project['id'], row['id']])
+        conn.execute('UPDATE scenes SET position=position-1 WHERE project_id=%s AND deleted_at IS NULL AND position>%s',
+                     [project['id'], row['position']])
+
+    def edit_chapter(self, project_id, expected_revision, scene_id, text):
+        text = chapter_text(text)
+        with self.store.connection() as conn:
+            project, row = self._editable(conn, project_id, expected_revision, scene_id)
+            if text == row['scene']['narration']['text']: return project
+            self._rewrite(conn, row, text)
+            conn.execute('UPDATE projects SET revision=revision+1 WHERE id=%s', [project['id']])
+            return self.store._read(conn, project['id'])
+
+    def split_chapter(self, project_id, expected_revision, scene_id, at):
+        with self.store.connection() as conn:
+            project, row = self._editable(conn, project_id, expected_revision, scene_id)
+            text = row['scene']['narration']['text']
+            if type(at) is not int or not 0 < at < len(text) or not text[:at].strip() or not text[at:].strip():
+                raise StoreError('validation', '拆分位置须在口播中间，两边都要有文字')
+            if len(project['scenes']) >= MAX_CHAPTERS: raise StoreError('validation', f'最多 {MAX_CHAPTERS} 章')
+            self._rewrite(conn, row, text[:at])
+            project = self.store._read(conn, project['id'])
+            return self.store._insert_scene(conn, project, chapter_scene(text[at:]), row['position'] + 1, 'needs_voice')
+
+    def merge_next_chapter(self, project_id, expected_revision, scene_id):
+        with self.store.connection() as conn:
+            project, row = self._editable(conn, project_id, expected_revision, scene_id)
+            following = next((s for s in project['scenes'] if s['position'] == row['position'] + 1), None)
+            if following is None: raise StoreError('validation', '这是最后一章，没有下一章可合并')
+            text = chapter_text(row['scene']['narration']['text'] + following['scene']['narration']['text'])
+            self._rewrite(conn, row, text)
+            self._remove(conn, project, following)
+            conn.execute('UPDATE projects SET revision=revision+1 WHERE id=%s', [project['id']])
+            return self.store._read(conn, project['id'])
+
+    def delete_chapter(self, project_id, expected_revision, scene_id, confirmed):
+        if confirmed is not True: raise StoreError('validation', '删除章节须明确确认')
+        with self.store.connection() as conn:
+            project, row = self._editable(conn, project_id, expected_revision, scene_id)
+            if len(project['scenes']) <= 1: raise StoreError('validation', '至少保留一章')
+            self._remove(conn, project, row)
+            conn.execute('UPDATE projects SET revision=revision+1 WHERE id=%s', [project['id']])
+            return self.store._read(conn, project['id'])
 
     def agent(self, project_id, scene_id, expected_revision, confirmed, max_turns):
         # One job: the scene-agent loop (paid model turns, capped) and, if it passes, the voiced chapter video.

@@ -34,6 +34,18 @@ class Export(Revision):
     confirmed:bool
 
 
+class ChapterText(Revision):
+    narration:str=Field(min_length=1,max_length=800)
+
+
+class ChapterSplit(Revision):
+    at:int=Field(ge=1,le=799)
+
+
+class ChapterDelete(Revision):
+    confirmed:bool
+
+
 @router.get('')
 def listing(project_id:str,request:Request):
     return JSONResponse({'jobs':request.app.state.visual.list(project_id)},headers={'Cache-Control':'no-store'})
@@ -42,6 +54,26 @@ def listing(project_id:str,request:Request):
 @router.post('/prepare')
 def prepare(project_id:str,body:Revision,request:Request):
     return request.app.state.visual.prepare(project_id,body.expected_revision)
+
+
+@router.patch('/chapters/{scene_id}')
+def edit_chapter(project_id:str,scene_id:str,body:ChapterText,request:Request):
+    return request.app.state.visual.edit_chapter(project_id,body.expected_revision,scene_id,body.narration)
+
+
+@router.post('/chapters/{scene_id}/split')
+def split_chapter(project_id:str,scene_id:str,body:ChapterSplit,request:Request):
+    return request.app.state.visual.split_chapter(project_id,body.expected_revision,scene_id,body.at)
+
+
+@router.post('/chapters/{scene_id}/merge-next')
+def merge_next_chapter(project_id:str,scene_id:str,body:Revision,request:Request):
+    return request.app.state.visual.merge_next_chapter(project_id,body.expected_revision,scene_id)
+
+
+@router.post('/chapters/{scene_id}/delete')
+def delete_chapter(project_id:str,scene_id:str,body:ChapterDelete,request:Request):
+    return request.app.state.visual.delete_chapter(project_id,body.expected_revision,scene_id,body.confirmed)
 
 
 @router.post('/agent',status_code=202)

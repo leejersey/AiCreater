@@ -150,3 +150,13 @@ export function chapterStatus(row:SceneRow,jobs:VisualJob[]):ChapterStatus{
 export function agentBatchScenes(rows:SceneRow[],jobs:VisualJob[]):SceneRow[]{
  return rows.filter(row=>chapterStatus(row,jobs).key==='todo');
 }
+
+// Measured on the voiced RAG chapters: about 5 spoken characters per second. The Agent accepts 1–120 s chapters.
+export const CHARS_PER_SECOND=5,AGENT_MAX_SECONDS=120;
+export function estimatedSeconds(text:string):number{
+ return Math.round(Array.from(text).filter(c=>!/\s/u.test(c)).length/CHARS_PER_SECOND);
+}
+/** Code-point offset of a textarea caret, as the API counts characters. */
+export function codePointOffset(text:string,utf16Index:number):number{
+ return Array.from(text.slice(0,utf16Index)).length;
+}

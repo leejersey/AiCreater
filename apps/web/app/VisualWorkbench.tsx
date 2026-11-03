@@ -1,9 +1,10 @@
 'use client';
 import React,{useCallback,useEffect,useRef,useState} from 'react';
+import type {SceneRow} from '../lib/editor';
 import {request,parseJobs,parseSceneJob,type Project,type Job} from '../lib/editor';
 import {confirmEstimate} from '../lib/cost-estimates';
 import {currentVoiceJob} from '../lib/course';
-import {parseVisualJobs,visualFileUrl,measuredReady,reviewFrames,visualError,sceneAudioActions,videoTaskStatus,videoProgress,latestAgentJob,canAcceptAgent,exportedVersion,chapterStatus,agentBatchScenes,visualAgentBody,AGENT_MAX_TURNS,type VisualJob} from '../lib/visual-workbench';
+import {parseVisualJobs,visualFileUrl,measuredReady,reviewFrames,visualError,sceneAudioActions,videoTaskStatus,videoProgress,latestAgentJob,canAcceptAgent,exportedVersion,chapterStatus,agentBatchScenes,visualAgentBody,AGENT_MAX_TURNS,estimatedSeconds,codePointOffset,AGENT_MAX_SECONDS,type VisualJob} from '../lib/visual-workbench';
 import {confirmVisualAction,visualAgentAction} from '../lib/visual-workbench-actions';
 import {useConfirm} from './ConfirmContext';
 import {VoiceSettings} from './VoiceSettings';
@@ -28,6 +29,31 @@ export function VisualTaskProgress({job,now,updatedAt,disabled,onCancel,onRefres
   <div className="vw-task-meta" aria-live="off">{progress.elapsed&&<span>{progress.elapsed}</span>}{updatedAt>0&&<span>最近更新 {new Date(updatedAt).toLocaleTimeString('zh-CN',{hour12:false})}</span>}{progress.active&&now-updatedAt>15000&&updatedAt>0&&<span className="vw-warning">状态超过15秒未更新，请刷新检查</span>}</div>
   <div className="vw-toolbar"><button disabled={disabled} onClick={onRefresh}><RefreshCw size={14}/>刷新状态</button>{progress.active&&<button disabled={disabled} onClick={onCancel}><X size={14}/>取消任务</button>}</div>
  </div>;
+}
+/** Narration of one chapter: edit, split at the caret, merge with the next one, delete. Every change drops the voice. */
+export function ChapterEditor({row,isLast,isOnly,voiced,disabled,blockedReason,onSave,onSplit,onMergeNext,onDelete}:{row:SceneRow;isLast:boolean;isOnly:boolean;voiced:boolean;disabled:boolean;blockedReason?:string;
+ onSave:(text:string)=>void;onSplit:(at:number)=>void;onMergeNext:()=>void;onDelete:()=>void}){
+ const saved=row.scene.narration.text;
+ const [text,setText]=useState(saved),[caret,setCaret]=useState(0);
+ const area=useRef<HTMLTextAreaElement>(null);
+ const seconds=estimatedSeconds(text),changed=text!==saved,length=Array.from(text).length;
+ const at=codePointOffset(saved,caret);
+ const canSplit=!changed&&at>0&&at<Array.from(saved).length&&!!Array.from(saved).slice(0,at).join('').trim()&&!!Array.from(saved).slice(at).join('').trim();
+ const off=disabled||!!blockedReason;
+ return <details className="vw-chapter-editor" open={seconds>AGENT_MAX_SECONDS-10||undefined}><summary>口播稿 · {length} 字 · 预计约 {seconds} 秒{seconds>AGENT_MAX_SECONDS-10?' · 偏长，建议拆分':''}</summary>
+  <textarea ref={area} aria-label="本章口播" value={text} maxLength={800} rows={6} disabled={off}
+   onChange={e=>setText(e.target.value)} onSelect={e=>setCaret(e.currentTarget.selectionStart)}/>
+  {seconds>AGENT_MAX_SECONDS-10&&<p className="vw-warning">预计约 {seconds} 秒。Agent 只能生成 {AGENT_MAX_SECONDS} 秒以内的章节，建议在合适的句号处拆分。</p>}
+  {voiced&&<p className="hint">修改、拆分或合并后，本章需要重新配音（付费），已有的视频和确认会失效。</p>}
+  <div className="vw-toolbar">
+   <button disabled={off||!changed||!text.trim()} onClick={()=>onSave(text)}>保存口播</button>
+   {changed&&<button disabled={off} onClick={()=>setText(saved)}>撤销修改</button>}
+   <button disabled={off||!canSplit} title={changed?'先保存或撤销修改':canSplit?undefined:'先在文本框里把光标放到要拆开的位置'} onClick={()=>onSplit(at)}>从光标处拆分</button>
+   <button disabled={off||isLast||changed} onClick={onMergeNext}>与下一章合并</button>
+   <button disabled={off||isOnly||changed} onClick={onDelete}>删除本章</button>
+  </div>
+  {blockedReason&&<p className="hint">{blockedReason}</p>}
+ </details>;
 }
 /** One paid job designs, checks and renders the chapter. */
 export function VisualAgentPanel({projectId,job,exported,now,updatedAt,disabled,blockedReason,onStart,onRefresh,onCancel,onAccept}:{projectId:string;job?:VisualJob;exported?:VisualJob;now:number;updatedAt:number;disabled:boolean;blockedReason?:string;onStart:()=>void;onRefresh:()=>void;onCancel:()=>void;onAccept?:()=>void}){
@@ -100,6 +126,14 @@ export default function VisualWorkbench({routeProjectId}:{routeProjectId:string}
     const job=parseSceneJob(await request<unknown>(audioActions.timingPath,audioActions.timingBody),project.id,row,'timing');
     setVoiceJobs(previous=>[job,...previous.filter(j=>j.job_id!==job.job_id)]);
   });
+  const voicedNote=(r:SceneRow)=>r.scene.narration.audio_asset_id?'本章已有配音，改动后需要重新配音（付费），已有的视频和确认会失效。':'';
+  function chapterEdit(path:string,body:Record<string,unknown>,method:string,title:string,message:string){
+    if(!row||!project)return;
+    void act(async()=>{
+      if(message&&!await confirm({title,message,confirmText:title,variant:'warning'}))return;
+      setProject(await request<Project>(`${base}/visual/chapters/${encodeURIComponent(row.id)}${path}`,{expected_revision:project.revision,...body},method));
+    });
+  }
   return <main className="visual-workbench">
     <header className="vw-header"><div><a href="/courses">课程</a><h1>{project?.title??'视觉工作台'}</h1><span>{project?`${project.scenes.length} 章 · 已确认 ${confirmedCount}/${project.scenes.length}`:''}</span></div>
       <nav><button title="刷新项目与任务" aria-label="刷新项目与任务" disabled={busy} onClick={()=>void act(refresh)}><RefreshCw size={16}/></button></nav>
@@ -124,7 +158,12 @@ export default function VisualWorkbench({routeProjectId}:{routeProjectId:string}
         <VoiceSettings key={project.id} project={project} dirty={dirty} busy={busy} formEditing={dirty} onDirty={setDirty} act={act} onSave={async speaker=>{setProject(await request<Project>(base+'/voice',{expected_revision:project.revision,speaker},'PATCH'));setDirty(false);}}/>
       </aside><div className="vw-content">
         {activeJob&&activeJob.id!==agentJob?.id&&<div><h2>当前项目有任务正在执行</h2><VisualTaskProgress job={activeJob} now={now} updatedAt={updatedAt} disabled={busy} onRefresh={()=>void act(refresh)} onCancel={()=>cancelVisual(activeJob)}/>{activeJob.scene_id&&<button onClick={()=>setSelected(activeJob.scene_id!)}>查看执行中的章节</button>}</div>}
-        {row&&<section aria-label="当前章节"><h2>当前章节 · r{row.revision}</h2><details><summary>口播稿</summary><p className="vw-narration">{row.scene.narration.text}</p></details>
+        {row&&<section aria-label="当前章节"><h2>当前章节 · r{row.revision}</h2><ChapterEditor key={row.id+':'+row.revision} row={row} isLast={project.scenes.at(-1)?.id===row.id} isOnly={project.scenes.length===1}
+            voiced={!!row.scene.narration.audio_asset_id||sceneJobs.length>0} disabled={disabled} blockedReason={active?'项目内有任务进行中，结束后再修改章节。':undefined}
+            onSave={text=>chapterEdit('',{narration:text},'PATCH','保存本章口播',voicedNote(row))}
+            onSplit={at=>chapterEdit('/split',{at},'POST','从光标处拆分本章','拆成两章后，两章都需要重新配音（付费）。'+voicedNote(row))}
+            onMergeNext={()=>chapterEdit('/merge-next',{},'POST','与下一章合并','两章合成一章后需要重新配音（付费），两章已有的视频和确认都会失效。')}
+            onDelete={()=>chapterEdit('/delete',{confirmed:true},'POST','删除本章','本章的口播、配音和视频都会从课程中移除，不可恢复。')}/>
           <div className="vw-step" aria-label="第 1 步：配音与对齐"><h3>第 1 步 · 配音与对齐</h3>
           <p>{measuredReady(row)?`实测音频与字幕已就绪 · ${row.scene.duration_frames} 帧`:row.state==='needs_timing'?'已有音频，待实测对齐':'待配音'}</p>
           {voice&&<p role="status">配音：{states[voice.state]??'待核对'} {voice.state==='failed'?(voice.error?.retryable?'可显式确认付费后重试。':'此任务不可重试，请检查项目状态。'):''}</p>}

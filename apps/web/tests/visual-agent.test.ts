@@ -4,7 +4,7 @@ import {createElement} from 'react';
 import {renderToStaticMarkup} from 'react-dom/server';
 import {parseVisualJobs,latestAgentJob,visualAgentBody,videoTaskStatus} from '../lib/visual-workbench';
 import {visualAgentAction} from '../lib/visual-workbench-actions';
-import {VisualAgentPanel} from '../app/VisualWorkbench';
+import {VisualAgentPanel,ChapterEditor} from '../app/VisualWorkbench';
 import * as visual from '../lib/visual-workbench';
 
 const passed={id:'a1',project_id:'p',scene_id:'s',kind:'agent',state:'succeeded',current:true,
@@ -138,4 +138,25 @@ test('only measured audio with captions unlocks generation; voice and timing act
 test('untrusted errors are reduced to fixed messages',()=>{
  assert.doesNotMatch(visual.visualError(new Error('/private/key provider response')),/private|provider/);
  assert.match(visual.visualError(new Error('conflict',{cause:409})),/版本/);
+});
+
+test('chapter length is estimated at about 5 characters a second, and caret offsets count code points',()=>{
+ assert.equal(visual.estimatedSeconds('一二三四五 六七八九十\n'),2);
+ assert.equal(visual.estimatedSeconds('字'.repeat(600)),120);
+ assert.equal(visual.codePointOffset('a😀b',3),2); // the emoji is two UTF-16 units but one character
+});
+
+test('the chapter editor offers split, merge and delete only when they can work',()=>{
+ const row={id:'s',revision:2,state:'ready',scene:{narration:{text:'先读代码。再修改文件。',audio_asset_id:'a'}}} as any;
+ const html=(props:Record<string,unknown>)=>renderToStaticMarkup(createElement(ChapterEditor,{row,isLast:false,isOnly:false,voiced:true,disabled:false,onSave(){},onSplit(){},onMergeNext(){},onDelete(){},...props}));
+ const open=html({});
+ assert.match(open,/口播稿 · 11 字 · 预计约 2 秒/);
+ assert.match(open,/本章需要重新配音（付费）/);
+ assert.match(open,/<button[^>]*disabled=""[^>]*>保存口播/); // nothing changed yet
+ assert.match(open,/<button[^>]*disabled=""[^>]*title="先在文本框里把光标放到要拆开的位置"[^>]*>从光标处拆分/);
+ assert.match(html({isLast:true}),/<button[^>]*disabled=""[^>]*>与下一章合并/);
+ assert.match(html({isOnly:true}),/<button[^>]*disabled=""[^>]*>删除本章/);
+ const long=html({row:{...row,scene:{narration:{text:'字'.repeat(560)}}}});
+ assert.match(long,/偏长，建议拆分/);assert.match(long,/<details[^>]*open=""/);
+ assert.match(html({blockedReason:'项目内有任务进行中，结束后再修改章节。'}),/项目内有任务进行中/);
 });
