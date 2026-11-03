@@ -50,3 +50,24 @@ test('the thinking config sends reasoning back on every assistant turn, with or 
  assert.equal(bodies[0].reasoning_effort,'low');
  assert.equal(bodies[0].max_tokens,32768);
 });
+
+test('the vision config is the thinking config with image input, so view_frames is offered and frames reach the model',async()=>{
+ const models=loadModels();
+ const {capabilities:vision,...rest}=models['deepseek-flash-thinking-vision'];
+ const {capabilities:base,...baseRest}=models['deepseek-flash-thinking'];
+ assert.deepEqual(rest,baseRest);
+ assert.deepEqual({...vision,vision:false},base);
+ assert.equal(vision.vision,true);
+ const bodies:any[]=[];
+ const provider=createProvider('deepseek-flash-thinking-vision',models,{env:{DEEPSEEK_API_KEY:'k'},transport:{fetch:async(_u,init)=>{bodies.push(JSON.parse(String(init!.body)));
+  return new Response(JSON.stringify({choices:[{finish_reason:'stop',message:{role:'assistant',content:'ok',reasoning_content:'r'}}],usage:{prompt_tokens:1,completion_tokens:1}}),{status:200,headers:{'content-type':'application/json'}});}}});
+ await provider.turn({system:'s',tools:[{name:'view_frames',description:'d',inputSchema:{type:'object'}}],messages:[
+  {role:'user',content:[{type:'text',text:'go'}]},
+  {role:'assistant',content:[],toolCalls:[{id:'c1',name:'view_frames',arguments:{}}],providerState:{reasoning_content:'r0'}},
+  {role:'tool',toolCallId:'c1',content:[{type:'text',text:'frame 0'},{type:'image',mediaType:'image/png',data:'AAAA'}]},
+ ]});
+ const last=bodies[0].messages.at(-1);
+ assert.equal(last.role,'user'); // DeepSeek accepts images only in user messages
+ assert.equal(last.content[1].image_url.url,'data:image/png;base64,AAAA');
+ assert.ok(bodies[0].messages.filter((m:any)=>m.role==='tool').every((m:any)=>typeof m.content==='string'));
+});

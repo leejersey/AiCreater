@@ -47,6 +47,31 @@
       "maxOutputTokensTotal": 300000
     }
   },
+  "deepseek-flash-thinking-vision": {
+    "adapter": "openai-compatible",
+    "baseUrl": "https://api.deepseek.com",
+    "model": "deepseek-flash",
+    "apiKeyEnv": "DEEPSEEK_API_KEY",
+    "extraBody": {
+      "thinking": {
+        "type": "enabled"
+      },
+      "reasoning_effort": "low"
+    },
+    "echoReasoning": true,
+    "capabilities": {
+      "vision": true,
+      "parallelToolCalls": true,
+      "contextTokens": 128000,
+      "maxOutputTokens": 32768,
+      "promptCache": true,
+      "appendOnlyHistory": true
+    },
+    "budget": {
+      "maxTurns": 25,
+      "maxOutputTokensTotal": 300000
+    }
+  },
   "claude-sonnet": {
     "adapter": "anthropic",
     "model": "claude-sonnet-5-5",
