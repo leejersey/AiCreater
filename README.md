@@ -68,6 +68,7 @@ Markdown 使用固定格式：每段 `## [s1] 标题`（ID 唯一），依次包
 - **按意见修改（付费）**：对已通过检查的版本写下修改意见（如「第 2 段的流程图太小」），Agent 从这个版本的代码出发只改你指出的地方，仍需通过全部检查并由你确认；原版本保留，最多 25 轮。
 - **批量生成**：「批量 Agent 生成 N 章（付费）」把已配音、尚无确认版本且不在运行中的章节一次排队，只确认一次（弹窗写明合计轮数上限）；每章结果仍需逐章观看确认。
 - **整课导出**：全部章节都有已确认的 Agent 视频后才可点击；每章使用最近确认的版本，在本机渲染，不调用模型或配音。
+- **课程主题**：每门课一个画面主题（蓝图、黑板、终端、纸刊、暖色发布会、瑞士蓝），决定背景、配色、字体、字幕条与底纹；Agent 交付的是源码，换主题后导出在本机按新主题重新渲染，已确认的章节不用重新生成。目前可通过 API 切换（`PATCH /api/projects/:id/theme`），网页入口尚未完成
 - **本机草稿恢复**：新建视频与项目音色的表单自动暂存，刷新或意外关闭后可恢复。
 
 ### 🔒 账号与权限
@@ -206,6 +207,8 @@ npm run scene-agent -- run packages/scene-agent/eval/cases/rag-ch4/brief.json \
 npm run scene-agent -- run <brief.json> --cues=<cues.json> --confirm-paid [--model=deepseek-flash] [--max-turns=15]
 ```
 
+加 `--theme=<id>` 让关键帧按某个主题渲染（默认 blueprint）。用已确认的源码预览各主题效果（本机渲染、不调用模型）：`npx tsx scripts/theme-preview.ts <导出任务输入.json> <输出目录> --themes=paper-press,chalk-garden`。
+
 每次运行写入 `output/scene-agent/<id>-<model>-<时间>/`：`scene/Scene.tsx`、`stills/`、`checkpoints/`（达标版本）、`transcript.jsonl`（每轮请求与工具结果）、`result.json`。命令行只产出画面和关键帧；带配音的视频在工作台生成。密钥读取项目 `.env` 中的 `DEEPSEEK_API_KEY`（Claude 用 `ANTHROPIC_API_KEY`）。
 
 工作台的「Agent 生成视频」由 Workflow 队列执行，单个任务通常几分钟，租约上限 30 分钟；整课导出走 Render 队列。
@@ -285,6 +288,7 @@ output/visual-workbench/   本机渲染缓存：每个 Agent / 导出任务一�
 packages/
   scene-agent/             Scene Agent：模型适配层、工具、循环与关卡、skill、评测用例、渲染
   custom-scenes/           场景源码约定、cue 解析、类型检查、几何审计、字幕与整课渲染宿主
+  scene-themes/            课程主题：主题 JSON、可读性校验（对比度、字体已打包）、注册表
 
 services/
   api/                     FastAPI 后端（账号、项目、配音、视觉任务路由）

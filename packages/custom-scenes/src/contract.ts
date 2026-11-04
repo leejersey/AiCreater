@@ -59,3 +59,31 @@ export function checkSource(source:string):void{
   visit(file);
   if(!hasDefault)throw Error('custom_scene_source: export default function Scene is required');
 }
+
+export type LiteralStyle={kind:'color'|'font';text:string;line:number};
+const COLOR_LITERAL=/^(#[0-9a-f]{3,8}|rgba?\(.*\)|hsla?\(.*\)|white|black|red|green|blue|yellow|orange|gray|grey)$/i;
+const FONT_LITERAL=/(^|[\s,'"])(sans-serif|serif|monospace|cursive|system-ui|Noto Sans|Noto Serif|PingFang|Helvetica|Arial|Inter|JetBrains Mono|LXGW)(?=$|[\s,'"])/i;
+const COLOR_ATTRIBUTES=new Set(['fill','stroke','stopColor','color','floodColor','lightingColor','background','backgroundColor','borderColor']);
+/** Colors and font families written into the scene instead of read from `theme`: they do not follow a theme change.
+ * Theme-agnostic values (none, transparent, currentColor, url(#id)) are fine. */
+export function literalStyles(source:string):LiteralStyle[]{
+ const file=ts.createSourceFile('Scene.tsx',source,ts.ScriptTarget.ES2022,true,ts.ScriptKind.TSX);
+ const found:LiteralStyle[]=[];
+ const line=(node:ts.Node)=>file.getLineAndCharacterOfPosition(node.getStart(file)).line+1;
+ const name=(node:ts.Node|undefined)=>node&&(ts.isJsxAttribute(node)||ts.isPropertyAssignment(node))?node.name.getText(file):undefined;
+ function visit(node:ts.Node){
+  if(ts.isStringLiteralLike(node)){
+   const value=node.text.trim();
+   // The attribute or style property this string is the value of, through a JSX expression if there is one.
+   let owner:ts.Node|undefined=node.parent;
+   if(owner&&ts.isJsxExpression(owner))owner=owner.parent;
+   const key=name(owner);
+   if(COLOR_LITERAL.test(value))found.push({kind:'color',text:value,line:line(node)});
+   else if(key==='fontFamily'||FONT_LITERAL.test(value))found.push({kind:'font',text:value,line:line(node)});
+   else if(key&&COLOR_ATTRIBUTES.has(key)&&/^#|rgb|hsl/i.test(value))found.push({kind:'color',text:value,line:line(node)});
+  }
+  ts.forEachChild(node,visit);
+ }
+ visit(file);
+ return found;
+}

@@ -2,7 +2,7 @@
 // The agent's cues come from the same measured captions, so the binding is checked against the cues directly.
 import '../../../../scripts/loopback.cjs';
 import {bundle} from '@remotion/bundler';
-import {openBrowser,renderMedia,selectComposition,makeCancelSignal} from '@remotion/renderer';
+import {openBrowser,renderMedia,renderStill,selectComposition,makeCancelSignal} from '@remotion/renderer';
 import {copyFile,mkdir,mkdtemp,rm,writeFile} from 'node:fs/promises';
 import {existsSync} from 'node:fs';
 import path from 'node:path';
@@ -49,14 +49,13 @@ export const agentChapter=(input:AgentVideoInput)=>courseManifest([input]);
 /** Writes video.mp4 and video.srt for one chapter into `directory`. */
 export function renderAgentVideo(input:AgentVideoInput,directory:string,theme:SceneTheme=jobTheme(undefined)){return renderCourseVideo([input],directory,theme);}
 
-/** Writes video.mp4 and video.srt for chapters played back to back into `directory`, in one theme. */
-export async function renderCourseVideo(inputs:AgentVideoInput[],directory:string,theme:SceneTheme=jobTheme(undefined)):Promise<{video:'video.mp4';srt:'video.srt';durationInFrames:number}>{
+const chrome=()=>process.env.REMOTION_BROWSER_EXECUTABLE??(existsSync('/Applications/Google Chrome.app/Contents/MacOS/Google Chrome')?'/Applications/Google Chrome.app/Contents/MacOS/Google Chrome':undefined);
+
+/** Bundles the course host with each chapter's scene and audio in `theme`; the caller removes `temp`. */
+async function bundleCourse(inputs:AgentVideoInput[],theme:SceneTheme){
  for(const input of inputs){checkSource(input.source);await typecheckSource(input.source);}
  const manifest=courseManifest(inputs);
  const temp=await mkdtemp(path.join(repositoryRoot,'.scene-agent-render-'));
- let browser:Awaited<ReturnType<typeof openBrowser>>|undefined;
- const {cancel,cancelSignal}=makeCancelSignal();
- const timer=setTimeout(cancel,renderTimeouts(manifest.durationInFrames).cancelMs);
  try{
   const publicDir=path.join(temp,'public');
   for(const [i,input] of inputs.entries()){
@@ -69,13 +68,45 @@ export async function renderCourseVideo(inputs:AgentVideoInput[],directory:strin
   const entryPoint=path.join(temp,'index.tsx');
   await writeFile(entryPoint,`import React from 'react';import {Composition,registerRoot} from 'remotion';${fontImports(theme)}import {WorkbenchVideo} from ${JSON.stringify(host)};${names.map(n=>`import ${n} from './${n}';`).join('')}const manifest=${JSON.stringify(manifest)};function Video(){return <WorkbenchVideo manifest={manifest} scenes={[${names.join(',')}]} fontText={${JSON.stringify(inputs.map(i=>i.source+i.brief.narration).join(''))}} theme={${JSON.stringify(hostTheme(theme))}}/>}registerRoot(()=> <Composition id="AgentVideo" component={Video} width={1920} height={1080} fps={30} durationInFrames={${manifest.durationInFrames}}/>);`);
   const serveUrl=await bundle({entryPoint,publicDir,outDir:path.join(temp,'bundle')});
-  browser=await openBrowser('chrome',{logLevel:'error',browserExecutable:process.env.REMOTION_BROWSER_EXECUTABLE??(existsSync('/Applications/Google Chrome.app/Contents/MacOS/Google Chrome')?'/Applications/Google Chrome.app/Contents/MacOS/Google Chrome':undefined)});
+  return{manifest,temp,serveUrl};
+ }catch(error){await rm(temp,{recursive:true,force:true});throw error;}
+}
+
+/** Writes video.mp4 and video.srt for chapters played back to back into `directory`, in one theme. */
+export async function renderCourseVideo(inputs:AgentVideoInput[],directory:string,theme:SceneTheme=jobTheme(undefined)):Promise<{video:'video.mp4';srt:'video.srt';durationInFrames:number}>{
+ const {manifest,temp,serveUrl}=await bundleCourse(inputs,theme);
+ let browser:Awaited<ReturnType<typeof openBrowser>>|undefined;
+ const {cancel,cancelSignal}=makeCancelSignal();
+ const timer=setTimeout(cancel,renderTimeouts(manifest.durationInFrames).cancelMs);
+ try{
+  browser=await openBrowser('chrome',{logLevel:'error',browserExecutable:chrome()});
   const composition=await selectComposition({serveUrl,id:'AgentVideo',puppeteerInstance:browser,logLevel:'error'});
   await renderMedia({serveUrl,composition,puppeteerInstance:browser,codec:'h264',pixelFormat:'yuv420p',outputLocation:path.join(directory,'video.mp4'),concurrency:2,timeoutInMilliseconds:20000,cancelSignal,logLevel:'error'});
   await writeFile(path.join(directory,'video.srt'),workbenchSrt(manifest));
   return{video:'video.mp4',srt:'video.srt',durationInFrames:manifest.durationInFrames};
  }finally{
   clearTimeout(timer);
+  try{if(browser)await browser.close({silent:true});}finally{await rm(temp,{recursive:true,force:true});}
+ }
+}
+
+/** Finished-video frames (decoration and captions included) at `frames` of the course, as PNGs in `directory`. Local only. */
+export async function renderCourseStills(inputs:AgentVideoInput[],frames:number[],directory:string,theme:SceneTheme,scale=0.5):Promise<string[]>{
+ const {manifest,temp,serveUrl}=await bundleCourse(inputs,theme);
+ let browser:Awaited<ReturnType<typeof openBrowser>>|undefined;
+ try{
+  browser=await openBrowser('chrome',{logLevel:'error',browserExecutable:chrome()});
+  const composition=await selectComposition({serveUrl,id:'AgentVideo',puppeteerInstance:browser,logLevel:'error'});
+  await mkdir(directory,{recursive:true});
+  const files:string[]=[];
+  for(const frame of frames){
+   if(!Number.isInteger(frame)||frame<0||frame>=manifest.durationInFrames)throw Error(`frame ${frame} is outside the course`);
+   const output=path.join(directory,`frame-${String(frame).padStart(5,'0')}.png`);
+   await renderStill({serveUrl,composition,puppeteerInstance:browser,frame,imageFormat:'png',scale,output,timeoutInMilliseconds:20000,logLevel:'error'});
+   files.push(output);
+  }
+  return files;
+ }finally{
   try{if(browser)await browser.close({silent:true});}finally{await rm(temp,{recursive:true,force:true});}
  }
 }

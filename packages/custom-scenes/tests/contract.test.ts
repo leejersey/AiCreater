@@ -47,3 +47,17 @@ test('cues cover the narration in order without gaps in text or overlaps in time
   for(const bad of [[cues[0]],[cues[1],cues[0]],[{...cues[0],endFrame:120},cues[1]],[cues[0],{...cues[1],id:'cue-1'}],[{...cues[0],extra:1},cues[1]]])
     assert.throws(()=>parseCues(bad,b),/cues:/);
 });
+
+test('literal colors and fonts are found wherever they are written, theme reads are not',async()=>{
+ const {literalStyles}=await import('../src/contract');
+ const source=`import React from 'react';
+const BAD='#ef5350';const FONT="'Noto Sans SC', sans-serif";
+export default function Scene({theme}:any){
+ return <svg><rect fill={theme.accent} stroke="none"/><rect fill="url(#g)"/>
+  <text fill="#ffffff" fontFamily={FONT}>a</text><text style={{fontFamily:'system-ui',color:'rgba(0,0,0,0.5)'}}>b</text>
+  <circle fill={BAD} stroke="white"/><text fontFamily="sans-serif" fill="currentColor">c</text><g id="internal-knowledge"/></svg>;
+}`;
+ const found=literalStyles(source).map(f=>`${f.kind}:${f.text}`);
+ assert.deepEqual(found.sort(),['color:#ef5350','color:#ffffff','color:rgba(0,0,0,0.5)','color:white',"font:'Noto Sans SC', sans-serif",'font:sans-serif','font:system-ui'].sort());
+ assert.deepEqual(literalStyles(`export default function Scene({theme}:any){return <svg><text fill={theme.foreground} fontFamily={theme.fontBody}>a</text></svg>;}`),[]);
+});
