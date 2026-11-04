@@ -49,14 +49,15 @@ resolve_llm(user_id) -> { base_url, api_key, model, source: 'account' | 'env' }
 ```
 
 - 账号有行且密文可解密 → `source=account`，使用行内三字段。
-- 否则 → `source=env`：`api_key=DEEPSEEK_API_KEY`，`model=DEEPSEEK_MODEL` 或默认 `deepseek-flash`，`base_url=https://api.deepseek.com/v1`（或与 DeepSeek 文档一致的 chat 根；见下节讲稿）。
+- 否则 → `source=env`：`api_key=DEEPSEEK_API_KEY`，`model=DEEPSEEK_MODEL` 或默认 `deepseek-flash`，**固定** `base_url=https://api.deepseek.com/v1`（讲稿与账号默认一致；Agent 无账号配置时仍走 `models.json` 内既有 `baseUrl`，不强制改 registry）。
 - 两者都缺密钥 → 现有 `ProviderError(config, missing_setting, …)` 类失败，提示可去个人中心配置或设置环境变量。
 - **禁止**把 `ACCOUNT_CREDENTIALS_KEY` 或数据库密文传给 Node / 日志。
+- **主体**：视觉任务按课程 `projects.owner_id` 解析（与现有项目归属一致）；讲稿按当前登录 `user_id` 解析。
 
 ### 讲稿 / 大纲（Python）
 
 - `generate_manuscript`（及同源 DeepSeek HTTP 调用）改为使用 `resolve_llm` 的 `base_url` + `api_key` + `model`，**去掉**写死的 `https://api.deepseek.com/chat/completions`。
-- 请求路径：在规范化后的 `base_url` 后拼接 `/chat/completions`（若 `base_url` 已以 `/v1` 结尾则得到 `…/v1/chat/completions`）；禁止跟随重定向；超时与体积限制保持现状。
+- 请求路径：在规范化后的 `base_url` 后拼接 `/chat/completions`（默认得到 `https://api.deepseek.com/v1/chat/completions`）；禁止跟随重定向；超时与体积限制保持现状。
 - 仅当 `model` 为已知 DeepSeek 闪模型（如现有 `deepseek-flash` / `deepseek-v4-flash`）时保留 `thinking: disabled` 特例；其它模型 ID 不附加该字段。
 
 ### 视觉 Agent（Node 子进程）
@@ -66,7 +67,7 @@ resolve_llm(user_id) -> { base_url, api_key, model, source: 'account' | 'env' }
 目标行为：
 
 1. **回退（无账号配置）**：保持现状——`models.json` 条目 + 环境 `DEEPSEEK_API_KEY`；工作台默认模型名仍为 `deepseek-flash-thinking`（与评测默认一致）。全局 `DEEPSEEK_MODEL` 若存在，仅影响讲稿回退，**不**擅自改 Agent 默认 registry 名（避免把 `deepseek-flash` 与 `deepseek-flash-thinking` 混用）。
-2. **账号已配置**：入队/启动子进程时写入**仅该 job 可见**的覆盖信息（推荐：job `input` 或旁路临时文件，由 worker 注入环境变量，例如 `ACCOUNT_LLM_BASE_URL` / `ACCOUNT_LLM_API_KEY` / `ACCOUNT_LLM_MODEL`；勿写进可被列表 API 回显的明文字段）。`scene-agent-job` 在存在覆盖时构建一次性 OpenAI 兼容 Provider：`baseUrl`/`model`/`apiKey` 来自覆盖；`capabilities` / `budget` / 可选 `extraBody` **克隆** `models.json` 中 `deepseek-flash-thinking` 模板（thinking low），使未知供应商模型仍有关卡预算上限。覆盖模式下 `--model` 仅作日志/目录标签，可用账号 `model` 字符串。
+2. **账号已配置**：worker 在启动该 job 的 Node 进程前解密 owner 凭证，经 **环境变量**（如 `ACCOUNT_LLM_BASE_URL` / `ACCOUNT_LLM_API_KEY` / `ACCOUNT_LLM_MODEL`）注入子进程；**不要**把明文 API Key 写入持久化的 `jobs.input`（该列会落库且参与相同输入去重）。`scene-agent-job` 在存在覆盖时构建一次性 OpenAI 兼容 Provider：`baseUrl`/`model`/`apiKey` 来自环境覆盖；`capabilities` / `budget` / 可选 `extraBody` **克隆** `models.json` 中 `deepseek-flash-thinking` 模板（thinking low），使未知供应商模型仍有关卡预算上限。覆盖模式下日志可用账号 `model` 字符串作标签。
 3. `child_environment`：Agent 任务在覆盖模式下注入上述临时密钥变量，**仍不**传入 `DATABASE_URL` / `ACCOUNT_CREDENTIALS_KEY` / TOS 密钥。
 
 CLI 本地 `npm run scene-agent` 可继续只读 `.env`；本需求以工作台 job 路径为准。
