@@ -26,7 +26,7 @@ AI Creater 是一个面向**中文知识教学**的 AI 视频生成系统。输�
 
 **Scene Agent**：像 Codex 一样，给 Agent 一份分镜稿（口播 + 实测时间轴）和一套 skill，它在工作目录里自己写场景代码、渲染、看审计报告、修改，直到通过客观检查，再用现有配音和字幕出片。换模型只改配置；设计目标是模型越强、画面越好（尚未用更强模型对照验证）。RAG 课程 8 章已全部由 DeepSeek（开启思考）独立完成。
 
-> 早期的模板流程（DeepSeek 自动分镜 → 9 种模板画面）和定制视觉流程已于 2026-11-02 删除，代码见 git 历史。数据库里这些流程留下的任务记录不再显示，也不能再导出。
+> 早期的模板流程（DeepSeek 自动分镜 → 9 种模板画面）和定制视觉流程已于 2026-11-02 删除，代码见 git 历史。这些流程留下的任务记录、候选与版本表已在 2026-11-03 的数据库迁移中删除。
 
 ---
 
@@ -94,7 +94,10 @@ npm ci
 
 ### 路径 A：教学工作台（完整网页流程）
 
-需要本机已有 PostgreSQL / Redis、一个火山 TOS 私有桶，以及 `.env`、`.env.local-services` 配置。
+需要本机已有 PostgreSQL / Redis、一个火山 TOS 私有桶，以及 `.env`、`.env.local-services` 配置（字段见 `.env.example`）。
+
+- `.env.local-services`：`DATABASE_URL`、`CELERY_BROKER_URL` 等本机服务地址
+- `.env`：DeepSeek / 火山 TTS 密钥，以及 TOS 的 `TOS_REGION`、`TOS_BUCKET`、`TOS_ACCESS_KEY`、`TOS_SECRET_KEY`（桶须私有、不加桶策略；AK/SK 建议用只授权该桶的 IAM 子用户）
 
 ```bash
 # 1. 安装 Python 依赖
@@ -260,10 +263,13 @@ python3 services/tests/run_project_tests.py services.tests.test_api …   # 在�
   ┌──────────────────────────────────────────────────────────────┐
   │ Remotion 渲染（本机）：Agent 场景 + 配音 + 字幕                   │
   │  → output/visual-workbench/<任务>/ 1080P / 30FPS MP4 + SRT     │
+  │  → 发布后上传火山 TOS（按内容哈希寻址）                          │
   └──────────────────────────────────────────────────────────────┘
 ```
 
 配音、对齐、Agent 与导出任务都在同一张 `jobs` 表里，由 `services/projects/leases.py` 统一领取与续租：租约时限按类型设定（配音与对齐 15 分钟，Agent 与导出 30 分钟，超时由 Worker 回收），运行中靠心跳续租，每条队列（workflow / render）同时只运行一个任务；取消运行中的 Agent 任务时，Worker 在下一次心跳停止。付费任务（配音、Agent）只在用户确认后入队；Agent 未通过检查时停止并保留运行记录，不自动重试。
+
+媒体以火山 TOS 私有桶为主副本，经 S3 兼容端点访问，不开放公共链接，下载都经过 API 校验哈希。配音音频、Agent 视频（源码、MP4、字幕、审查帧）与整课导出都存入 TOS；本机目录只是渲染缓存，缺失时下载或导出会自动从 TOS 取回。Agent 视频上传失败时任务仍会发布、付费结果不丢，之后执行 `python -m services.projects.sync_storage` 补传（可重复执行）。
 
 ---
 
@@ -274,6 +280,8 @@ apps/
   web/                     Next.js 工作台（前端）
   renderer/public/         本机媒体缓存：配音音频（generated/），火山 TOS 为主副本
 
+output/visual-workbench/   本机渲染缓存：每个 Agent / 导出任务一个目录，发布的文件同时存入 TOS
+
 packages/
   scene-agent/             Scene Agent：模型适配层、工具、循环与关卡、skill、评测用例、渲染
   custom-scenes/           场景源码约定、cue 解析、类型检查、几何审计、字幕与整课渲染宿主
@@ -281,7 +289,7 @@ packages/
 services/
   api/                     FastAPI 后端（账号、项目、配音、视觉任务路由）
   accounts/                用户注册、认证与会话管理
-  projects/                项目、配音/对齐任务、统一任务表与租约（leases.py）、费用参考与存储
+  projects/                项目、配音/对齐任务、统一任务表与租约（leases.py）、费用参考、TOS 存储（storage.py）与补传命令（sync_storage.py）
   visual/                  Agent 与整课导出任务、章节编辑与 Worker
   workflow/                Celery 调度、文稿生成、配音与本地对齐
   tts/                     火山 TTS 2.0 配音与字级时间戳
@@ -315,7 +323,7 @@ docs/                      Scene Agent 设计、本地运维、依赖许可，�
 | **后端服务** | Python · FastAPI · Celery |
 | **AI 模型** | DeepSeek API（文稿、Scene Agent）；Scene Agent 可切换 Claude 等 |
 | **语音合成** | 火山引擎 TTS 2.0（字级时间戳） |
-| **数据库** | PostgreSQL（版本保护） |
+| **数据库** | PostgreSQL（revision 乐观锁 · 统一任务表） |
 | **消息队列** | Redis + Celery（双队列调度） |
 | **对象存储** | 火山 TOS（S3 兼容端点）：配音音频、Agent 视频与整课导出 |
 
@@ -330,7 +338,7 @@ docs/                      Scene Agent 设计、本地运维、依赖许可，�
 - 工作台「Agent 生成视频」已在真实浏览器端到端跑通：确认弹窗与取消、失败路径（无效 Key，未计费）、成功出片（第 7 章，5 轮约 3.6 分钟，页面内可播放 MP4 并下载 SRT），以及在测试账号的课程副本中逐章生成、确认并导出整课（8/8 章，266 秒）
 - 批量生成的确认弹窗与取消已在浏览器中验证；运行中的实时进度只有单元与数据库测试，尚未在真实付费运行中观察
 - 通过检查不等于画面好看，所有结果仍需人工观看确认
-- 只用旧流程做过画面的课程（例如早先的「什么是rag」「如何做意图识别」），需要先用 Agent 逐章重新生成并确认，才能再导出整课；之前导出的整课视频仍可在工作台底部「整课导出记录」中播放和下载
-- 本地渲染与缓存对齐不产生额外 API 费用
+- 只用旧流程做过画面的课程，需要先用 Agent 逐章重新生成并确认，才能再导出整课
+- 本地渲染与缓存对齐不产生额外 API 费用；火山 TOS 按存储量与下载流量计费
 - Redis 保留本机使用；若转为公司/第三方服务需重新核对[许可](docs/dependency-license-review.md)
 - 字体使用 `@fontsource/noto-sans-sc`（OFL 许可）
