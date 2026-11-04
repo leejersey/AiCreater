@@ -130,7 +130,7 @@ npm run scene-agent -- run <brief.json> --cues=<cues.json> --confirm-paid [--mod
 
 每次运行写入 `output/scene-agent/<id>-<model>-<时间>/`：`scene/Scene.tsx`、`stills/`、`checkpoints/`（达标版本）、`transcript.jsonl`（每轮请求与工具结果）、`result.json`。命令行只产出画面和关键帧；带配音的视频在工作台生成。密钥读取项目 `.env` 中的 `DEEPSEEK_API_KEY`（Claude 用 `ANTHROPIC_API_KEY`）。
 
-工作台的「Agent 生成视频」由 Workflow 队列执行，单个任务通常几分钟，租约上限 30 分钟；整课导出走 Render 队列。
+工作台的「Agent 生成视频」由执行器的 workflow 队列执行，单个任务通常几分钟，租约上限 30 分钟；整课导出和主题重渲染走 render 队列。
 
 ---
 
@@ -139,9 +139,8 @@ npm run scene-agent -- run <brief.json> --cues=<cues.json> --confirm-paid [--mod
 ```bash
 npm test                 # 网页与各 package 的 TypeScript 测试
 npm run typecheck
-source .venv/bin/activate
 npm run test:workflow    # Python 后端测试（未设置 TEST_DATABASE_URL 时，依赖数据库的用例会跳过）
-python3 services/tests/run_project_tests.py services.tests.test_api …   # 在一次性 Docker PostgreSQL 中跑指定模块
+.venv/bin/python services/tests/run_project_tests.py services.tests.test_api …   # 在一次性 Docker PostgreSQL 中跑指定模块（结束后连同数据卷删除）
 ```
 
 数据库用例的夹具用 ffmpeg 现场生成短音频与字级时间，不依赖本机文件。
@@ -214,7 +213,7 @@ services/
   api/                     FastAPI 后端（账号、项目、配音、视觉任务路由）
   accounts/                用户注册、认证与会话管理
   projects/                项目、配音/对齐任务、统一任务表与租约（leases.py）、费用参考、TOS 存储（storage.py）与补传命令（sync_storage.py）
-  visual/                  Agent 与整课导出任务、章节编辑与 Worker
+  visual/                  Agent、整课导出与主题重渲染任务、章节编辑，及它们的执行逻辑
   workflow/                文稿生成、配音与本地对齐
   runner.py                任务执行器：按队列向 PostgreSQL 领任务并执行
   config.py                读取 .env 与 .env.local-services
@@ -222,7 +221,7 @@ services/
   chapters.py              章节数据结构：口播、配音音频、时长与实测字幕的校验和计时
   workbench.py             `npm run workbench` 的 API + 网页启动器
 
-scripts/                   Scene Agent 命令行与 Worker 入口、配音音频校验、本机回环
+scripts/                   Scene Agent 命令行与任务入口（Agent、整课渲染）、主题预览、配音音频校验、本机回环
 docs/                      Scene Agent 设计、本地运维、依赖许可，及仍在使用的功能的设计记录
 ```
 
