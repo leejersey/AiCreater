@@ -1,5 +1,6 @@
 import type {SceneBrief} from '../../custom-scenes/src/contract';
 import type {Capabilities} from './provider/types';
+import type {SceneTheme} from '../../scene-themes/src/index';
 
 // Depends only on the model's capabilities, so it stays identical across turns and runs (prompt cache).
 export const systemPrompt=(capabilities:Pick<Capabilities,'vision'>)=>`You are a motion designer and React/SVG engineer making one scene of a narrated teaching video.
@@ -20,7 +21,17 @@ Keep replies short. Spend your turns on tool calls.`;
 
 export type Revision={feedback:string};
 
-export function initialMessage(brief:SceneBrief,revision?:Revision):string{
+/** The course theme in words: what it should feel like, and the shapes and fonts it implies. Colors stay in the theme prop. */
+export function themeMessage(theme:SceneTheme):string{
+ const dash=theme.shape.ruleDash==='none'?'solid':`dashed (strokeDasharray "${theme.shape.ruleDash}")`;
+ return [
+  `Course theme: ${theme.nameZh} (${theme.id}), a ${theme.dark?'dark':'light'} theme — ${theme.descriptionZh} Mood: ${theme.mood.join(', ')}.`,
+  `Its character: cards and panels with corner radius ${theme.shape.radius} (theme.radius); dividers and connectors ${theme.shape.ruleWidth}px ${dash} (theme.ruleWidth, theme.ruleDash); text in ${theme.fonts.body} (theme.fontBody), headings in ${theme.fonts.display} (theme.fontDisplay), code in ${theme.fonts.mono} (theme.fontMono).`,
+  'Every color and font comes from the theme prop (read_skill scene-contract, section Theme); the same scene must work in any other theme. Let the mood set the pace of the motion.',
+ ].join('\n');
+}
+
+export function initialMessage(brief:SceneBrief,revision?:Revision,theme?:SceneTheme):string{
  return [
   `Scene: ${brief.title}`,
   `Duration: ${brief.durationInFrames} frames (${(brief.durationInFrames/brief.fps).toFixed(1)}s)`,
@@ -28,6 +39,7 @@ export function initialMessage(brief:SceneBrief,revision?:Revision):string{
   `Visual goal: ${brief.visualGoal}`,
   `Facts that must stay accurate:\n${brief.facts.map(f=>`- ${f.trim()}`).join('\n')}`,
   `Materials: ${brief.materials.join('; ')}`,
+  ...(theme?[themeMessage(theme)]:[]),
   ...(revision?[
    'This is a revision. scene/Scene.tsx already holds the previous version, which passed the checks and was reviewed by a person. Their feedback:',
    revision.feedback.trim(),

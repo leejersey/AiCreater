@@ -52,7 +52,7 @@ async function main(){
   return;
  }
  const provider=createProvider(model,models); // fails fast on a missing key, before creating the workspace
- const workspace=await createWorkspace(out,{brief,cues,skillDir:path.join(repositoryRoot,'packages/scene-agent/skill'),initialSource});
+ const workspace=await createWorkspace(out,{brief,cues,skillDir:path.join(repositoryRoot,'packages/scene-agent/skill'),initialSource,theme});
  console.log(`workspace ${workspace.root}`);
  const renderer=new RemotionStillRenderer(workspace.brief,theme);
  const controller=new AbortController();

@@ -1,6 +1,6 @@
 import {mkdir,readFile,writeFile} from 'node:fs/promises';
 import path from 'node:path';
-import {checkSource} from '../../../custom-scenes/src/contract';
+import {checkSource,literalStyles} from '../../../custom-scenes/src/contract';
 import {SourceTypecheckError,typecheckSource} from '../../../custom-scenes/src/files';
 import type {Cue} from '../../../custom-scenes/src/cues';
 import type {ContentPart} from '../provider/types';
@@ -169,9 +169,13 @@ export const renderStills:Tool={
   const lines=['typecheck passed',`rendered ${render.frames.length}/${frames.length} frames: ${render.frames.map(f=>f.frame).join(', ')||'none'}`];
   for(const f of render.failures)lines.push(`frame ${f.frame} failed: ${f.error}`);
   lines.push(formatAudit(render,cues,brief.durationInFrames));
+  const literal=literalStyles(source);
+  if(literal.length)lines.push(`[medium] literal-style — ${literal.length} color/font value${literal.length>1?'s are':' is'} written into the scene instead of read from theme, so ${literal.length>1?'they ignore':'it ignores'} the course theme: ${literal.slice(0,8).map(l=>`${l.text} (line ${l.line})`).join(', ')}${literal.length>8?', …':''}. Use theme.* (scene-contract, section Theme).`);
   const findings=summarizeAudit(render,cues,brief.durationInFrames).findings;
   const clean=!render.failures.length&&!findings.some(f=>f.severity==='high');
   const empty=findings.some(f=>f.kind==='empty-area');
+  const mustFix=[...(empty?['The empty-area finding: viewers notice a half-empty frame. Enlarge or spread the content of those cues (a closing end card may stay sparse).']:[]),
+   ...(literal.length?['The literal-style finding: replace those values with theme tokens, so the scene follows the course theme.']:[])];
   const fullSample=defaultFrames(brief.durationInFrames,cues).every(f=>frames.includes(f));
   if(clean&&fullSample){
    // Keep every gate-clean version outside the model's reach, so a later regression cannot lose it.
@@ -179,8 +183,8 @@ export const renderStills:Tool={
    await mkdir(path.dirname(file),{recursive:true});await writeFile(file,source);
    context.cleanCheckpoint={sourceSha256:render.sourceSha256,file};
   }
-  if(clean)lines.push(fullSample&&empty
-   ?'No [high] findings: this version passes the final gates and is kept. The empty-area finding is the one medium finding to fix: viewers notice a half-empty frame. Enlarge or spread the content of those cues (a closing end card may stay sparse), then check again and call finish.'
+  if(clean)lines.push(fullSample&&mustFix.length
+   ?`No [high] findings: this version passes the final gates and is kept. Fix these medium findings before finishing: ${mustFix.join(' ')} Then check again and call finish.`
    :fullSample
    ?(context.capabilities.vision
     ?'No [high] findings: this version passes the final gates. Now look at it with view_frames and check it against the visual-review list; fix what fails, or call finish if it holds up. Medium findings are optional polish.'

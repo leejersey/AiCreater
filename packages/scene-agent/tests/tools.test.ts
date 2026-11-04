@@ -257,6 +257,19 @@ test('a gate-clean version with empty-area findings is kept but the model is ask
  const report=out(await call('render_stills'));
  assert.match(report,/\[medium\] empty-area/);
  assert.match(report,/nothing drawn in y 300–980 \(69% of the height\)/);
- assert.match(report,/passes the final gates and is kept\. The empty-area finding is the one medium finding to fix/);
+ assert.match(report,/passes the final gates and is kept\. Fix these medium findings before finishing: The empty-area finding/);
  assert.ok(context.cleanCheckpoint); // still a fallback: empty space never blocks the gates
+});
+
+test('colors and fonts written into the scene are reported, and asked to be fixed before finishing',async()=>{
+ const source=`import React from 'react';
+export default function Scene({width,height,theme}:{frame:number;fps:number;width:number;height:number;theme:{foreground:string}}){
+ return <svg width={width} height={height}><text id="t" x={100} y={100} fill="#ffffff" fontFamily="sans-serif">a</text><rect id="r" x={0} y={200} width={10} height={10} fill={theme.foreground}/></svg>;
+}`;
+ const {call,context}=await setup({initialSource:source,vision:false});
+ const report=out(await call('render_stills'));
+ assert.match(report,/\[medium\] literal-style — 2 color\/font values are written into the scene/);
+ assert.match(report,/#ffffff \(line 3\), sans-serif \(line 3\)/);
+ assert.match(report,/Fix these medium findings before finishing: The literal-style finding/);
+ assert.ok(context.cleanCheckpoint); // a style finding never blocks the gates
 });

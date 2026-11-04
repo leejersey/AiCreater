@@ -3,9 +3,10 @@ import {cp,lstat,mkdir,readFile,realpath,writeFile} from 'node:fs/promises';
 import path from 'node:path';
 import {parseBrief,type SceneBrief} from '../../custom-scenes/src/contract';
 import {parseCues,type Cue} from '../../custom-scenes/src/cues';
+import {jobTheme,type SceneTheme} from '../../scene-themes/src/index';
 
 export const SCENE_FILE='scene/Scene.tsx';
-const READABLE=[/^brief\.json$/,/^cues\.json$/,/^skill(\/.*)?$/,/^scene(\/.*)?$/];
+const READABLE=[/^brief\.json$/,/^cues\.json$/,/^theme\.json$/,/^skill(\/.*)?$/,/^scene(\/.*)?$/];
 const WRITABLE=[/^scene\/Scene\.tsx$/]; // the scene contract is a single self-contained file
 
 export class WorkspaceError extends Error{}
@@ -15,7 +16,7 @@ function readCues(value:unknown,brief:SceneBrief):Cue[]{
  return value===undefined||(Array.isArray(value)&&value.length===0)?[]:parseCues(value,brief);
 }
 
-export type WorkspaceInput={brief:unknown;cues?:unknown;skillDir:string;initialSource?:string};
+export type WorkspaceInput={brief:unknown;cues?:unknown;skillDir:string;initialSource?:string;theme?:SceneTheme};
 
 export async function createWorkspace(directory:string,input:WorkspaceInput):Promise<Workspace>{
  const brief=parseBrief(input.brief);
@@ -24,6 +25,7 @@ export async function createWorkspace(directory:string,input:WorkspaceInput):Pro
  await mkdir(directory); // fails if it exists: a run never reuses another run's directory
  await writeFile(path.join(directory,'brief.json'),JSON.stringify(brief,null,2)+'\n');
  await writeFile(path.join(directory,'cues.json'),JSON.stringify(cues,null,2)+'\n');
+ await writeFile(path.join(directory,'theme.json'),JSON.stringify(input.theme??jobTheme(undefined),null,2)+'\n');
  await cp(input.skillDir,path.join(directory,'skill'),{recursive:true,dereference:true});
  await mkdir(path.join(directory,'scene'));
  await mkdir(path.join(directory,'stills'));
@@ -32,13 +34,17 @@ export async function createWorkspace(directory:string,input:WorkspaceInput):Pro
 }
 
 export class Workspace{
- private constructor(readonly root:string,readonly brief:SceneBrief,readonly cues:Cue[]){}
+ private constructor(readonly root:string,readonly brief:SceneBrief,readonly cues:Cue[],readonly theme:SceneTheme){}
 
  static async open(directory:string):Promise<Workspace>{
   const root=await realpath(directory);
   const brief=parseBrief(JSON.parse(await readFile(path.join(root,'brief.json'),'utf8')));
   const cues=readCues(JSON.parse(await readFile(path.join(root,'cues.json'),'utf8')),brief);
-  return new Workspace(root,brief,cues);
+  // Workspaces from before themes have no theme.json: they were drawn in the default theme.
+  let theme:unknown;
+  try{theme=JSON.parse(await readFile(path.join(root,'theme.json'),'utf8'));}
+  catch(error){if((error as NodeJS.ErrnoException).code!=='ENOENT')throw error;}
+  return new Workspace(root,brief,cues,jobTheme(theme));
  }
 
  get stillsDir(){return path.join(this.root,'stills');}
@@ -51,7 +57,7 @@ export class Workspace{
   if(normalized==='..'||normalized.startsWith('../'))throw new WorkspaceError(`path escapes the workspace: ${relative}`);
   const rules=mode==='write'?WRITABLE:READABLE;
   if(normalized!=='.'&&!rules.some(r=>r.test(normalized)))
-   throw new WorkspaceError(mode==='write'?`only ${SCENE_FILE} is writable`:`not readable: ${normalized} (readable: brief.json, cues.json, skill/, scene/)`);
+   throw new WorkspaceError(mode==='write'?`only ${SCENE_FILE} is writable`:`not readable: ${normalized} (readable: brief.json, cues.json, theme.json, skill/, scene/)`);
   const absolute=normalized==='.'?this.root:path.join(this.root,normalized);
   // No component may be a symlink, so a link planted inside the workspace cannot point outside it.
   let current=this.root;

@@ -2,10 +2,11 @@
 
 An icon and a title in a rounded box says the word; it does not show the idea. When the narration names a problem, a limit or a step, draw a small object whose state changes while it is spoken. These snippets come from a scene that taught three RAG challenges well. Copy the technique, not the content: your brief decides what the objects are.
 
-All snippets are frame-driven. `fade(a,b)` is a helper for a 0→1 ramp:
+All snippets are frame-driven and take their colors from the theme. `fade(a,b)` is a helper for a 0→1 ramp:
 
 ```tsx
 const fade=(a:number,b:number)=>interpolate(frame,[a,b],[0,1],{extrapolateLeft:'clamp',extrapolateRight:'clamp'});
+const {foreground:fg,muted,accent,negative:BAD,radius}=theme;
 ```
 
 ## Something that is wrong: mark it, don't describe it
@@ -16,10 +17,10 @@ const fade=(a:number,b:number)=>interpolate(frame,[a,b],[0,1],{extrapolateLeft:'
 const bad=fade(470,490), strike=fade(500,530);
 <g data-object id="wrong-doc">
   <g data-obstacle>
-    <rect x={cx-190} y={420} width={100} height={130} rx={8} fill={fg} fillOpacity={0.06} stroke={muted} strokeWidth={2.5}/>
-    <rect x={cx-70}  y={420} width={100} height={130} rx={8} fill={fg} fillOpacity={0.06} stroke={muted} strokeWidth={2.5}/>
+    <rect x={cx-190} y={420} width={100} height={130} rx={radius} fill={fg} fillOpacity={0.06} stroke={muted} strokeWidth={2.5}/>
+    <rect x={cx-70}  y={420} width={100} height={130} rx={radius} fill={fg} fillOpacity={0.06} stroke={muted} strokeWidth={2.5}/>
   </g>
-  <rect x={cx+50} y={420} width={100} height={130} rx={8} fill={BAD} fillOpacity={0.18} stroke={BAD} strokeWidth={3.5} opacity={bad}/>
+  <rect x={cx+50} y={420} width={100} height={130} rx={radius} fill={BAD} fillOpacity={0.18} stroke={BAD} strokeWidth={3.5} opacity={bad}/>
   <g opacity={bad} transform={`translate(${cx+100},485)`}>
     <line x1={-24} y1={-24} x2={24} y2={24} stroke={BAD} strokeWidth={5}/>
     <line x1={24} y1={-24} x2={-24} y2={24} stroke={BAD} strokeWidth={5}/>
@@ -39,10 +40,10 @@ const bad=fade(470,490), strike=fade(500,530);
 const extra=[fade(600,615),fade(625,640)];
 <g data-object id="window">
   <g data-obstacle>
-    <rect x={cx-200} y={398} width={400} height={230} rx={16} fill={fg} fillOpacity={0.05} stroke={BAD} strokeWidth={3.5}/>
-    {[0,1,2].map(k=><rect key={k} x={cx-180} y={420+k*52} width={360} height={36} rx={8} fill={accent} fillOpacity={0.22} stroke={accent} strokeWidth={2}/>)}
+    <rect x={cx-200} y={398} width={400} height={230} rx={radius} fill={fg} fillOpacity={0.05} stroke={BAD} strokeWidth={3.5}/>
+    {[0,1,2].map(k=><rect key={k} x={cx-180} y={420+k*52} width={360} height={36} rx={radius} fill={accent} fillOpacity={0.22} stroke={accent} strokeWidth={2}/>)}
   </g>
-  {extra.map((t,k)=><rect key={k} x={cx-180} y={640+k*46} width={360} height={36} rx={8} fill={BAD} fillOpacity={0.22} stroke={BAD} strokeWidth={2} opacity={t}/>)}
+  {extra.map((t,k)=><rect key={k} x={cx-180} y={640+k*46} width={360} height={36} rx={radius} fill={BAD} fillOpacity={0.22} stroke={BAD} strokeWidth={2} opacity={t}/>)}
   <text x={cx} y={800} fill={fg} fontSize={40} textAnchor="middle">上下文窗口有限</text>
 </g>
 ```

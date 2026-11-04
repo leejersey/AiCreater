@@ -15,6 +15,11 @@ Practical rules learned from rendered runs. They keep the picture readable; they
 - Use the whole canvas above the caption area (y up to 980). A scene that fills only the top half looks unfinished. The audit reports `empty-area` with the empty band's coordinates when more than 40% of the height or 35% of the width stays empty during a cue; draw the main object large (at least half the width) rather than a small panel in the middle.
 - One idea per cue should dominate the frame; secondary labels stay smaller and muted.
 
+## Color
+
+- One idea per cue gets `theme.accent`; everything else is foreground, muted or faint. Two accents compete.
+- Right and wrong are `theme.positive` and `theme.negative`, so a cross reads as wrong in every theme.
+
 ## Showing, not listing
 
 - Prefer an object that changes (a card that is crossed out, a lock that closes, a document that travels into a box) over a new text card for every sentence.

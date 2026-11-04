@@ -1,13 +1,13 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {mkdir,mkdtemp,readFile,writeFile} from 'node:fs/promises';
+import {mkdir,mkdtemp,readFile,rm,writeFile} from 'node:fs/promises';
 import {tmpdir} from 'node:os';
 import path from 'node:path';
 import {fileURLToPath} from 'node:url';
 import {runLoop} from '../src/loop';
 import {ProviderError,textOf,type Capabilities,type Provider,type StopReason,type ToolCall,type TurnRequest,type TurnResult} from '../src/provider/types';
 import {sourceSha256,type StillRenderer,type StillsResult} from '../src/render/stills';
-import {createWorkspace,SCENE_FILE} from '../src/workspace';
+import {createWorkspace,SCENE_FILE,Workspace} from '../src/workspace';
 
 const skillDir=path.join(path.dirname(fileURLToPath(import.meta.url)),'../skill');
 const capabilities:Capabilities={vision:false,parallelToolCalls:true,contextTokens:128000,maxOutputTokens:8192,promptCache:true,appendOnlyHistory:false};
@@ -264,4 +264,23 @@ test('a revision run opens with the person\'s feedback and asks for edits to the
  assert.doesNotMatch(plain,/This is a revision/);
  assert.match(revised,/This is a revision[\s\S]*\n\n把流程图画大一些\n\n[\s\S]*with edit_file[\s\S]*do not rewrite the file/);
  assert.doesNotMatch(revised,/Begin with get_timing and read_skill/);
+});
+
+test('the workspace keeps the course theme and the first message describes it',async()=>{
+ const {initialMessage}=await import('../src/prompt');
+ const {builtinThemes}=await import('../../scene-themes/src/index');
+ const paper=builtinThemes().get('paper-press')!;
+ const dir=path.join(await mkdtemp(path.join(tmpdir(),'scene-agent-theme-')),'run');
+ const workspace=await createWorkspace(dir,{brief,cues,skillDir,theme:paper});
+ assert.equal(workspace.theme.id,'paper-press');
+ assert.equal((await Workspace.open(dir)).theme.id,'paper-press');
+ const message=initialMessage(workspace.brief,undefined,workspace.theme);
+ assert.match(message,/Course theme: 纸刊 \(paper-press\), a light theme/);
+ assert.match(message,/corner radius 8 \(theme.radius\)/);
+ assert.match(message,/Every color and font comes from the theme prop/);
+ assert.doesNotMatch(message,/#efe7d6/); // colors stay in the prop, not in the text
+ // A workspace from before themes was drawn in the default theme.
+ const {workspace:old}=await setup();
+ await rm(path.join(old.root,'theme.json'));
+ assert.equal((await Workspace.open(old.root)).theme.id,'blueprint');
 });

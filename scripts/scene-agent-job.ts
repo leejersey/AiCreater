@@ -45,8 +45,8 @@ async function main(){
   if(sourceSha256(initialSource)!==input.revision.sha256)throw Error('the version to revise changed since it was published');
   if(typeof input.revision.feedback!=='string'||!input.revision.feedback.trim())throw Error('revision feedback is empty');
  }
- const workspace=await createWorkspace(path.join(out,'workspace'),{brief,cues,skillDir:path.join(repositoryRoot,'packages/scene-agent/skill'),initialSource});
- const renderer=new RemotionStillRenderer(workspace.brief,theme);
+ const workspace=await createWorkspace(path.join(out,'workspace'),{brief,cues,skillDir:path.join(repositoryRoot,'packages/scene-agent/skill'),initialSource,theme});
+ const renderer=new RemotionStillRenderer(workspace.brief,workspace.theme);
  let run;
  try{run=await runLoop({provider,workspace,renderer,budget:{...entry.budget,maxTurns:input.max_turns},...(input.revision?{revision:{feedback:input.revision.feedback}}:{})});}
  finally{await renderer.close();}

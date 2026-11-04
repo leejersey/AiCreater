@@ -51,7 +51,7 @@ export async function runLoop(options:LoopOptions):Promise<RunResult>{
  const tools:Tool[]=[...buildTools(provider.capabilities),finishTool(record=>{finished=record;})];
  const specs=toolSpecs(tools);
  const system=systemPrompt(provider.capabilities);
- const messages:Message[]=[{role:'user',content:[{type:'text',text:initialMessage(workspace.brief,options.revision)}]}];
+ const messages:Message[]=[{role:'user',content:[{type:'text',text:initialMessage(workspace.brief,options.revision,workspace.theme)}]}];
  const usage:Usage={inputTokens:0,outputTokens:0,cachedInputTokens:0};
  let turns=0,nudges=0,truncations=0,unchangedTurns=0,cleanStreak=0;
  let lastScene:string|undefined=await sceneHash(workspace);

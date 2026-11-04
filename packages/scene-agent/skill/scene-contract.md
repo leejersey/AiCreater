@@ -8,7 +8,15 @@ Write exactly one file, `scene/Scene.tsx`, that ends with `export default functi
 import React from 'react';
 import {interpolate, Easing, spring} from 'remotion';
 
-type Theme = {background:string; foreground:string; muted:string; accent:string; secondary:string};
+type Theme = {
+  background:string; surface:string; surface2:string;            // stage, cards, cards inside cards
+  foreground:string; muted:string; faint:string; rule:string;     // text levels, lines
+  accent:string; accentSoft:string; secondary:string;             // highlight, its translucent fill, second highlight
+  positive:string; negative:string;                               // right / wrong, pass / fail
+  fontDisplay:string; fontBody:string; fontMono:string;           // CSS font-family values
+  radius:number; ruleWidth:number; ruleDash:string;               // card corners, divider width, strokeDasharray ("none" = solid)
+  dark:boolean;
+};
 type SceneProps = {frame:number; fps:number; width:number; height:number; theme:Theme};
 
 export default function Scene({frame, fps, width, height, theme}: SceneProps) {
@@ -19,6 +27,27 @@ export default function Scene({frame, fps, width, height, theme}: SceneProps) {
 - Canvas is 1920×1080 at 30 fps. The background is already filled with `theme.background`.
 - Render a single root `<svg>`. HTML outside it is not measured by the geometry audit.
 - Everything must be a pure function of `frame`. Same frame, same picture.
+
+## Theme
+
+Each course has one theme, and the same scene must render in any of them. Every color and font comes from `theme`:
+
+| Use | Token |
+| --- | --- |
+| headings, key labels | `fill={theme.foreground}` `fontFamily={theme.fontDisplay}` |
+| body labels | `theme.foreground`, smaller and secondary: `theme.muted`, hints: `theme.faint`; `fontFamily={theme.fontBody}` |
+| code, commands, numbers in a table | `fontFamily={theme.fontMono}` |
+| cards and panels | `fill={theme.surface}` (nested: `theme.surface2`), `stroke={theme.rule}`, `rx={theme.radius}` |
+| dividers, connectors, arrows | `stroke={theme.rule}` or `theme.muted`, `strokeWidth={theme.ruleWidth}`, `strokeDasharray={theme.ruleDash}` |
+| the one thing to look at | `theme.accent`; a highlighted area behind it: `theme.accentSoft` |
+| a second highlight, sparingly | `theme.secondary` |
+| right / wrong, kept / dropped, pass / fail | `theme.positive` / `theme.negative` — never accent or secondary for "wrong" |
+
+- Do not write colors (`#ef5350`, `rgb(…)`, `white`) or font names (`'Noto Sans SC'`, `sans-serif`) into the scene. The check reports them as `literal-style`.
+- Text without `fontFamily` is already in `theme.fontBody`.
+- Shades come from opacity, not new colors: `fill={theme.foreground} fillOpacity={0.06}`.
+- Do not branch the layout on `theme.dark`. A layout that only works on dark backgrounds is a broken layout.
+- The background (and any texture the theme has) is drawn for you. Do not paint a full-canvas background rectangle.
 
 ## Allowed and banned
 
