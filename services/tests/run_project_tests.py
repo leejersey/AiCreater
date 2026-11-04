@@ -42,7 +42,8 @@ def main():
         print('Temporary PostgreSQL test environment failed; no tests reported as passing.', file=sys.stderr)
         return 1
     finally:
-        subprocess.run(['docker', 'rm', '-f', name], capture_output=True, timeout=15)
+        # -v: the image declares a data volume; without it every run leaves an anonymous ~45 MB volume behind.
+        subprocess.run(['docker', 'rm', '-f', '-v', name], capture_output=True, timeout=15)
 
 
 if __name__ == '__main__': sys.exit(main())
