@@ -123,3 +123,13 @@ named volume只提供持久化，不是可恢复备份。备份必须在停写�
 ## 6. 许可交付
 
 [版本许可初筛](dependency-license-review.md)指出Remotion不是MIT、当前Redis7.4.8不是BSD；商用主体/员工与协作规模、用途/分发方式未确认。仅导出成片与打包软件的许可义务不同，不把本机运行正常当作商业发布许可。字体OFL与已安装GPL FFmpeg再分发须保留相应声明/源码义务；不擅自购买许可、换服务器或重新拉镜像。
+
+## 火山 TOS 对象存储
+
+在 `.env.local-services` 设置 `TOS_BUCKET` 后，配音音频、Agent 视频（源码、MP4、字幕、审查帧）与整课导出都存入 TOS，`MINIO_*` 不再使用；不设则继续用本机 RustFS。
+
+1. 在火山引擎控制台建一个**私有**桶（不加桶策略），再建一个只授权该桶读写的 IAM 子用户 AK/SK。
+2. 填写 `TOS_REGION`（如 `cn-beijing`）、`TOS_BUCKET`、`TOS_ACCESS_KEY`、`TOS_SECRET_KEY`；`TOS_ENDPOINT` 留空即 `https://tos-s3-<region>.volces.com`（S3 兼容端点，虚拟主机风格）。
+3. 停止任务后执行 `python -m services.projects.sync_storage --from-minio`：把数据库引用的全部音频与已发布视频文件上传到 TOS（本机缺失的先从 RustFS 取回）；按内容哈希寻址，可重复执行。输出 `missing`/`failed` 为 0 再重启 API 与 Worker。
+
+本机目录（`apps/renderer/public/generated/`、`output/visual-workbench/`）仍是渲染用的缓存：缺失时下载与导出会从 TOS 取回并校验哈希。Agent 视频上传失败时任务仍会发布（付费结果不丢），日志提示补跑 `sync_storage`；配音上传失败则配音任务失败。words 侧车文件不上传，见下文备份说明。

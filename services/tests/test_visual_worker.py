@@ -30,5 +30,25 @@ class VisualWorkerTests(unittest.TestCase):
         job={'kind':'export','project_id':'p','input':{'chapters':[{'generation_id':'g','sha256':'a'*64,'scene_id':'s'}]}}
         with self.assertRaisesRegex(StoreError,'conflict'):command_input(None,job)
 
+    def test_published_files_are_stored_and_restored_when_the_local_copy_is_gone(self):
+        import hashlib
+        from services.projects.storage import ObjectStore
+        from services.tests.test_storage import FakeClient
+        from services.visual import worker
+        with tempfile.TemporaryDirectory() as directory, patch.object(worker,'WORK_ROOT',Path(directory).resolve()):
+            job_id='0b4f6f39-5d55-4b1c-9b2a-2f8f2b3c8a11';folder=worker.job_directory(job_id);(folder/'stills').mkdir(parents=True)
+            payload={'source.txt':b'export default 1','video.mp4':b'mp4-bytes','stills/frame-1.png':b'png'}
+            for name,data in payload.items():(folder/name).write_bytes(data)
+            result={'_files':{name:hashlib.sha256(data).hexdigest() for name,data in payload.items()}}
+            objects=ObjectStore(FakeClient(),'private-test')
+            worker.store_files(objects,job_id,result)
+            self.assertEqual(len(objects._client.data),3)
+            for name in payload:(folder/name).unlink()
+            job={'id':job_id,'result':result}
+            self.assertEqual(worker.local_file(objects,job,'video.mp4').read_bytes(),b'mp4-bytes')
+            self.assertEqual(worker.local_file(objects,job,'stills/frame-1.png').read_bytes(),b'png')
+            with self.assertRaises(ValueError):worker.local_file(objects,job,'video.srt')
+            with self.assertRaises(ValueError):worker.local_file(None,job,'source.txt')
+
 
 if __name__=='__main__':unittest.main()

@@ -100,7 +100,7 @@ def cancel(project_id:str,visual_id:str,body:Body,request:Request):
 
 @router.get('/{visual_id}/files/{name:path}')
 def file(project_id:str,visual_id:str,name:str,request:Request):
-    from services.visual.worker import job_directory,checked_file
+    from services.visual.worker import local_file
     if not re.fullmatch(r'(?:source\.txt|video\.mp4|video\.srt|stills/frame-\d+\.png)',name):
         raise StoreError('not_found','Visual file not found')
     job=request.app.state.visual.get_raw(project_id,visual_id)
@@ -108,7 +108,7 @@ def file(project_id:str,visual_id:str,name:str,request:Request):
     if job['state']!='succeeded':raise StoreError('not_ready','Visual file is not published')
     checksum=(job.get('result') or {}).get('_files',{}).get(name)
     if not isinstance(checksum,str):raise StoreError('not_found','Visual file not found')
-    try:path=checked_file(job_directory(visual_id),name)
+    try:path=local_file(request.app.state.store.objects,job,name)
     except (OSError,ValueError):raise StoreError('assets','Visual file integrity check failed') from None
     digest=hashlib.sha256()
     with path.open('rb') as stream:

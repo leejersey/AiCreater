@@ -70,9 +70,29 @@ def checked_file(directory,name):
     root=Path(directory).absolute();path=root/name
     if path.resolve()!=path or not path.is_file() or not path.resolve().is_relative_to(root):
         raise ValueError('Invalid visual file')
-    limit=512*1024**2 if name.endswith('.mp4') else 16*1024**2 if name.endswith('.png') else 1024**2
-    if not 0<path.stat().st_size<=limit:raise ValueError('Visual file size exceeds limit')
+    if not 0<path.stat().st_size<=file_limit(name):raise ValueError('Visual file size exceeds limit')
     return path
+
+
+def file_limit(name):
+    return 512*1024**2 if name.endswith('.mp4') else 16*1024**2 if name.endswith('.png') else 1024**2
+
+
+def local_file(objects,job,name):
+    """A published file of `job`, restored from object storage into its job directory when the local copy is gone."""
+    checksum=(job.get('result') or {}).get('_files',{}).get(name)
+    if not isinstance(checksum,str) or not PUBLIC_FILE.fullmatch(name):raise ValueError('Invalid visual file')
+    directory=job_directory(job['id'])
+    if objects and not (directory/name).exists():objects.ensure(directory/name,checksum,file_limit(name))
+    return checked_file(directory,name)
+
+
+def store_files(objects,job_id,result,callback=None):
+    """Copies a published job's files to object storage (content-addressed, so repeating it is cheap)."""
+    if not objects:return
+    directory=job_directory(job_id)
+    for name,checksum in result['_files'].items():
+        objects.put(checked_file(directory,name),checksum,file_limit(name),callback)
 
 
 def child_environment(kind):
@@ -99,7 +119,7 @@ def _agent_chapter(jobs,project_id,snapshot):
     result=agent.get('result') or {}
     if agent['kind']!='agent' or agent['state']!='succeeded' or result.get('accepted') is not True or result.get('sha256')!=snapshot['sha256']:
         raise StoreError('conflict','Agent 视频已改变')
-    source=checked_file(job_directory(agent['id']),'source.txt')
+    source=local_file(jobs.store.objects,agent,'source.txt')
     if _hash(source)!=result['_files']['source.txt']:raise ValueError('Agent source differs from the published job')
     audio=jobs.store.asset_file(project_id,snapshot['asset']['id'])
     if _hash(audio)!=snapshot['asset']['checksum']:raise StoreError('assets','配音已改变')
@@ -116,7 +136,7 @@ def command_input(jobs,job):
                  'model':data['model'],'max_turns':data['max_turns']}
         if data.get('revision'):
             base=jobs.get_raw(job['project_id'],data['revision']['job_id'])
-            source=checked_file(job_directory(base['id']),'source.txt')
+            source=local_file(jobs.store.objects,base,'source.txt')
             if _hash(source)!=(base.get('result') or {}).get('_files',{}).get('source.txt'):raise ValueError('The version to revise changed on disk')
             command['revision']={'feedback':data['revision']['feedback'],'source_file':str(source),'sha256':data['revision']['sha256']}
         return command
@@ -190,7 +210,12 @@ def run_once(jobs,lane='workflow',*,timeout=None,heartbeat_interval=5,launcher=N
                     beat=now
                 time.sleep(.2)
             if process.returncode:raise RuntimeError('Visual command failed')
-        return finish(publishable_result(job,directory))
+        result=publishable_result(job,directory)
+        try:store_files(jobs.store.objects,job['id'],result,lambda:jobs.heartbeat(job['id'],token))
+        except StoreError:
+            # The paid result is kept and published from the local copy; `python -m services.projects.sync_storage` uploads it later.
+            print(f'visual {job["id"]}: object storage upload failed; run services.projects.sync_storage',file=sys.stderr,flush=True)
+        return finish(result)
     except (Exception,KeyboardInterrupt):
         if process:_stop(process)
         count=None;failure_code=None

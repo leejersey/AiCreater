@@ -237,7 +237,7 @@ python3 services/tests/run_project_tests.py services.tests.test_api …   # 在�
 │  视觉任务（agent / export，/api/projects/:id/visual）· 文件下载     │
 └──────┬───────────────────┬───────────────────────┬───────────────┘
        │                   │                       │
-  PostgreSQL            Redis                   RustFS
+  PostgreSQL            Redis              火山 TOS / RustFS
   项目 · 章节 ·          Celery 消息            配音音频
   jobs（统一租约）           │
        │      ┌────────────┴─────────────┐   Beat 每 2 秒唤醒
@@ -272,7 +272,7 @@ python3 services/tests/run_project_tests.py services.tests.test_api …   # 在�
 ```
 apps/
   web/                     Next.js 工作台（前端）
-  renderer/public/         本机媒体缓存：配音音频（generated/），RustFS 为主副本
+  renderer/public/         本机媒体缓存：配音音频（generated/），对象存储为主副本
 
 packages/
   scene-agent/             Scene Agent：模型适配层、工具、循环与关卡、skill、评测用例、渲染
@@ -317,7 +317,7 @@ docs/                      Scene Agent 设计、本地运维、依赖许可，�
 | **语音合成** | 火山引擎 TTS 2.0（字级时间戳） |
 | **数据库** | PostgreSQL（版本保护） |
 | **消息队列** | Redis + Celery（双队列调度） |
-| **对象存储** | RustFS（音频） |
+| **对象存储** | 火山 TOS（S3 兼容端点）或本机 RustFS：配音音频、Agent 视频与整课导出 |
 
 ---
 

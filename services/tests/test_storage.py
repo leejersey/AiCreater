@@ -71,3 +71,27 @@ class StorageTests(unittest.TestCase):
         self.assertIsNone(ObjectStore.from_env({}))
         for endpoint in ['http://remote.example', 'http://u:p@127.0.0.1', 'http://127.0.0.1/path']:
             with self.assertRaises(StoreError): ObjectStore.from_env({'MINIO_ENDPOINT': endpoint})
+
+    def test_tos_is_chosen_by_its_bucket_and_must_be_https_in_a_named_region(self):
+        tos = {'TOS_BUCKET': 'aicreater-media', 'TOS_REGION': 'cn-beijing', 'TOS_ACCESS_KEY': 'ak', 'TOS_SECRET_KEY': 'sk',
+               'MINIO_ENDPOINT': 'http://127.0.0.1:19000', 'MINIO_ACCESS_KEY': 'a', 'MINIO_SECRET_KEY': 's'}
+        for change in [{'TOS_REGION': ''}, {'TOS_SECRET_KEY': ''}, {'TOS_ENDPOINT': 'http://tos-s3-cn-beijing.volces.com'},
+                       {'TOS_ENDPOINT': 'https://tos-s3-cn-beijing.volces.com/path'}, {'TOS_BUCKET': 'Bad_Bucket'}]:
+            with self.subTest(change=change), patch('services.projects.storage.Minio') as minio:
+                with self.assertRaises(StoreError): ObjectStore.from_env({**tos, **change})
+                minio.assert_not_called()
+        with patch('services.projects.storage.Minio') as minio:
+            client = minio.return_value; client.bucket_exists.return_value = True
+            client.get_bucket_policy.side_effect = S3Error(None, 'NoSuchBucketPolicy', 'none', None, None, None)
+            store = ObjectStore.from_env(tos)
+        self.assertEqual(minio.call_args.args[0], 'tos-s3-cn-beijing.volces.com')
+        self.assertEqual(minio.call_args.kwargs['region'], 'cn-beijing')
+        client.enable_virtual_style_endpoint.assert_called_once()
+        self.assertEqual(store._bucket, 'aicreater-media')
+
+    def test_a_missing_tos_bucket_is_an_error_not_created(self):
+        with patch('services.projects.storage.Minio') as minio:
+            minio.return_value.bucket_exists.return_value = False
+            with self.assertRaises(StoreError):
+                ObjectStore.from_env({'TOS_BUCKET': 'aicreater-media', 'TOS_REGION': 'cn-beijing', 'TOS_ACCESS_KEY': 'ak', 'TOS_SECRET_KEY': 'sk'})
+            minio.return_value.make_bucket.assert_not_called()
