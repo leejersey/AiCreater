@@ -1,6 +1,6 @@
 # 主题系统：架构设计与规划
 
-状态：P0–P2 已完成（2026-11-03），P3（Agent 侧，付费验证）与 P4（网页）未开始。参考 [garden-skills/web-video-presentation](https://github.com/ConardLi/garden-skills/tree/main/skills/web-video-presentation) 的主题体系（MIT）。
+状态：P0–P4 已完成（2026-11-03）；P5（自定义主题、自动推荐）未开始。参考 [garden-skills/web-video-presentation](https://github.com/ConardLi/garden-skills/tree/main/skills/web-video-presentation) 的主题体系（MIT）。
 
 ## 1. 参考项目的做法（要借鉴的部分）
 
@@ -127,3 +127,8 @@ P0–P2 不调用模型，可以先做完再决定 P3。
 - **P1**：`projects.config.theme_id`（旧课程读作 `blueprint`，无需迁移）、`PATCH /api/projects/:id/theme`、`GET /api/themes`；Agent 与导出任务的 `input.theme` 冻结完整主题，`input_summary.theme_id` 公开。换主题保留已确认的 Agent 视频，导出因 revision 变化需重新导出。
 - **P2**：`scripts/theme-preview.ts` 从已确认源码在多套主题下渲染成片帧（含装饰与字幕，本机、免费）；RAG 8 章 × 6 主题 × 16 帧每套约 15–20 秒。审计关键帧在 4 套主题下问题数一致、覆盖率相差 < 1 个百分点；paper-press 整章出片正常。
 - **旧场景的主题无关程度**（`literalStyles` 扫描）：8 章全部写死字体（主题字体对它们不起作用，字幕字体照常跟随主题），3 章写死颜色（对/错的红绿、白、琥珀）。另有场景把 `secondary` 当「错误」色用，浅色主题里会变成蓝色，P3 的 `positive`/`negative` 解决这类语义。
+
+## 8. P3–P4 实施结果（2026-11-03）
+
+- **P3**：工作目录带 `theme.json`，首条消息描述主题气质与形状（不列颜色）；skill 写明每个 token 的用途并新增 `positive`/`negative`；`literal-style` 检查要求收尾前改掉写死的颜色/字体（不阻塞关卡）。rag-ch4 在纸刊与黑板主题各跑一次，均 6 轮通过、零 literal-style；两份源码换到 6 套主题都是 0 个审计问题。
+- **P4**：新建视频的主题选择（按讲解风格推荐，可改）；工作台侧栏「课程主题」免费更换；章节版本的主题与课程不同时提示，并可提交 `restyle` 任务（render 队列、无模型、环境里无密钥）按当前主题重渲染本章预览，确认状态不变。schema v7 新增该任务类型，所有更早的迁移块在 v7 存在时跳过（在线上库副本上初始化两次验证）。浏览器端到端：新建纸刊课程 → 8 章副本换为纸刊 → 第 1 章提示并免费重渲染（99 秒）→ 播放新视频，页面无报错。

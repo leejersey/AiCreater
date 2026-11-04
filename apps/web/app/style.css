@@ -2392,7 +2392,7 @@ aside[aria-label="章节列表"] small[data-status="running"] { color:#4dd2ff; }
 .theme-card { display:flex; flex-direction:column; align-items:stretch; gap:4px; padding:8px; text-align:left; background:rgba(255,255,255,0.03);
   border:1px solid var(--line); border-radius:var(--radius-md); cursor:pointer; }
 .theme-card:hover { background:rgba(255,255,255,0.06); border-color:var(--line-strong); transform:none; }
-.theme-card.selected { background:rgba(16,185,129,0.1); border-color:var(--accent); box-shadow:0 0 14px rgba(16,185,129,0.2); }
+.theme-card.selected, .theme-card.selected:hover { background:rgba(16,185,129,0.1); border-color:var(--accent); box-shadow:0 0 14px rgba(16,185,129,0.2); }
 .theme-swatch { display:block; width:100%; aspect-ratio:16/9; border-radius:4px; border:1px solid var(--line); }
 .theme-card-title { font-size:13px; font-weight:600; color:#ffffff; display:flex; align-items:center; gap:6px; }
 .theme-card-title em { font-style:normal; font-size:10.5px; font-weight:500; padding:1px 6px; border-radius:999px; background:rgba(16,185,129,0.18); color:var(--accent); }
