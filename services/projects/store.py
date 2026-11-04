@@ -124,7 +124,7 @@ class Store:
             subprocess.run([str(ROOT / 'node_modules/.bin/tsx'), str(ROOT / 'scripts/verify-assets.ts'), str(self.public)],
                 input=json.dumps({'assets': document['assets']}, ensure_ascii=False), text=True, capture_output=True, check=True, timeout=120,
                 env={k: v for k, v in os.environ.items() if k not in ['DATABASE_URL', 'POSTGRES_PASSWORD',
-                     'PGPASSWORD', 'DEEPSEEK_API_KEY', 'OPENAI_API_KEY', 'ACCOUNT_CREDENTIALS_KEY', 'VOLCENGINE_API_KEY', 'VOLCENGINE_ACCESS_KEY'] and not k.startswith(('MINIO_', 'RUSTFS_', 'TOS_'))})
+                     'PGPASSWORD', 'DEEPSEEK_API_KEY', 'OPENAI_API_KEY', 'ACCOUNT_CREDENTIALS_KEY', 'VOLCENGINE_API_KEY', 'VOLCENGINE_ACCESS_KEY'] and not k.startswith('TOS_')})
         except (subprocess.SubprocessError, OSError):
             raise StoreError('assets', 'Local media verification failed') from None
         if self.objects and not local_only:

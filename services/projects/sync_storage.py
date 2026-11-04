@@ -1,7 +1,6 @@
 """Copies every voice asset and every published Agent/export file into the configured object store.
 
-  python -m services.projects.sync_storage            # local caches -> TOS (or RustFS when TOS is not configured)
-  python -m services.projects.sync_storage --from-minio  # also fetch files missing locally from RustFS/MinIO first
+  python -m services.projects.sync_storage   # local caches -> TOS
 
 Objects are content-addressed and `put` skips ones already stored, so it is safe to repeat."""
 import json
@@ -30,16 +29,11 @@ def files(conn):
 
 def main(argv):
     target = ObjectStore.from_env()
-    if target is None: raise SystemExit('Configure TOS_* (or MINIO_*) first')
-    source = None
-    if '--from-minio' in argv:
-        source = ObjectStore.from_env({k: v for k, v in os.environ.items() if not k.startswith('TOS_')})
-        if source is None: raise SystemExit('--from-minio needs MINIO_* settings')
+    if target is None: raise SystemExit('Configure TOS_* first')
     counts = {'stored': 0, 'missing': 0, 'failed': 0}
     with psycopg.connect(os.environ['DATABASE_URL'], row_factory=dict_row) as conn:
         for path, checksum, limit in files(conn):
             try:
-                if source and not path.exists(): source.ensure(path, checksum, limit)
                 if not path.exists(): counts['missing'] += 1; print(f'missing locally: {path.relative_to(ROOT)}', file=sys.stderr); continue
                 target.put(path, checksum, limit); counts['stored'] += 1
             except StoreError as error:

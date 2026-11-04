@@ -73,18 +73,11 @@ def activity(env):
 def basic_ready(env):
     tasks = activity(env)
     redis = local_url(env.get('CELERY_BROKER_URL'), {'redis'})
-    tos = bool(env.get('TOS_BUCKET'))
-    if not tos:
-        storage = local_url(env.get('MINIO_ENDPOINT'), {'http', 'https'})
-        if storage.username or storage.password or storage.path not in {'', '/'}: raise SafetyError('local_configuration_required')
     try:
         with socket.create_connection((redis.hostname, redis.port), timeout=3): pass
-        if not tos:
-            with httpx.Client(timeout=3, trust_env=False, follow_redirects=False) as client:
-                if client.get(env['MINIO_ENDPOINT'].rstrip('/') + '/health').status_code != 200: raise SafetyError('storage_unavailable')
-    except (OSError, httpx.HTTPError):
+    except OSError:
         raise SafetyError('foundation_unavailable') from None
-    if tos:
+    if env.get('TOS_BUCKET'):
         # TOS is remote: checking that the private bucket answers is the readiness test.
         from services.projects.storage import ObjectStore
         from services.projects.store import StoreError

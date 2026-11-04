@@ -4,6 +4,8 @@
 
 ## 1. 当前已核验与边界
 
+> 2026-11-03 起对象存储改为火山 TOS，本机 RustFS（19000）及其数据卷已删除；下面带 RustFS 的条目是当时的核验记录。
+
 - API8000 ready、网页3000 HTTP200；workflow/render control ping均pong；RustFS19000 `/health` HTTP200。
 - PostgreSQL15432、Redis16379、RustFS19000、API8000、web3000实际监听全为127.0.0.1；不只看compose声明。
 - API未知Host与非白名单Origin均403；无多用户鉴权，禁止公网反代/端口转发/0.0.0.0绑定，CORS不是鉴权替代。
@@ -23,7 +25,7 @@
 
 这是手动运行时快照，不是后台监控/容量预留；APFS共享空间和其他应用随时变化，Docker VM/卷额度另算，不能当作渲染成功保证或删除授权。没有新参数/配置/依赖/API，旧receipt不重写；全对象严格对比的外部消费者需允许新增`disk`。验证见[磁盘预警记录](../output/workbench/disk-warning-qa/receipt.json)。
 
-需本人0600普通`.env`/`.env.local-services`、lsof/ps、当前Python/npm/依赖，以及已经就绪的PG/Redis/RustFS。配置通过dotenv读取，不需source；不运行compose或覆盖配置，不安装/构建。网页命令为`npm run web`开发模式，不自动改成生产模式；已有生产网页可识别复用，冷启生产网页继续人工管理。数据库查询强制只读且短超时，但真实API冷启动本身仍会初始化schema/桶，工具不能把它说成只读。
+需本人0600普通`.env`/`.env.local-services`、lsof/ps、当前Python/npm/依赖，以及已经就绪的PG/Redis和可访问的TOS私有桶。配置通过dotenv读取，不需source；不运行compose或覆盖配置，不安装/构建。网页命令为`npm run web`开发模式，不自动改成生产模式；已有生产网页可识别复用，冷启生产网页继续人工管理。数据库查询强制只读且短超时，但真实API冷启动本身仍会初始化schema/桶，工具不能把它说成只读。
 
 Ctrl+C/TERM仅请求停止：有queued/running或DB无法查询，保留本次活进程，提示人工处理后再次Ctrl+C。idle只向本次持有的活Popen group发送TERM；等待父进程和非zombie进程组退出，超时/权限或核验失败留阻塞，不KILL。已退出leader的group仅只读核验，不沿用旧PGID去杀子进程；可能孤儿需要现场核验。没有跨终端stop、PID文件、守护进程或自启。SIGKILL/掉电无法保证回收，也没有原子停写锁；其他操作者可能在查询之后提交任务。
 
@@ -42,19 +44,19 @@ Ctrl+C/TERM仅请求停止：有queued/running或DB无法查询，保留本次�
 ```bash
 # 只列已发布服务，不输出环境变量。
 docker compose --project-name aicreater-workbench --env-file .env.local-services \
-  -f compose.postgres.yaml -f compose.storage.yaml ps
-lsof -nP -iTCP:3000 -iTCP:8000 -iTCP:15432 -iTCP:16379 -iTCP:19000 -sTCP:LISTEN
+  -f compose.postgres.yaml ps
+lsof -nP -iTCP:3000 -iTCP:8000 -iTCP:15432 -iTCP:16379 -sTCP:LISTEN
 # 仅在确实停止时恢复基础服务，不用其他project-name新建另一套卷。
 # 镜像引用配置已变，首次up可能重建容器；先确认停写/队列闸门与备份，勿对运行服务盲目执行。
 docker compose --project-name aicreater-workbench --env-file .env.local-services \
-  -f compose.postgres.yaml -f compose.storage.yaml up -d --wait
+  -f compose.postgres.yaml up -d --wait
 # 只读查排队/运行任务；有generate/regenerate/voice任务则先确认是否允许继续收费。
 docker compose --project-name aicreater-workbench --env-file .env.local-services \
-  -f compose.postgres.yaml -f compose.storage.yaml exec -T postgres \
+  -f compose.postgres.yaml exec -T postgres \
   psql -U aicreater -d aicreater -c "SELECT kind,state,count(*) FROM jobs WHERE state IN ('queued','running') GROUP BY kind,state;"
 ```
 
-固定digest防版本漂移，但也停止自动获得后续安全更新；版本更新必须单独批准/隔离验收。即使image字节相同，Compose引用变化也可能在下次up重建容器，本轮未执行原stack up/recreate。`up --wait`不代替RustFS健康查询。启动应用之前确认无不应执行的旧付费任务；API启动会初始化仓库，worker/beat启动后会消费既有队列。没有活动任务也不能保证别人随后不提交。
+固定digest防版本漂移，但也停止自动获得后续安全更新；版本更新必须单独批准/隔离验收。即使image字节相同，Compose引用变化也可能在下次up重建容器，本轮未执行原stack up/recreate。启动应用之前确认无不应执行的旧付费任务；API启动会初始化仓库，worker/beat启动后会消费既有队列。没有活动任务也不能保证别人随后不提交。
 
 各独立终端都需从根目录导出本机服务覆盖项；Python模块会再从原`.env`读取供应商配置，不在shell复制密钥：
 
@@ -110,7 +112,7 @@ DB中的密文没有独立加密密钥就无法解密；丢失或直接更换加
 
 运行环境说明：本机Docker的`--internal`网络不发布HostPort（实测null）；改用单独`enable_ip_masquerade=false` bridge与随机127.0.0.1端口。无真实供应商环境/无Redis、beat或worker，但**不声称完全airgap**。无后缀的活跃`output/workbench/beat`日志不参与一致集合，普通`.log`同样排除；保留字体包但其余node_modules与.next不备份。默认TestClient非回环被403正确拒绝，最终使用与现有测试相同的回环peer，不放宽API。原服务未停，凭首尾完整行/文件/对象hash与恢复结果相等确认空闲时演练，不等同生产并发原子备份。
 
-named volume只提供持久化，不是可恢复备份。备份必须在停写窗口形成一致集合：PG dump、RustFS私有对象、renderer/public实际音频/words侧车/渲染缓存、DSL/交付物、固定版本依赖/字体hash，以及独立加密保存的私有配置。words侧车不可假设已上传S3，丢失后本地timing无法恢复。Redis仅固定唤醒，不当作权威任务备份。
+named volume只提供持久化，不是可恢复备份。备份必须在停写窗口形成一致集合：PG dump、TOS私有桶对象、renderer/public实际音频/words侧车/渲染缓存、DSL/交付物、固定版本依赖/字体hash，以及独立加密保存的私有配置。words侧车不可假设已上传S3，丢失后本地timing无法恢复。Redis仅固定唤醒，不当作权威任务备份。
 
 正式恢复仍使用新的隔离目标：新project-name/随机回环端口/新库新桶新目录，没有真实供应商凭据、beat、workflow consumer，禁止`pg_restore --clean`指向现有库。恢复后验证项目与旧快照、音频/词侧车/SRT/MP4 hash、只读下载，再决定是否允许重启调度。禁止把恢复出的queued付费任务自动执行；本次数据无queued/running，不能外推所有未来备份都安全。
 
@@ -126,10 +128,6 @@ named volume只提供持久化，不是可恢复备份。备份必须在停写�
 
 ## 火山 TOS 对象存储
 
-在 `.env.local-services` 设置 `TOS_BUCKET` 后，配音音频、Agent 视频（源码、MP4、字幕、审查帧）与整课导出都存入 TOS，`MINIO_*` 不再使用；不设则继续用本机 RustFS。
+配音音频、Agent 视频（源码、MP4、字幕、审查帧）与整课导出都存入 TOS 私有桶，配置在 `.env`：`TOS_REGION`（如 `cn-beijing`）、`TOS_BUCKET`、`TOS_ACCESS_KEY`、`TOS_SECRET_KEY`；`TOS_ENDPOINT` 留空即 `https://tos-s3-<region>.volces.com`（S3 兼容端点，虚拟主机风格）。桶须在控制台预先建好、不加桶策略，AK/SK 用只授权该桶的 IAM 子用户。不设 `TOS_BUCKET` 时媒体只留本机缓存。
 
-1. 在火山引擎控制台建一个**私有**桶（不加桶策略），再建一个只授权该桶读写的 IAM 子用户 AK/SK。
-2. 填写 `TOS_REGION`（如 `cn-beijing`）、`TOS_BUCKET`、`TOS_ACCESS_KEY`、`TOS_SECRET_KEY`；`TOS_ENDPOINT` 留空即 `https://tos-s3-<region>.volces.com`（S3 兼容端点，虚拟主机风格）。
-3. 停止任务后执行 `python -m services.projects.sync_storage --from-minio`：把数据库引用的全部音频与已发布视频文件上传到 TOS（本机缺失的先从 RustFS 取回）；按内容哈希寻址，可重复执行。输出 `missing`/`failed` 为 0 再重启 API 与 Worker。
-
-本机目录（`apps/renderer/public/generated/`、`output/visual-workbench/`）仍是渲染用的缓存：缺失时下载与导出会从 TOS 取回并校验哈希。Agent 视频上传失败时任务仍会发布（付费结果不丢），日志提示补跑 `sync_storage`；配音上传失败则配音任务失败。words 侧车文件不上传，见下文备份说明。
+本机目录（`apps/renderer/public/generated/`、`output/visual-workbench/`）是渲染用的缓存：缺失时下载与导出会从 TOS 取回并校验哈希。Agent 视频上传失败时任务仍会发布（付费结果不丢），日志提示补跑 `python -m services.projects.sync_storage`——它把数据库引用的全部音频与已发布视频文件上传到 TOS，按内容哈希寻址，可重复执行，输出 `missing`/`failed` 应为 0。配音上传失败则配音任务失败。words 侧车文件不上传，见上文备份说明。

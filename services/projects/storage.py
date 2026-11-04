@@ -20,64 +20,30 @@ class Progress:
             self.last = time.monotonic(); self.callback()
 
 
-BUCKET = re.compile(r'[a-z0-9][a-z0-9.-]{1,61}[a-z0-9]')
-
-
-def _http(read):
-    return urllib3.PoolManager(timeout=urllib3.Timeout(connect=5, read=read), retries=False)
-
-
 class ObjectStore:
     def __init__(self, client, bucket): self._client, self._bucket = client, bucket
 
     @classmethod
     def from_env(cls, values=None):
-        """Volcengine TOS (S3-compatible endpoint) when TOS_BUCKET is set, else local RustFS/MinIO, else None."""
+        """Volcengine TOS through its S3-compatible endpoint (tos-s3-<region>.volces.com, virtual-hosted style) when TOS_BUCKET
+        is set; otherwise None and media stays in local caches only. The bucket is created, kept private, in the console."""
         values = os.environ if values is None else values
-        if values.get('TOS_BUCKET'): return cls._tos(values)
-        endpoint = values.get('MINIO_ENDPOINT', '')
-        if not endpoint: return None
-        try: url = urlsplit(endpoint); url.port
-        except ValueError: raise StoreError('storage', 'Invalid private object-storage endpoint') from None
-        access, secret = values.get('MINIO_ACCESS_KEY', ''), values.get('MINIO_SECRET_KEY', '')
-        bucket = values.get('MINIO_BUCKET', 'aicreater')
-        if (not cls._clean(endpoint, url) or (url.scheme == 'http' and url.hostname not in ['127.0.0.1', 'localhost', 'minio']) or
-                not access or not secret or not BUCKET.fullmatch(bucket)):
-            raise StoreError('storage', 'Invalid private object-storage configuration')
-        return cls._connect(lambda: Minio(url.netloc, access_key=access, secret_key=secret, secure=url.scheme == 'https', http_client=_http(10)),
-                            bucket, create=True)
-
-    @classmethod
-    def _tos(cls, values):
-        # TOS answers S3 calls only on its tos-s3-<region> endpoint, virtual-hosted style; the bucket is created in the console.
-        region, bucket = values.get('TOS_REGION', ''), values['TOS_BUCKET']
+        bucket = values.get('TOS_BUCKET', '')
+        if not bucket: return None
+        region = values.get('TOS_REGION', '')
         endpoint = values.get('TOS_ENDPOINT') or f'https://tos-s3-{region}.volces.com'
         access, secret = values.get('TOS_ACCESS_KEY', ''), values.get('TOS_SECRET_KEY', '')
         try: url = urlsplit(endpoint); url.port
         except ValueError: raise StoreError('storage', 'Invalid TOS endpoint') from None
-        if (not re.fullmatch(r'[a-z]{2}-[a-z0-9-]{2,30}', region) or not cls._clean(endpoint, url) or url.scheme != 'https' or
-                not access or not secret or not BUCKET.fullmatch(bucket)):
+        if (not re.fullmatch(r'[a-z]{2}-[a-z0-9-]{2,30}', region) or url.scheme != 'https' or not url.hostname or url.username or
+                url.password or url.path not in ['', '/'] or url.query or url.fragment or any(ord(c) < 33 for c in endpoint) or
+                not access or not secret or not re.fullmatch(r'[a-z0-9][a-z0-9.-]{1,61}[a-z0-9]', bucket)):
             raise StoreError('storage', 'Invalid TOS configuration')
-        def client():
-            minio = Minio(url.netloc, access_key=access, secret_key=secret, secure=True, region=region, http_client=_http(60))
-            minio.enable_virtual_style_endpoint()
-            return minio
-        return cls._connect(client, bucket, create=False)
-
-    @staticmethod
-    def _clean(endpoint, url):
-        return (url.scheme in ['http', 'https'] and bool(url.hostname) and not url.username and not url.password and
-                url.path in ['', '/'] and not url.query and not url.fragment and not any(ord(c) < 33 for c in endpoint))
-
-    @classmethod
-    def _connect(cls, make, bucket, create):
         try:
-            client = make()
-            if not client.bucket_exists(bucket):
-                if not create: raise StoreError('storage', 'Private object-storage bucket not found')
-                try: client.make_bucket(bucket)
-                except S3Error as error:
-                    if error.code not in ['BucketAlreadyOwnedByYou', 'BucketAlreadyExists']: raise
+            client = Minio(url.netloc, access_key=access, secret_key=secret, secure=True, region=region,
+                http_client=urllib3.PoolManager(timeout=urllib3.Timeout(connect=5, read=60), retries=False))
+            client.enable_virtual_style_endpoint()
+            if not client.bucket_exists(bucket): raise StoreError('storage', 'TOS bucket not found')
             try:
                 if client.get_bucket_policy(bucket):
                     raise StoreError('storage', 'Use a private bucket without a bucket policy')

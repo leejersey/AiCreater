@@ -59,22 +59,20 @@ class StorageTests(unittest.TestCase):
     def test_storage_credentials_not_passed_to_node_verifier(self):
         from services.projects.store import Store
         store = object.__new__(Store); store.objects = None; store.public = self.file.parent
-        with patch.dict('os.environ', {'RUSTFS_SECRET_KEY': 'hidden-secret', 'RUSTFS_ACCESS_KEY': 'hidden-access', 'OPENAI_API_KEY': 'hidden-image-key', 'ACCOUNT_CREDENTIALS_KEY': 'hidden-encryption-key'}, clear=True), \
+        with patch.dict('os.environ', {'TOS_SECRET_KEY': 'hidden-secret', 'TOS_ACCESS_KEY': 'hidden-access', 'OPENAI_API_KEY': 'hidden-image-key', 'ACCOUNT_CREDENTIALS_KEY': 'hidden-encryption-key'}, clear=True), \
                 patch('services.projects.store.subprocess.run') as run:
             store._assets({'assets': []})
         self.assertNotIn('OPENAI_API_KEY', run.call_args.kwargs['env'])
         self.assertFalse('ACCOUNT_CREDENTIALS_KEY' in run.call_args.kwargs['env'], 'Encryption key reached Node')
-        self.assertFalse('RUSTFS_SECRET_KEY' in run.call_args.kwargs['env'], 'Storage secret reached Node')
-        self.assertFalse('RUSTFS_ACCESS_KEY' in run.call_args.kwargs['env'], 'Storage access key reached Node')
+        self.assertFalse('TOS_SECRET_KEY' in run.call_args.kwargs['env'], 'Storage secret reached Node')
+        self.assertFalse('TOS_ACCESS_KEY' in run.call_args.kwargs['env'], 'Storage access key reached Node')
 
     def test_configuration_disabled_or_invalid_without_network(self):
         self.assertIsNone(ObjectStore.from_env({}))
-        for endpoint in ['http://remote.example', 'http://u:p@127.0.0.1', 'http://127.0.0.1/path']:
-            with self.assertRaises(StoreError): ObjectStore.from_env({'MINIO_ENDPOINT': endpoint})
+        self.assertIsNone(ObjectStore.from_env({'MINIO_ENDPOINT': 'http://127.0.0.1:19000', 'MINIO_ACCESS_KEY': 'a', 'MINIO_SECRET_KEY': 's'}))
 
-    def test_tos_is_chosen_by_its_bucket_and_must_be_https_in_a_named_region(self):
-        tos = {'TOS_BUCKET': 'aicreater-media', 'TOS_REGION': 'cn-beijing', 'TOS_ACCESS_KEY': 'ak', 'TOS_SECRET_KEY': 'sk',
-               'MINIO_ENDPOINT': 'http://127.0.0.1:19000', 'MINIO_ACCESS_KEY': 'a', 'MINIO_SECRET_KEY': 's'}
+    def test_tos_must_be_https_in_a_named_region_and_virtual_hosted(self):
+        tos = {'TOS_BUCKET': 'aicreater-media', 'TOS_REGION': 'cn-beijing', 'TOS_ACCESS_KEY': 'ak', 'TOS_SECRET_KEY': 'sk'}
         for change in [{'TOS_REGION': ''}, {'TOS_SECRET_KEY': ''}, {'TOS_ENDPOINT': 'http://tos-s3-cn-beijing.volces.com'},
                        {'TOS_ENDPOINT': 'https://tos-s3-cn-beijing.volces.com/path'}, {'TOS_BUCKET': 'Bad_Bucket'}]:
             with self.subTest(change=change), patch('services.projects.storage.Minio') as minio:

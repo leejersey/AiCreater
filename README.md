@@ -94,7 +94,7 @@ npm ci
 
 ### 路径 A：教学工作台（完整网页流程）
 
-需要本机已有 PostgreSQL / Redis / RustFS 以及 `.env`、`.env.local-services` 配置。
+需要本机已有 PostgreSQL / Redis、一个火山 TOS 私有桶，以及 `.env`、`.env.local-services` 配置。
 
 ```bash
 # 1. 安装 Python 依赖
@@ -237,8 +237,8 @@ python3 services/tests/run_project_tests.py services.tests.test_api …   # 在�
 │  视觉任务（agent / export，/api/projects/:id/visual）· 文件下载     │
 └──────┬───────────────────┬───────────────────────┬───────────────┘
        │                   │                       │
-  PostgreSQL            Redis              火山 TOS / RustFS
-  项目 · 章节 ·          Celery 消息            配音音频
+  PostgreSQL            Redis                   火山 TOS
+  项目 · 章节 ·          Celery 消息        音频 · 视频 · 导出
   jobs（统一租约）           │
        │      ┌────────────┴─────────────┐   Beat 每 2 秒唤醒
        │      ▼                          ▼
@@ -272,7 +272,7 @@ python3 services/tests/run_project_tests.py services.tests.test_api …   # 在�
 ```
 apps/
   web/                     Next.js 工作台（前端）
-  renderer/public/         本机媒体缓存：配音音频（generated/），对象存储为主副本
+  renderer/public/         本机媒体缓存：配音音频（generated/），火山 TOS 为主副本
 
 packages/
   scene-agent/             Scene Agent：模型适配层、工具、循环与关卡、skill、评测用例、渲染
@@ -300,7 +300,7 @@ docs/                      Scene Agent 设计、本地运维、依赖许可，�
 |:---|:---|
 | [Scene Agent 设计](docs/superpowers/plans/2026-10-30-scene-agent-loop-design.md) | 适配层、工具接口、关卡与反馈划分、里程碑 |
 | [Scene Agent 运行记录](packages/scene-agent/eval/runs.md) | 每次真实模型运行的结果、用量与问题 |
-| [本地运维](docs/local-operations.md) | 工作台启停、Celery / Redis / RustFS 配置 |
+| [本地运维](docs/local-operations.md) | 工作台启停、Celery / Redis / 火山 TOS 配置 |
 | [依赖许可](docs/dependency-license-review.md) | 第三方依赖许可审查 |
 | [设计记录](docs/superpowers/) | 账号、配音、对齐、存储、费用参考等功能的实现计划与设计 |
 
@@ -317,7 +317,7 @@ docs/                      Scene Agent 设计、本地运维、依赖许可，�
 | **语音合成** | 火山引擎 TTS 2.0（字级时间戳） |
 | **数据库** | PostgreSQL（版本保护） |
 | **消息队列** | Redis + Celery（双队列调度） |
-| **对象存储** | 火山 TOS（S3 兼容端点）或本机 RustFS：配音音频、Agent 视频与整课导出 |
+| **对象存储** | 火山 TOS（S3 兼容端点）：配音音频、Agent 视频与整课导出 |
 
 ---
 
