@@ -142,12 +142,20 @@ class WorkbenchTests(unittest.TestCase):
         s=self.w.Supervisor({'PRIVATE':'hidden'})
         with patch.object(self.w,'inspect_role',return_value={'state':'absent','groups':[]}),patch.object(self.w.subprocess,'Popen') as launch,patch.object(s,'await_ready'):
             s.start()
-        self.assertEqual(launch.call_count,2)
+        self.assertEqual(launch.call_count,3)
         for call in launch.call_args_list:
             self.assertTrue(call.kwargs['start_new_session']); self.assertEqual(call.kwargs['cwd'],ROOT)
-            self.assertFalse(any('celery' in arg or arg=='docker' for arg in call.args[0]))
+            self.assertNotIn('docker',call.args[0])
         self.assertIn('--no-proxy-headers',launch.call_args_list[0].args[0])
         self.assertEqual(launch.call_args_list[1].args[0],['npm','run','web'])
+        self.assertEqual(launch.call_args_list[2].args[0][1:],['-m','services.runner'])
+
+    def test_the_runner_waits_when_jobs_are_already_queued(self):
+        s=self.w.Supervisor({},[{'kind':'agent','state':'queued','count':1}])
+        with patch.object(self.w,'inspect_role',return_value={'state':'absent','groups':[]}),patch.object(self.w.subprocess,'Popen') as launch,patch.object(s,'await_ready'),patch('sys.stdout',new_callable=io.StringIO) as output:
+            s.start()
+        self.assertEqual([c.args[0][-1] for c in launch.call_args_list],['--no-proxy-headers','web'])
+        self.assertIn('runner_not_started_jobs_waiting',output.getvalue())
 
     def test_port_race_must_belong_to_the_new_group(self):
         s=self.w.Supervisor({}); child=MagicMock(pid=234); child.poll.return_value=None;s.processes['api']=child

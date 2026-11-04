@@ -5,6 +5,8 @@ services:
       POSTGRES_DB: aicreater
       POSTGRES_USER: aicreater
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD locally}
+    # Back after a reboot or Docker restart; `docker compose stop` still stops it.
+    restart: unless-stopped
     ports:
       - "127.0.0.1:15432:5432"
     volumes:
@@ -14,18 +16,5 @@ services:
       interval: 5s
       timeout: 3s
       retries: 10
-  redis:
-    image: redis:7.4.8-alpine@sha256:8b81dd37ff027bec4e516d41acfbe9fe2460070dc6d4a4570a2ac5b9d59df065
-    command: ["redis-server", "--appendonly", "yes"]
-    ports:
-      - "127.0.0.1:16379:6379"
-    volumes:
-      - queue_data:/data
-    healthcheck:
-      test: ["CMD", "redis-cli", "ping"]
-      interval: 5s
-      timeout: 3s
-      retries: 10
 volumes:
   project_data:
-  queue_data:

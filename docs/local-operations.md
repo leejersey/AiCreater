@@ -25,7 +25,7 @@
 
 这是手动运行时快照，不是后台监控/容量预留；APFS共享空间和其他应用随时变化，Docker VM/卷额度另算，不能当作渲染成功保证或删除授权。没有新参数/配置/依赖/API，旧receipt不重写；全对象严格对比的外部消费者需允许新增`disk`。验证见[磁盘预警记录](../output/workbench/disk-warning-qa/receipt.json)。
 
-需本人0600普通`.env`/`.env.local-services`、lsof/ps、当前Python/npm/依赖，以及已经就绪的PG/Redis和可访问的TOS私有桶。配置通过dotenv读取，不需source；不运行compose或覆盖配置，不安装/构建。网页命令为`npm run web`开发模式，不自动改成生产模式；已有生产网页可识别复用，冷启生产网页继续人工管理。数据库查询强制只读且短超时，但真实API冷启动本身仍会初始化schema/桶，工具不能把它说成只读。
+需本人0600普通`.env`/`.env.local-services`、lsof/ps、当前Python/npm/依赖，以及已经就绪的PG和可访问的TOS私有桶。配置通过dotenv读取，不需source；不运行compose或覆盖配置，不安装/构建。网页命令为`npm run web`开发模式，不自动改成生产模式；已有生产网页可识别复用，冷启生产网页继续人工管理。数据库查询强制只读且短超时，但真实API冷启动本身仍会初始化schema/桶，工具不能把它说成只读。
 
 Ctrl+C/TERM仅请求停止：有queued/running或DB无法查询，保留本次活进程，提示人工处理后再次Ctrl+C。idle只向本次持有的活Popen group发送TERM；等待父进程和非zombie进程组退出，超时/权限或核验失败留阻塞，不KILL。已退出leader的group仅只读核验，不沿用旧PGID去杀子进程；可能孤儿需要现场核验。没有跨终端stop、PID文件、守护进程或自启。SIGKILL/掉电无法保证回收，也没有原子停写锁；其他操作者可能在查询之后提交任务。
 
@@ -58,34 +58,19 @@ docker compose --project-name aicreater-workbench --env-file .env.local-services
 
 固定digest防版本漂移，但也停止自动获得后续安全更新；版本更新必须单独批准/隔离验收。即使image字节相同，Compose引用变化也可能在下次up重建容器，本轮未执行原stack up/recreate。启动应用之前确认无不应执行的旧付费任务；API启动会初始化仓库，worker/beat启动后会消费既有队列。没有活动任务也不能保证别人随后不提交。
 
-各独立终端都需从根目录导出本机服务覆盖项；Python模块会再从原`.env`读取供应商配置，不在shell复制密钥：
+### 一条命令启动（2026-11-04 起，取代 Celery / Redis / Beat）
 
-```bash
-set -a; source .env.local-services; set +a
-# 仅缺失的进程才启动。不要让多个API/beat/workers同时使用同一库。
-python3 -m uvicorn services.api.app:app --host 127.0.0.1 --port 8000 --no-proxy-headers
-# 第二终端，API ready后：
-python3 -m celery -A services.workflow.queue:app worker -Q workflow --hostname=workbench-workflow@%h --concurrency=1 --loglevel=WARNING
-# 第三终端：
-python3 -m celery -A services.workflow.queue:app worker -Q render --hostname=workbench-render@%h --concurrency=1 --loglevel=WARNING
-# 第四终端，只允许1个beat；确认旧收费队列后再启动：
-python3 -m celery -A services.workflow.queue:app beat --loglevel=WARNING --schedule=/tmp/aicreater-celerybeat --pidfile=/tmp/aicreater-celerybeat.pid
-# 第五终端，开发页面；或已有生产构建时 npm run web:start，不能两者并开：
-npm run web
-```
+`npm run workbench` 拉起 API、网页和任务执行器（`python -m services.runner`），Ctrl+C 一起停止。各进程自己读取 `.env.local-services` 与 `.env`，不需要 `source`。
 
-Beat只运行一个，统一使用上面的PID文件。旧实例若没带`--pidfile`，先在原终端正常退出，再换新命令；不能直接补开。`Resource temporarily unavailable`可能是文件锁冲突，先用`ps`/`lsof`查占用，不直接删schedule；旧进程即使文件被删仍可能持有已unlink文件。PID文件只保护同样遵守该路径的命令，不会自动接管旧进程。
+- 执行器每条队列一个进程（workflow：配音、对齐、Agent；render：整课导出、主题重渲染），空闲时每 2 秒向 PostgreSQL 领一个排队任务。排队、租约、续租、取消都在 `jobs` 表与 `services/projects/leases.py`，多个执行器（甚至在别的机器上）通过数据库锁协调，不会重复执行。
+- 启动时数据库里已有排队/运行中的任务，执行器不自动启动（输出 `runner_not_started_jobs_waiting`）：先在网页核对这些任务，再手动运行 `.venv/bin/python -m services.runner`。
+- 执行器收到一次 Ctrl+C / SIGTERM：做完当前任务再退出；第二次：中止当前任务，任务标为失败，不自动重试。启动器在有任务进行中时不停止任何进程。
+- `next dev` 偶尔会自己退出以显示升级提示，再次运行即可继续；启动器会自动重启网页一次（输出 `web_restarted_once`）。
+- PostgreSQL 容器设为 `restart: unless-stopped`，重启电脑或 Docker 后自动恢复。旧的 Redis 容器已停用（数据卷保留，可删除）。
 
-macOS worker使用已配置solo，实际工作仍在受限子进程内；不要改prefork逃避启动检查。beat只发固定唤醒，PG才是任务状态来源；控制ping和端口检查不代表付费调用质量验收。
+单独排查时也可以分开运行：`.venv/bin/python -m uvicorn services.api.app:app --host 127.0.0.1 --port 8000 --no-proxy-headers`、`.venv/bin/python -m services.runner --lane workflow`、`npm run web`。
 
-健康检查：
-
-```bash
-curl --fail http://127.0.0.1:8000/health
-curl --fail http://127.0.0.1:19000/health
-curl --fail --output /dev/null http://127.0.0.1:3000
-python3 -m celery -A services.workflow.queue:app inspect ping --timeout=3
-```
+健康检查：`npm run workbench:status`（API、网页、执行器、排队任务、磁盘余量），或 `curl --fail http://127.0.0.1:8000/health`。
 
 ## 个人中心 GPT Image 2 配置（需维护窗口启用）
 

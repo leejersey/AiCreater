@@ -167,7 +167,7 @@ class ApiTests(ProjectFixture, unittest.TestCase):
         from services.api.app import create_app
         env = {'DATABASE_URL': os.environ['TEST_DATABASE_URL'], 'VOLCENGINE_RESOURCE_ID': 'seed-tts-2.0',
                'VOLCENGINE_SPEAKER': 'test_voice'}
-        with patch.dict(os.environ, env), patch('services.api.app.load_dotenv'):
+        with patch.dict(os.environ, env), patch('services.config.load_local_config'):
             with TestClient(create_app(authentication=False), base_url='http://127.0.0.1:8000', client=('127.0.0.1', 50000)) as client:
                 self.assertEqual(client.get('/health').json(), {'status': 'ready'})
                 self.assertEqual(client.get('/api/projects/' + self.project['id']).json(), self.project)
@@ -180,21 +180,16 @@ class ApiTests(ProjectFixture, unittest.TestCase):
         with TestClient(create_app(self.store, authentication=False), base_url='http://127.0.0.1:8000', client=('192.0.2.1', 50000)) as client:
             self.assertEqual(client.get('/health').status_code, 403)
 
-    def test_celery_poll_reuses_executor_and_does_not_transport_payloads(self):
+    def test_runner_polls_visual_jobs_first_then_voice_and_timing_in_the_same_lane(self):
         from unittest.mock import patch
-        from services.workflow.queue import app, poll
-        self.assertEqual(app.conf.accept_content, ['json'])
-        self.assertEqual(app.conf.worker_concurrency, 1)
-        with patch('services.workflow.queue.Store', return_value=self.store), patch('services.workflow.queue.profile', return_value=self.store.profile), patch.dict(os.environ, {'DATABASE_URL': 'local-test'}), patch('services.workflow.queue.run_once', return_value=None) as execute:
-            self.assertIsNone(poll.apply().get())
-            execute.assert_called_once()
-            self.assertIs(execute.call_args.args[0].store, self.store)
-            execute.return_value = {'id': 'job', 'state': 'succeeded', 'input': {'private': 'manuscript'}}
-            self.assertEqual(poll.apply().get(), {'job_id': 'job', 'state': 'succeeded'})
-            from services.workflow.queue import render_poll
-            self.assertEqual(render_poll.apply().get(), {'job_id': 'job', 'state': 'succeeded'})
-            self.assertEqual(execute.call_args.kwargs['lane'], 'render')
-            self.assertEqual(app.conf.task_routes['aicreater.render_poll']['queue'], 'render')
+        from services import runner
+        with patch('services.visual.worker.run_once', return_value=None) as visual, patch('services.workflow.worker.run_once', return_value=None) as voice:
+            self.assertIsNone(runner.poll(self.store, 'render'))
+            self.assertEqual((visual.call_args.kwargs['lane'], voice.call_args.kwargs['lane']), ('render', 'render'))
+            self.assertIs(voice.call_args.args[0].store, self.store)
+            visual.return_value = {'id': 'job', 'state': 'succeeded'}
+            self.assertEqual(runner.poll(self.store, 'workflow')['id'], 'job')
+            self.assertEqual(voice.call_count, 1)  # a visual job ran, so voice was not asked this round
 
     def test_voice_http_worker_attachment_is_revision_checked(self):
         import sys

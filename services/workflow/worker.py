@@ -130,10 +130,10 @@ def main():
     parser.add_argument('--once', action='store_true', required=False)
     args = parser.parse_args()
     if args.child: return child()
-    if not args.once: parser.error('Use --once for debugging, or run the Celery worker/beat')
-    from dotenv import load_dotenv
+    if not args.once: parser.error('Use --once for debugging; python -m services.runner runs jobs continuously')
     from services.projects.manage import profile
-    load_dotenv(ROOT / '.env', override=False)
+    from services.config import load_local_config
+    load_local_config()
     try:
         from services.projects.storage import ObjectStore
         store = Store(os.environ.get('DATABASE_URL', ''), ROOT / 'apps/renderer/public', profile(), objects=ObjectStore.from_env())

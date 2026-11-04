@@ -2,7 +2,6 @@
 import argparse
 import getpass
 import os
-from dotenv import load_dotenv
 from services.accounts.auth import Accounts
 from services.projects.manage import profile
 from services.projects.store import Store, StoreError
@@ -18,7 +17,8 @@ def main():
     args=parser.parse_args()
     if not args.confirm: parser.error('Requires --confirm; no changes made')
     if (args.action=='claim') != bool(args.project): parser.error('claim requires explicit --project IDs; reset-password accepts none')
-    load_dotenv(ROOT/'.env',override=False)
+    from services.config import load_local_config
+    load_local_config()
     dsn=os.getenv('DATABASE_URL')
     if not dsn: parser.error('DATABASE_URL must be configured locally')
     accounts=Accounts(Store(dsn,ROOT/'apps/renderer/public',profile()))

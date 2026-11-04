@@ -1,4 +1,5 @@
-"""Foreground macOS workbench control. Never launches Docker, workers or beat."""
+"""Foreground macOS workbench: the API, the web app and the job runner in one command; Ctrl+C stops them.
+Never launches Docker. The runner is not started while jobs are already queued, so nothing paid runs unannounced."""
 import argparse
 import json
 import os
@@ -6,7 +7,6 @@ import platform
 import shlex
 import shutil
 import signal
-import socket
 import subprocess
 import sys
 import time
@@ -22,6 +22,7 @@ PORTS = {'api': 8000, 'web': 3000}
 COMMANDS = {
     'api': [sys.executable, '-m', 'uvicorn', 'services.api.app:app', '--host', '127.0.0.1', '--port', '8000', '--no-proxy-headers'],
     'web': ['npm', 'run', 'web'],
+    'runner': [sys.executable, '-m', 'services.runner'],
 }
 
 
@@ -72,11 +73,6 @@ def activity(env):
 
 def basic_ready(env):
     tasks = activity(env)
-    redis = local_url(env.get('CELERY_BROKER_URL'), {'redis'})
-    try:
-        with socket.create_connection((redis.hostname, redis.port), timeout=3): pass
-    except OSError:
-        raise SafetyError('foundation_unavailable') from None
     if env.get('TOS_BUCKET'):
         # TOS is remote: checking that the private bucket answers is the readiness test.
         from services.projects.storage import ObjectStore
@@ -139,7 +135,26 @@ def healthy(role):
         return False
 
 
+def runner_groups():
+    """Process groups of job runners started from this checkout (they listen on no port)."""
+    groups = set()
+    for line in checked_command(['ps', '-axo', 'pid=,pgid=,command=']).splitlines():
+        fields = line.split(None, 2)
+        if len(fields) == 3 and fields[0].isdigit() and fields[1].isdigit():
+            try: args = shlex.split(fields[2])
+            except ValueError: continue
+            if len(args) >= 3 and Path(args[0]).name.startswith('python') and args[1:3] == ['-m', 'services.runner'] and '--lane' not in args:
+                try:
+                    cwd = [l[1:] for l in checked_command(['lsof', '-a', '-p', fields[0], '-d', 'cwd', '-Fn']).splitlines() if l.startswith('n')]
+                except SafetyError: continue
+                if cwd == [str(ROOT)]: groups.add(int(fields[1]))
+    return sorted(groups)
+
+
 def inspect_role(role):
+    if role == 'runner':
+        groups = runner_groups()
+        return {'state': 'ready' if groups else 'absent', 'groups': groups}
     port = PORTS[role]; found = listeners(port)
     if not found: return {'state': 'absent', 'groups': []}
     if any(address not in {f'127.0.0.1:{port}', f'[::1]:{port}'} for addresses in found.values() for address in addresses):
@@ -163,8 +178,9 @@ def group_active(group):
 
 
 class Supervisor:
-    def __init__(self, env):
+    def __init__(self, env, tasks=()):
         self.env = env
+        self.tasks = list(tasks)
         self.processes = {}
         self.requested = False
         self.pending_groups = set()
@@ -176,6 +192,11 @@ class Supervisor:
     def await_ready(self, role):
         deadline = time.monotonic() + 30
         process = self.processes[role]
+        if role == 'runner':
+            # No port to probe: alive after its database check is ready enough.
+            time.sleep(1.5)
+            if process.poll() is not None: raise SafetyError('child_exited')
+            return
         while time.monotonic() < deadline:
             if self.requested: raise SafetyError('stop_requested')
             if process.poll() is not None: raise SafetyError('child_exited')
@@ -194,6 +215,10 @@ class Supervisor:
             if self.requested: raise SafetyError('stop_requested')
             if inspect_role(role)['state'] == 'ready':
                 emit('reused_not_controlled', role=role)
+                continue
+            if role == 'runner' and self.tasks:
+                # Jobs left from an earlier session: look at them in the web app first, then start the runner yourself.
+                emit('runner_not_started_jobs_waiting', tasks=self.tasks, start='python -m services.runner')
                 continue
             self.processes[role] = subprocess.Popen(COMMANDS[role], cwd=ROOT, env=self.env,
                                                    stdin=subprocess.DEVNULL, start_new_session=True)
@@ -253,7 +278,16 @@ class Supervisor:
                 emit(code); failed = code != 'stop_requested'; self.requested = True
             if not self.processes: return int(failed)
             emit('foreground_owned_only', stop='Ctrl+C; busy or unavailable database blocks shutdown')
+            web_restarted = False
             while True:
+                web = self.processes.get('web')
+                # `next dev` sometimes exits on its own to show an upgrade notice and continues when run again.
+                if web and web.poll() is not None and not web_restarted and not self.stopping and not self.requested:
+                    web_restarted = True; self.pending_groups.add(web.pid)
+                    self.processes['web'] = subprocess.Popen(COMMANDS['web'], cwd=ROOT, env=self.env, stdin=subprocess.DEVNULL, start_new_session=True)
+                    emit('web_restarted_once')
+                    try: self.await_ready('web')
+                    except SafetyError as error: emit(error.code); failed = True; self.requested = True
                 exited = {p.pid for p in self.processes.values() if p.poll() is not None}
                 self.pending_groups.update(exited)
                 if not failed and exited and not self.stopping:
@@ -291,7 +325,7 @@ def main(argv=None):
             emit('status', services=roles, tasks=tasks, disk=disk_status())
             return 0
         if not shutil.which('npm'): raise SafetyError('npm_missing')
-        return Supervisor(env).run()
+        return Supervisor(env, tasks).run()
     except SafetyError as error:
         emit(error.code)
     except (OSError, ValueError):

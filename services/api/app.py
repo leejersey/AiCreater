@@ -4,7 +4,6 @@ import os
 from typing import Literal
 
 import httpx
-from dotenv import load_dotenv
 from fastapi import FastAPI, Request, Depends
 from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
@@ -86,7 +85,8 @@ def create_app(store=None, *, authentication=True):
     async def lifespan(app):
         configured = store
         if configured is None:
-            load_dotenv(ROOT / '.env', override=False)
+            from services.config import load_local_config
+            load_local_config()
             dsn = os.getenv('DATABASE_URL')
             if not dsn: raise RuntimeError('Configure DATABASE_URL locally before starting the API')
             configured = Store(dsn, ROOT / 'apps/renderer/public', profile(), objects=ObjectStore.from_env())

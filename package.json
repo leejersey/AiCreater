@@ -14,8 +14,8 @@
     "web": "next dev apps/web --hostname 127.0.0.1 --port 3000 --webpack",
     "web:build": "next build apps/web",
     "web:start": "next start apps/web --hostname 127.0.0.1 --port 3000",
-    "workbench:status": "python3 -m services.workbench status",
-    "workbench": "python3 -m services.workbench run"
+    "workbench:status": ".venv/bin/python -m services.workbench status",
+    "workbench": ".venv/bin/python -m services.workbench run"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "1.3.0",

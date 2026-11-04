@@ -95,104 +95,23 @@ npm ci
 
 ### 路径 A：教学工作台（完整网页流程）
 
-需要本机已有 PostgreSQL / Redis、一个火山 TOS 私有桶，以及 `.env`、`.env.local-services` 配置（字段见 `.env.example`）。
+需要一个 PostgreSQL（`docker compose -f compose.postgres.yaml up -d`，开机或 Docker 重启后自动恢复）、一个火山 TOS 私有桶，以及两个配置文件（字段见 `.env.example`；程序自己读取，不需要 `source`）：
 
-- `.env.local-services`：`DATABASE_URL`、`CELERY_BROKER_URL` 等本机服务地址
+- `.env.local-services`：`DATABASE_URL`
 - `.env`：DeepSeek / 火山 TTS 密钥，以及 TOS 的 `TOS_REGION`、`TOS_BUCKET`、`TOS_ACCESS_KEY`、`TOS_SECRET_KEY`（桶须私有、不加桶策略；AK/SK 建议用只授权该桶的 IAM 子用户）
 
 ```bash
-# 1. 安装 Python 依赖
-python3 -m venv .venv && source .venv/bin/activate
-pip install -r requirements.txt
-
-# 2. 检查服务状态
-npm run workbench:status
-
-# 3. 启动 API + 网页
-npm run workbench
+python3 -m venv .venv && .venv/bin/pip install -r requirements.txt   # 首次安装
+npm run workbench          # 启动 API + 网页 + 任务执行器；Ctrl+C 一起停止
+npm run workbench:status   # 只查看状态
 ```
 
 浏览器访问 **http://127.0.0.1:3000** → 注册 / 登录 → 我的视频 → 新建视频。
 
-> **注意**：`npm run workbench` 只启动 API + 网页。登录、看课、新建讲稿、整理口播章节都可以正常使用。但点击「添加配音」「Agent 生成视频」「导出整课视频」后任务会进入队列，没有 Worker + Beat 时进度会停在 0%。
-
-#### 启动 Celery Worker 和 Beat（执行配音 / Agent / 导出任务）
-
-> ⚠️ 以下命令会调用 DeepSeek、火山引擎等付费服务，**可能产生费用**。
-
-`DATABASE_URL` 在 `.env.local-services` 中（不在 `.env`）；每个 Celery / API 进程都必须加载，否则会报 `Configure the local workflow database`。
-
-**bash / zsh：**
-
-```bash
-cd /path/to/AiCreater
-set -a; source .env.local-services; set +a
-source .venv/bin/activate
-
-# 终端 1：Workflow 消费者（配音、对齐、Agent 生成）
-python3 -m celery -A services.workflow.queue:app worker \
-  -Q workflow --hostname=workbench-workflow@%h \
-  --concurrency=1 --loglevel=WARNING
-
-# 终端 2：Render 消费者（整课导出）
-python3 -m celery -A services.workflow.queue:app worker \
-  -Q render --hostname=workbench-render@%h \
-  --concurrency=1 --loglevel=WARNING
-
-# 终端 3：Beat 定时调度（每 2 秒唤醒 Worker 从 PostgreSQL 取任务）
-python3 -m celery -A services.workflow.queue:app beat \
-  --loglevel=WARNING --schedule=/tmp/aicreater-celerybeat \
-  --pidfile=/tmp/aicreater-celerybeat.pid
-```
-
-**fish：**
-
-```bash
-cd /path/to/AiCreater
-
-# 终端 1：Workflow 消费者
-bash -lc 'set -a; source .env.local-services; set +a; \
-  exec "'(pwd)'/.venv/bin/python" -m celery \
-  -A services.workflow.queue:app worker -Q workflow \
-  --hostname=workbench-workflow@%h --concurrency=1 --loglevel=WARNING'
-
-# 终端 2：Render 消费者
-bash -lc 'set -a; source .env.local-services; set +a; \
-  exec "'(pwd)'/.venv/bin/python" -m celery \
-  -A services.workflow.queue:app worker -Q render \
-  --hostname=workbench-render@%h --concurrency=1 --loglevel=WARNING'
-
-# 终端 3：Beat
-bash -lc 'set -a; source .env.local-services; set +a; \
-  exec "'(pwd)'/.venv/bin/python" -m celery \
-  -A services.workflow.queue:app beat \
-  --loglevel=WARNING --schedule=/tmp/aicreater-celerybeat \
-  --pidfile=/tmp/aicreater-celerybeat.pid'
-```
-
-Beat 只开一个。新命令用 Celery 原生 PID 文件阻止重复启动；已有不带 `--pidfile` 的旧实例，须先在其终端正常退出，再换新命令，不能直接叠加启动。若报调度文件 `Resource temporarily unavailable`，先查重进程，不要直接删除 schedule 文件。
-
-可用 `python3 -m celery -A services.workflow.queue:app inspect ping --timeout=3` 核对消费者是否在线。完整启停细节见 [本地运维指南](docs/local-operations.md)。
-
-#### 改过后端代码后重载 API
-
-修改 Python 后端代码后，必须重载 API 和**全部** Worker，包括 Render 队列的 Worker（否则仍用旧代码，新路由会 404；各 Worker 都会回收超时任务，旧代码会按旧的时限误判新类型的任务）：
-
-```bash
-# bash / zsh
-set -a; source .env.local-services; set +a
-source .venv/bin/activate
-python3 -m uvicorn services.api.app:app --host 127.0.0.1 --port 8000 --no-proxy-headers
-```
-
-```fish
-# fish
-bash -lc 'set -a; source .env.local-services; set +a; \
-  exec "'(pwd)'/.venv/bin/python" -m uvicorn services.api.app:app \
-  --host 127.0.0.1 --port 8000 --no-proxy-headers'
-```
-
-网页端使用 `npm run web`（或 `npm run workbench` 一并拉起）。
+- **任务执行器**（`python -m services.runner`）每 2 秒向 PostgreSQL 领一个排队任务：workflow 队列跑配音、对齐和 Agent，render 队列跑整课导出和主题重渲染，每条队列同时只跑一个。它只会执行你在网页上确认过的任务，本身不产生费用。
+- **启动时如果已有排队中的任务**（比如上次关机前提交的），`npm run workbench` 不会自动启动执行器，先在网页上看一下这些任务，再手动运行 `.venv/bin/python -m services.runner`。
+- **Ctrl+C**：有任务正在执行时，API 和网页暂不停止；执行器会做完当前任务再退出，连按两次则中止当前任务（标为失败，不自动重试）。
+- **改过 Python 后端代码**：Ctrl+C 后重新运行 `npm run workbench`。执行器也必须重启，否则仍按旧代码领任务。
 
 ---
 
@@ -243,14 +162,15 @@ python3 services/tests/run_project_tests.py services.tests.test_api …   # 在�
 │  视觉任务（agent / export，/api/projects/:id/visual）· 文件下载     │
 └──────┬───────────────────┬───────────────────────┬───────────────┘
        │                   │                       │
-  PostgreSQL            Redis                   火山 TOS
-  项目 · 章节 ·          Celery 消息        音频 · 视频 · 导出
-  jobs（统一租约）           │
-       │      ┌────────────┴─────────────┐   Beat 每 2 秒唤醒
+  PostgreSQL                                    火山 TOS
+  项目 · 章节 ·                               音频 · 视频 · 导出
+  jobs（统一租约）
+       │ 任务执行器 services.runner：每条队列一个进程，空闲时每 2 秒领任务
+       │      ┌──────────────────────────┐
        │      ▼                          ▼
   ┌────┴──────────────────────┐ ┌──────────────────────────────┐
-  │ Workflow Worker            │ │ Render Worker                │
-  │ · 火山 TTS 配音 + 实测对齐   │ │ · 整课导出                    │
+  │ workflow 队列               │ │ render 队列                   │
+  │ · 火山 TTS 配音 + 实测对齐   │ │ · 整课导出 · 主题重渲染         │
   │ · Scene Agent（每章一个任务）│ │                              │
   └────┬──────────────────────┘ └──────────────┬───────────────┘
        │ tsx scripts/scene-agent-job.ts          │ scene-agent-course-job.ts
@@ -270,7 +190,7 @@ python3 services/tests/run_project_tests.py services.tests.test_api …   # 在�
   └──────────────────────────────────────────────────────────────┘
 ```
 
-配音、对齐、Agent 与导出任务都在同一张 `jobs` 表里，由 `services/projects/leases.py` 统一领取与续租：租约时限按类型设定（配音与对齐 15 分钟，Agent 与导出 30 分钟，超时由 Worker 回收），运行中靠心跳续租，每条队列（workflow / render）同时只运行一个任务；取消运行中的 Agent 任务时，Worker 在下一次心跳停止。付费任务（配音、Agent）只在用户确认后入队；Agent 未通过检查时停止并保留运行记录，不自动重试。
+配音、对齐、Agent 与导出任务都在同一张 `jobs` 表里，由 `services/projects/leases.py` 统一领取与续租：租约时限按类型设定（配音与对齐 15 分钟，Agent 与导出 30 分钟，超时由执行器回收），运行中靠心跳续租，每条队列（workflow / render）同时只运行一个任务；取消运行中的 Agent 任务时，执行器在下一次心跳停止。付费任务（配音、Agent）只在用户确认后入队；Agent 未通过检查时停止并保留运行记录，不自动重试。
 
 媒体以火山 TOS 私有桶为主副本，经 S3 兼容端点访问，不开放公共链接，下载都经过 API 校验哈希。配音音频、Agent 视频（源码、MP4、字幕、审查帧）与整课导出都存入 TOS；本机目录只是渲染缓存，缺失时下载或导出会自动从 TOS 取回。Agent 视频上传失败时任务仍会发布、付费结果不丢，之后执行 `python -m services.projects.sync_storage` 补传（可重复执行）。
 
@@ -295,7 +215,9 @@ services/
   accounts/                用户注册、认证与会话管理
   projects/                项目、配音/对齐任务、统一任务表与租约（leases.py）、费用参考、TOS 存储（storage.py）与补传命令（sync_storage.py）
   visual/                  Agent 与整课导出任务、章节编辑与 Worker
-  workflow/                Celery 调度、文稿生成、配音与本地对齐
+  workflow/                文稿生成、配音与本地对齐
+  runner.py                任务执行器：按队列向 PostgreSQL 领任务并执行
+  config.py                读取 .env 与 .env.local-services
   tts/                     火山 TTS 2.0 配音与字级时间戳
   chapters.py              章节数据结构：口播、配音音频、时长与实测字幕的校验和计时
   workbench.py             `npm run workbench` 的 API + 网页启动器
@@ -312,7 +234,7 @@ docs/                      Scene Agent 设计、本地运维、依赖许可，�
 |:---|:---|
 | [Scene Agent 设计](docs/superpowers/plans/2026-10-30-scene-agent-loop-design.md) | 适配层、工具接口、关卡与反馈划分、里程碑 |
 | [Scene Agent 运行记录](packages/scene-agent/eval/runs.md) | 每次真实模型运行的结果、用量与问题 |
-| [本地运维](docs/local-operations.md) | 工作台启停、Celery / Redis / 火山 TOS 配置 |
+| [本地运维](docs/local-operations.md) | 工作台启停、任务执行器、火山 TOS 配置 |
 | [依赖许可](docs/dependency-license-review.md) | 第三方依赖许可审查 |
 | [设计记录](docs/superpowers/) | 账号、配音、对齐、存储、费用参考等功能的实现计划与设计 |
 
@@ -324,11 +246,10 @@ docs/                      Scene Agent 设计、本地运维、依赖许可，�
 |:---|:---|
 | **前端框架** | Next.js 16 · React 19 · TypeScript |
 | **视频引擎** | Remotion 4.0 · FFmpeg |
-| **后端服务** | Python · FastAPI · Celery |
+| **后端服务** | Python · FastAPI · 任务执行器（PostgreSQL 租约） |
 | **AI 模型** | DeepSeek API（文稿、Scene Agent）；Scene Agent 可切换 Claude 等 |
 | **语音合成** | 火山引擎 TTS 2.0（字级时间戳） |
 | **数据库** | PostgreSQL（revision 乐观锁 · 统一任务表） |
-| **消息队列** | Redis + Celery（双队列调度） |
 | **对象存储** | 火山 TOS（S3 兼容端点）：配音音频、Agent 视频与整课导出 |
 
 ---
@@ -344,5 +265,4 @@ docs/                      Scene Agent 设计、本地运维、依赖许可，�
 - 通过检查不等于画面好看，所有结果仍需人工观看确认
 - 只用旧流程做过画面的课程，需要先用 Agent 逐章重新生成并确认，才能再导出整课
 - 本地渲染与缓存对齐不产生额外 API 费用；火山 TOS 按存储量与下载流量计费
-- Redis 保留本机使用；若转为公司/第三方服务需重新核对[许可](docs/dependency-license-review.md)
 - 字体使用 `@fontsource/noto-sans-sc`（OFL 许可）
