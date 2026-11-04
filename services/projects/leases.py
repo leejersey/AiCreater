@@ -8,10 +8,10 @@ from psycopg.types.json import Jsonb
 from services.projects.store import StoreError, identifier
 
 # Seconds a claimed attempt may run, and the lane whose single running slot it takes.
-LEASE_SECONDS = {'voice': 900, 'timing': 900, 'agent': 1800, 'export': 1800}
-LANES = {'workflow': ('voice', 'timing', 'agent'), 'render': ('export',)}
+LEASE_SECONDS = {'voice': 900, 'timing': 900, 'agent': 1800, 'export': 1800, 'restyle': 1800}
+LANES = {'workflow': ('voice', 'timing', 'agent'), 'render': ('export', 'restyle')}
 HEARTBEAT_SECONDS = 60
-STAGES = {'voice': 'tts', 'timing': 'timing', 'agent': 'agent', 'export': 'export'}
+STAGES = {'voice': 'tts', 'timing': 'timing', 'agent': 'agent', 'export': 'export', 'restyle': 'render'}
 LEASE_SQL = ('CASE kind ' + ' '.join(f"WHEN '{kind}' THEN interval '{seconds} seconds'" for kind, seconds in LEASE_SECONDS.items()) +
              " ELSE interval '900 seconds' END")
 EXPIRED = f"""(state='running' AND heartbeat_at <= now()-interval '{HEARTBEAT_SECONDS} seconds')
@@ -39,9 +39,9 @@ EXPIRED_MESSAGES = {
 
 
 def expired_error(job, timed_out):
-    """Voice may be retried after a lost heartbeat (not after its time budget); Agent and export jobs never retry."""
+    """Voice may be retried after a lost heartbeat (not after its time budget); Agent, export and restyle jobs never retry."""
     base = {'stage': job['stage'], 'scene_id': job['scene_id']}
-    if job['kind'] in ('agent', 'export'):
+    if job['kind'] in ('agent', 'export', 'restyle'):
         return {**base, 'code': 'expired', 'message': EXPIRED_MESSAGES['visual'], 'retryable': False}
     code = 'timeout' if timed_out else 'worker_lost'
     message = EXPIRED_MESSAGES['timing_lost' if job['kind'] == 'timing' and not timed_out else code]

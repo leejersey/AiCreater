@@ -4,17 +4,19 @@ import type {SceneRow} from '../lib/editor';
 import {request,parseJobs,parseSceneJob,type Project,type Job} from '../lib/editor';
 import {confirmEstimate} from '../lib/cost-estimates';
 import {currentVoiceJob} from '../lib/course';
-import {parseVisualJobs,visualFileUrl,measuredReady,reviewFrames,visualError,sceneAudioActions,videoTaskStatus,videoProgress,latestAgentJob,canAcceptAgent,exportedVersion,chapterStatus,agentBatchScenes,visualAgentBody,AGENT_MAX_TURNS,estimatedSeconds,codePointOffset,AGENT_MAX_SECONDS,type VisualJob} from '../lib/visual-workbench';
+import {parseVisualJobs,visualFileUrl,measuredReady,reviewFrames,visualError,sceneAudioActions,videoTaskStatus,videoProgress,latestAgentJob,canAcceptAgent,exportedVersion,chapterStatus,agentBatchScenes,visualAgentBody,restyleOf,renderedTheme,AGENT_MAX_TURNS,estimatedSeconds,codePointOffset,AGENT_MAX_SECONDS,type VisualJob} from '../lib/visual-workbench';
 import {confirmVisualAction,visualAgentAction,visualAgentReviseAction} from '../lib/visual-workbench-actions';
 import {useConfirm} from './ConfirmContext';
 import {VoiceSettings} from './VoiceSettings';
+import {ThemeSettings} from './ThemeSettings';
+import {parseThemes,themeName,type ThemeSummary} from '../lib/themes';
 import {RefreshCw,Check,Film,Mic,X} from './Icons';
 
 export function VisualJobStatus({job}:{job:VisualJob}) {
   return <>{job.stage&&<p>执行阶段：{job.stage}</p>}{job.state==='failed'&&<p role="alert">{job.error||'任务未完成，请检查当前项目与任务状态。'} 未自动重试。</p>}</>;
 }
 const states:Record<string,string>={queued:'排队中',running:'执行中',succeeded:'已完成',failed:'失败，未自动重试',cancelled:'已取消'};
-const kinds:Record<VisualJob['kind'],string>={agent:'Agent 生成',export:'整课导出'};
+const kinds:Record<VisualJob['kind'],string>={agent:'Agent 生成',export:'整课导出',restyle:'按新主题重渲染'};
 export function VisualHistoryEntry({job,children}:{job:VisualJob;children?:React.ReactNode}){
  const [open,setOpen]=useState(false);
  return <details className="vw-history-entry" onToggle={e=>setOpen(e.currentTarget.open)}><summary>{kinds[job.kind]} · {videoTaskStatus(job)}{job.current===false?' · 历史版本':''}</summary>{open&&children}</details>;
@@ -56,7 +58,23 @@ export function ChapterEditor({row,isLast,isOnly,voiced,disabled,blockedReason,o
  </details>;
 }
 /** One paid job designs, checks and renders the chapter. */
-export function VisualAgentPanel({projectId,job,exported,now,updatedAt,disabled,blockedReason,onStart,onRefresh,onCancel,onAccept,onRevise}:{projectId:string;job?:VisualJob;exported?:VisualJob;now:number;updatedAt:number;disabled:boolean;blockedReason?:string;onStart:()=>void;onRefresh:()=>void;onCancel:()=>void;onAccept?:()=>void;onRevise?:(feedback:string)=>void}){
+/** A version drawn before the course changed theme: say so, and offer (or show) a free re-render in the current theme. */
+export function ThemeNotice({projectId,job,restyle,themes,courseTheme,now,updatedAt,disabled,blockedReason,onRestyle,onRefresh,onCancel}:{projectId:string;job:VisualJob;restyle?:VisualJob;
+ themes:ThemeSummary[];courseTheme:string;now:number;updatedAt:number;disabled:boolean;blockedReason?:string;onRestyle:()=>void;onRefresh:()=>void;onCancel:()=>void}){
+ const fallback=themes.find(t=>t.default)?.id??courseTheme;
+ const rendered=renderedTheme(job,fallback);
+ if(job.state!=='succeeded'||rendered===courseTheme)return null;
+ const [was,now_]=[themeName(themes,rendered),themeName(themes,courseTheme)];
+ const running=!!restyle&&['queued','running'].includes(restyle.state);
+ return <div className="vw-theme-note" aria-label="主题提示">
+  <p>这个版本按「{was}」主题渲染，课程现在是「{now_}」。确认不受影响，整课导出会按「{now_}」渲染。</p>
+  {restyle?.state==='succeeded'&&restyle.result?.video?<><p>按「{now_}」重渲染的预览：</p><VisualMedia projectId={projectId} job={restyle}/></>
+   :running?<VisualTaskProgress job={restyle!} now={now} updatedAt={updatedAt} disabled={disabled} onRefresh={onRefresh} onCancel={onCancel}/>
+   :<><div className="vw-toolbar"><button disabled={disabled||!!blockedReason} onClick={onRestyle}><RefreshCw size={14}/>按「{now_}」重渲染预览（免费）</button></div>
+    {restyle?.state==='failed'&&<p role="alert">{restyle.error||'重渲染失败，未自动重试。'}</p>}</>}
+ </div>;
+}
+export function VisualAgentPanel({projectId,job,exported,now,updatedAt,disabled,blockedReason,onStart,onRefresh,onCancel,onAccept,onRevise,children}:{projectId:string;job?:VisualJob;exported?:VisualJob;now:number;updatedAt:number;disabled:boolean;blockedReason?:string;onStart:()=>void;onRefresh:()=>void;onCancel:()=>void;onAccept?:()=>void;onRevise?:(feedback:string)=>void;children?:React.ReactNode}){
  const running=!!job&&['queued','running'].includes(job.state);
  const [feedback,setFeedback]=useState('');
  return <div aria-label="Agent 视频" className="vw-current-video"><h3>Agent 视频</h3>
@@ -66,6 +84,7 @@ export function VisualAgentPanel({projectId,job,exported,now,updatedAt,disabled,
   {job&&job.result?.accepted===true&&<p>已确认此版本 · 可用于整课导出</p>}
   {job&&onAccept&&canAcceptAgent(job)&&!job.result?.accepted&&<div className="vw-toolbar"><button disabled={disabled} onClick={onAccept}><Check size={14}/>看完后确认此版本</button></div>}
   {job&&job.state==='succeeded'&&<VisualMedia projectId={projectId} job={job} diagnostics/>}
+  {children}
   <p>整课导出将使用：{!exported?'暂无已确认的版本':exported.id===job?.id?'上方这个版本':`更早确认的版本${exported.created_at?`（${new Date(exported.created_at).toLocaleString('zh-CN',{hour12:false})}）`:''}`}</p>
   {job&&job.state!=='succeeded'&&<VisualTaskProgress job={job} now={now} updatedAt={updatedAt} disabled={disabled} onRefresh={onRefresh} onCancel={onCancel}/>}
   {job?.state==='failed'&&typeof job.result?.requests_dispatched==='number'&&<p>{job.result.requests_dispatched?`本次已消耗 ${job.result.requests_dispatched} 轮模型调用。`:'本次没有产生模型消耗。'}</p>}
@@ -81,6 +100,8 @@ export default function VisualWorkbench({routeProjectId}:{routeProjectId:string}
   const [project,setProject]=useState<Project|null>(null);
   const [jobs,setJobs]=useState<VisualJob[]>([]);
   const [voiceJobs,setVoiceJobs]=useState<Job[]>([]);
+  const [themes,setThemes]=useState<ThemeSummary[]>([]);
+  useEffect(()=>{let live=true;request<unknown>('/api/themes').then(v=>{if(live)setThemes(parseThemes(v));}).catch(()=>{});return()=>{live=false;};},[]);
   const [selected,setSelected]=useState('');
   const [busy,setBusy]=useState(false);
   const [error,setError]=useState('');
@@ -160,6 +181,8 @@ export default function VisualWorkbench({routeProjectId}:{routeProjectId:string}
       <div className="vw-layout"><aside aria-label="章节列表"><h2>口播章节 · {project.scenes.length}</h2>
         {!project.scenes.length&&<p>尚未整理章节</p>}
         {project.scenes.map((s,i)=><button key={s.id} aria-pressed={s.id===row?.id} disabled={busy||dirty} onClick={()=>setSelected(s.id)}><span>{i+1}. {s.scene.narration.text.slice(0,36)}</span><small data-status={statuses[i].key}>{statuses[i].label}</small></button>)}
+        <ThemeSettings key={project.id+':'+(project.theme_id??'')} project={project} themes={themes} disabled={disabled||active} act={act}
+          onSave={async theme_id=>{setProject(await request<Project>(base+'/theme',{expected_revision:project.revision,theme_id},'PATCH'));}}/>
         <VoiceSettings key={project.id} project={project} dirty={dirty} busy={busy} formEditing={dirty} onDirty={setDirty} act={act} onSave={async speaker=>{setProject(await request<Project>(base+'/voice',{expected_revision:project.revision,speaker},'PATCH'));setDirty(false);}}/>
       </aside><div className="vw-content">
         {activeJob&&activeJob.id!==agentJob?.id&&<div><h2>当前项目有任务正在执行</h2><VisualTaskProgress job={activeJob} now={now} updatedAt={updatedAt} disabled={busy} onRefresh={()=>void act(refresh)} onCancel={()=>cancelVisual(activeJob)}/>{activeJob.scene_id&&<button onClick={()=>setSelected(activeJob.scene_id!)}>查看执行中的章节</button>}</div>}
@@ -188,13 +211,21 @@ export default function VisualWorkbench({routeProjectId}:{routeProjectId:string}
             onRevise={text=>{if(agentJob)void act(()=>confirmVisualAction(visualAgentReviseAction(row.id,project.revision,agentJob.id,text),confirm,submit));}}
             onRefresh={()=>void act(refresh)} onCancel={()=>{if(agentJob)cancelVisual(agentJob);}}
             onAccept={()=>void act(async()=>{const job=agentJob!;
-              if(await confirm({title:'确认 Agent 视频',message:'确认已播放并检查画面、口播和字幕同步？确认后整课导出将使用此版本；口播或配音变化后确认失效。',detail:'SHA-256: '+job.result!.sha256,confirmText:'确认此版本'}))await submit('/'+job.id+'/accept',{confirmed:true,sha256:job.result!.sha256});})}/>
+              if(await confirm({title:'确认 Agent 视频',message:'确认已播放并检查画面、口播和字幕同步？确认后整课导出将使用此版本；口播或配音变化后确认失效。',detail:'SHA-256: '+job.result!.sha256,confirmText:'确认此版本'}))await submit('/'+job.id+'/accept',{confirmed:true,sha256:job.result!.sha256});})}>
+            {agentJob&&project.theme_id&&themes.length>0&&<ThemeNotice projectId={project.id} job={agentJob} restyle={restyleOf(sceneJobs,agentJob.id)} themes={themes} courseTheme={project.theme_id}
+              now={now} updatedAt={updatedAt} disabled={disabled} blockedReason={active?'项目内有任务进行中，结束后再重渲染。':undefined}
+              onRefresh={()=>void act(refresh)} onCancel={()=>{const r=restyleOf(sceneJobs,agentJob.id);if(r)cancelVisual(r);}}
+              onRestyle={()=>void act(async()=>{
+                if(await confirm({title:`按「${themeName(themes,project.theme_id)}」重渲染本章预览`,message:'用这个版本的画面代码、配音和字幕在本机重新渲染，不调用模型、不计费，也不改变确认状态。',confirmText:'确认免费重渲染',variant:'info'}))
+                  await submit('/'+agentJob.id+'/restyle',{expected_revision:project.revision});})}/>}
+          </VisualAgentPanel>
           </div>
         </section>}
         {!!sceneJobs.length&&<details className="vw-history"><summary>本章历史版本 · {sceneJobs.length} 条记录</summary>{sceneJobs.map(job=><VisualHistoryEntry key={job.id} job={job}><section className="vw-job" aria-label={kinds[job.kind]}><div className="vw-toolbar">
           {['queued','running'].includes(job.state)&&<button disabled={busy} onClick={()=>void act(async()=>{if(await confirm({title:'取消任务',message:'确认请求取消？已发出的模型调用仍可能计费。'}))await submit('/'+job.id+'/cancel',{});})}><X size={14}/>取消</button>}</div>
           <VisualJobStatus job={job}/>
-          {job.kind==='agent'&&job.state==='succeeded'&&<><p>{videoTaskStatus(job)} · {job.result?.agent?.turns} 轮</p><VisualMedia projectId={project.id} job={job} diagnostics/></>}
+          {job.kind==='agent'&&job.state==='succeeded'&&<><p>{videoTaskStatus(job)} · {job.result?.agent?.turns} 轮{themes.length>0?` · ${themeName(themes,renderedTheme(job,themes.find(t=>t.default)!.id))}主题`:''}</p><VisualMedia projectId={project.id} job={job} diagnostics/></>}
+          {job.kind==='restyle'&&job.state==='succeeded'&&<><p>{videoTaskStatus(job)}{job.theme_id&&themes.length>0?` · ${themeName(themes,job.theme_id)}主题`:''}</p><VisualMedia projectId={project.id} job={job}/></>}
         </section></VisualHistoryEntry>)}</details>}
         <details className="vw-history"><summary>整课导出记录</summary>{jobs.filter(j=>j.kind==='export').map(j=><VisualHistoryEntry key={j.id} job={j}><VisualJobStatus job={j}/>{j.state==='succeeded'&&<VisualMedia projectId={project.id} job={j}/>}</VisualHistoryEntry>)}</details>
       </div></div>

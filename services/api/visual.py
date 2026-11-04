@@ -88,6 +88,11 @@ def export(project_id:str,body:Export,request:Request):
     return request.app.state.visual.export(project_id,body.expected_revision,body.confirmed)
 
 
+@router.post('/{visual_id}/restyle',status_code=202)
+def restyle(project_id:str,visual_id:str,body:Revision,request:Request):
+    return request.app.state.visual.restyle(project_id,visual_id,body.expected_revision)
+
+
 @router.post('/{visual_id}/accept')
 def accept(project_id:str,visual_id:str,body:Approval,request:Request):
     return request.app.state.visual.accept(project_id,visual_id,body.confirmed,body.sha256)
@@ -104,7 +109,7 @@ def file(project_id:str,visual_id:str,name:str,request:Request):
     if not re.fullmatch(r'(?:source\.txt|video\.mp4|video\.srt|stills/frame-\d+\.png)',name):
         raise StoreError('not_found','Visual file not found')
     job=request.app.state.visual.get_raw(project_id,visual_id)
-    if job['kind'] not in ('agent','export'):raise StoreError('not_found','Visual file not found')
+    if job['kind'] not in ('agent','export','restyle'):raise StoreError('not_found','Visual file not found')
     if job['state']!='succeeded':raise StoreError('not_ready','Visual file is not published')
     checksum=(job.get('result') or {}).get('_files',{}).get(name)
     if not isinstance(checksum,str):raise StoreError('not_found','Visual file not found')

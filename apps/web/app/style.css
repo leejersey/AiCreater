@@ -2386,3 +2386,19 @@ li > button {
 aside[aria-label="章节列表"] small[data-status="confirmed"] { color:#3ecf8e; }
 aside[aria-label="章节列表"] small[data-status="review"] { color:#f2bd64; }
 aside[aria-label="章节列表"] small[data-status="running"] { color:#4dd2ff; }
+
+/* Course themes: picker on the new-course page and in the workbench sidebar */
+.theme-picker { display:grid; grid-template-columns:repeat(auto-fill,minmax(150px,1fr)); gap:10px; margin-top:6px; }
+.theme-card { display:flex; flex-direction:column; align-items:stretch; gap:4px; padding:8px; text-align:left; background:rgba(255,255,255,0.03);
+  border:1px solid var(--line); border-radius:var(--radius-md); cursor:pointer; }
+.theme-card:hover { background:rgba(255,255,255,0.06); border-color:var(--line-strong); transform:none; }
+.theme-card.selected { background:rgba(16,185,129,0.1); border-color:var(--accent); box-shadow:0 0 14px rgba(16,185,129,0.2); }
+.theme-swatch { display:block; width:100%; aspect-ratio:16/9; border-radius:4px; border:1px solid var(--line); }
+.theme-card-title { font-size:13px; font-weight:600; color:#ffffff; display:flex; align-items:center; gap:6px; }
+.theme-card-title em { font-style:normal; font-size:10.5px; font-weight:500; padding:1px 6px; border-radius:999px; background:rgba(16,185,129,0.18); color:var(--accent); }
+.theme-card-title em.muted { background:rgba(255,255,255,0.08); color:var(--text-secondary); }
+.theme-card-desc { font-size:11.5px; color:var(--text-secondary); line-height:1.4; }
+.theme-card-fit { font-size:11px; color:var(--text-secondary); opacity:0.8; }
+aside .theme-picker { grid-template-columns:1fr 1fr; }
+.vw-theme-note { margin:12px 0; padding:10px 12px; border:1px dashed var(--line-strong); border-radius:var(--radius-md); }
+.vw-theme-note > p:first-child { margin-top:0; }

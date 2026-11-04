@@ -14,7 +14,7 @@ from services.visual.contract import measured_input, partition_narration
 
 # Older job kinds (template-flow generate/repair/preview/transfer…) may remain in the table; they are never
 # listed, claimed or exported.
-KINDS = ('agent', 'export')
+KINDS = ('agent', 'export', 'restyle')
 RESULT_FIELDS = frozenset({'sha256', 'requests_dispatched', 'frames', 'video', 'srt', 'durationInFrames',
     'status', 'reason', 'turns', 'usage', 'model', 'finish_by'})
 FILE_NAME = re.compile(r'(?:source\.txt|video\.mp4|video\.srt|stills/frame-\d+\.png)')
@@ -69,6 +69,7 @@ class VisualJobs:
         # Jobs from before themes rendered in the default theme.
         summary['theme_id'] = (data.get('theme') or {}).get('id', themes.DEFAULT_THEME)
         if row['kind'] == 'agent': summary.update(model=data.get('model'), max_turns=data.get('max_turns'))
+        if row['kind'] == 'restyle': summary['agent_id'] = data.get('agent_id')
         if row['kind'] == 'agent' and isinstance(data.get('revision'), dict):
             summary.update(revision_of=data['revision'].get('job_id'), feedback=data['revision'].get('feedback'))
         created = row.get('created_at')
@@ -261,6 +262,23 @@ class VisualJobs:
             return self._submit(conn, project, None, 'export', {'chapters': chapters, 'project_revision': expected_revision,
                                 'theme': themes.snapshot(project['theme_id'])}, expected_revision)
 
+    def restyle(self, project_id, job_id, expected_revision):
+        """Re-renders a passed Agent version of a chapter in the course's current theme: its own source, audio and captions,
+        no model call. Its confirmation is unaffected; this only refreshes the preview."""
+        revision(expected_revision)
+        with self.store.connection() as conn:
+            project = self.store._read(conn, project_id, lock=True)
+            if project['revision'] != expected_revision: raise StoreError('conflict', 'Project revision changed')
+            agent = self._read(conn, project['id'], job_id)
+            if not self._acceptable(agent) or not self._current(conn, project, agent):
+                raise StoreError('conflict', '只能为本章当前有效、已通过检查的 Agent 版本重渲染')
+            if (agent['input'].get('theme') or {}).get('id', themes.DEFAULT_THEME) == project['theme_id']:
+                raise StoreError('validation', '这个版本已经是课程当前的主题')
+            data = {k: copy.deepcopy(agent['input'][k]) for k in ('scene', 'asset', 'fingerprint', 'brief', 'cues')}
+            data.update(agent_id=str(agent['id']), sha256=agent['result']['sha256'], theme=themes.snapshot(project['theme_id']))
+            scene = self.store._scene(project, agent['scene_id'])
+            return self._submit(conn, project, scene['id'], 'restyle', data, scene['revision'])
+
     def _snapshot_current(self, project, scene_id, data):
         row = self.store._scene(project, scene_id)
         measured = measured_input(project, row)
@@ -275,6 +293,11 @@ class VisualJobs:
                 return (data['project_revision'] == project['revision'] and
                         [c['scene_id'] for c in chapters] == [s['id'] for s in project['scenes']] and
                         all('agent_id' in c and self._snapshot_current(project, c['scene_id'], c) and self._agent_matches(conn, project, c) for c in chapters))
+            if row['kind'] == 'restyle':
+                # Current while its Agent version is, and the course is still in the theme it was rendered in.
+                agent = self._read(conn, project['id'], data['agent_id'])
+                return (data['theme']['id'] == project['theme_id'] and agent['kind'] == 'agent' and
+                        (agent.get('result') or {}).get('sha256') == data['sha256'] and self._snapshot_current(project, row['scene_id'], data))
             return row['kind'] == 'agent' and self._snapshot_current(project, row['scene_id'], data)
         except (StoreError, KeyError, TypeError, ValueError):
             return False

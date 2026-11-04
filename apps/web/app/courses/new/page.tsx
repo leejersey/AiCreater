@@ -1,5 +1,5 @@
 'use client';
-import {useState} from 'react';
+import {useEffect,useState} from 'react';
 import {useRouter} from 'next/navigation';
 import Link from 'next/link';
 import {request,type Project} from '../../../lib/editor';
@@ -8,6 +8,8 @@ import {useLocalDraft,DraftNotice} from '../../LocalDraft';
 import {ArrowLeft,Sparkles,Spinner,AlertCircle} from '../../Icons';
 import {useConfirm} from '../../ConfirmContext';
 import {outlinePlaceholder, isTeachingStyle, type TeachingStyle} from '../../../lib/teaching-style';
+import {parseThemes,suggestedTheme,type ThemeSummary} from '../../../lib/themes';
+import {ThemePicker} from '../../ThemePicker';
 
 const initial = {title:'',source:'',audience:'',duration_hint:'',outline:'',teaching_style:'popular' as TeachingStyle,manuscript_format:'markdown' as 'markdown'|'plain'};
 
@@ -17,6 +19,12 @@ export default function NewCourse(){
   const [busy,setBusy]=useState(false),[generating,setGenerating]=useState(false),[error,setError]=useState('');
   const blocked=busy||generating||draft.blocked;
   const manuscriptFormat=draft.value.manuscript_format??'plain';
+  const [themes,setThemes]=useState<ThemeSummary[]>([]);
+  useEffect(()=>{let live=true;request<unknown>('/api/themes').then(v=>{if(live)setThemes(parseThemes(v));}).catch(()=>{});return()=>{live=false;};},[]);
+  const style=isTeachingStyle(draft.value.teaching_style)?draft.value.teaching_style:'popular';
+  // Until the person picks one, the theme follows the teaching style's suggestion.
+  const suggested=themes.length?suggestedTheme(themes,style):undefined;
+  const themeId=draft.value.theme_id&&themes.some(t=>t.id===draft.value.theme_id)?draft.value.theme_id:suggested;
 
   async function onGenerate(){
     if(!canGenerate(draft.value)||generating||draft.blocked)return;
@@ -72,7 +80,7 @@ export default function NewCourse(){
 
     <form id="new-course-form" onSubmit={async e=>{e.preventDefault();if(blocked)return;setBusy(true);setError('');
       try{const style=isTeachingStyle(draft.value.teaching_style)?draft.value.teaching_style:'popular';
-      const project=await request<Project>('/api/projects',{title:draft.value.title,source_text:draft.value.source,mode:'script',teaching_style:style,manuscript_format:manuscriptFormat});draft.clear();router.replace('/courses/'+project.id);}
+      const project=await request<Project>('/api/projects',{title:draft.value.title,source_text:draft.value.source,mode:'script',teaching_style:style,manuscript_format:manuscriptFormat,...(themeId?{theme_id:themeId}:{})});draft.clear();router.replace('/courses/'+project.id);}
       catch(e){setError(e instanceof Error?e.message:'创建失败，输入已保留。请先检查课程列表，不要重复提交。');setBusy(false);}
     }}>
       <fieldset disabled={blocked} style={{border:0,padding:0,margin:0,minWidth:0}}>
@@ -100,6 +108,12 @@ export default function NewCourse(){
                 </button>
               </div>
             </div>
+
+            {themes.length>0&&<div>
+              <label style={{marginBottom:'6px'}}>画面主题</label>
+              <ThemePicker themes={themes} value={themeId??''} suggested={suggested} onChange={id=>draft.change({theme_id:id})}/>
+              <p className="hint">整门课使用同一个主题，决定背景、配色、字体与字幕条。之后可在工作台更换，已确认的章节不用重新生成。</p>
+            </div>}
 
             <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:'10px'}}>
               <label>目标受众（可选）

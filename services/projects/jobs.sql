@@ -21,7 +21,7 @@ CREATE TABLE IF NOT EXISTS jobs (
 );
 ALTER TABLE jobs ALTER COLUMN scene_id DROP NOT NULL;
 DO $$ BEGIN
-    IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname IN ('jobs_kind_v3_check','jobs_kind_v4_check','jobs_kind_v5_check','jobs_kind_v6_check') AND conrelid='jobs'::regclass) THEN
+    IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname IN ('jobs_kind_v3_check','jobs_kind_v4_check','jobs_kind_v5_check','jobs_kind_v6_check','jobs_kind_v7_check') AND conrelid='jobs'::regclass) THEN
         ALTER TABLE jobs DROP CONSTRAINT IF EXISTS jobs_kind_check;
         ALTER TABLE jobs DROP CONSTRAINT IF EXISTS jobs_kind_v2_check;
         ALTER TABLE jobs ADD CONSTRAINT jobs_kind_v3_check CHECK (kind IN ('generate','regenerate','voice'));
@@ -32,7 +32,7 @@ DO $$ BEGIN
     END IF;
 END $$;
 DO $$ BEGIN
-    IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname IN ('jobs_kind_v4_check','jobs_kind_v5_check','jobs_kind_v6_check') AND conrelid='jobs'::regclass) THEN
+    IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname IN ('jobs_kind_v4_check','jobs_kind_v5_check','jobs_kind_v6_check','jobs_kind_v7_check') AND conrelid='jobs'::regclass) THEN
         ALTER TABLE jobs DROP CONSTRAINT IF EXISTS jobs_kind_v3_check;
         ALTER TABLE jobs ADD CONSTRAINT jobs_kind_v4_check CHECK (kind IN ('generate','regenerate','voice','render'));
         ALTER TABLE jobs DROP CONSTRAINT IF EXISTS jobs_scene_kind_check;
@@ -42,7 +42,7 @@ DO $$ BEGIN
     END IF;
 END $$;
 DO $$ BEGIN
-    IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname IN ('jobs_kind_v5_check','jobs_kind_v6_check') AND conrelid='jobs'::regclass) THEN
+    IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname IN ('jobs_kind_v5_check','jobs_kind_v6_check','jobs_kind_v7_check') AND conrelid='jobs'::regclass) THEN
         ALTER TABLE jobs DROP CONSTRAINT IF EXISTS jobs_kind_v4_check;
         ALTER TABLE jobs ADD CONSTRAINT jobs_kind_v5_check CHECK (kind IN ('generate','regenerate','voice','timing','render'));
         ALTER TABLE jobs DROP CONSTRAINT IF EXISTS jobs_stage_check;
@@ -64,12 +64,13 @@ ALTER TABLE job_attempts ADD COLUMN IF NOT EXISTS usage jsonb;
 CREATE INDEX IF NOT EXISTS jobs_claim_idx ON jobs(state,available_at,created_at);
 ALTER TABLE jobs ADD COLUMN IF NOT EXISTS result jsonb;
 CREATE UNIQUE INDEX IF NOT EXISTS job_attempt_pair_idx ON job_attempts(job_id,id);
--- Each older block also skips once v6 exists: v6 drops their constraints, and re-adding them would fail on Agent rows.
+-- Each older block also skips once a later version exists: later versions drop their constraints, and re-running them
+-- would fail on newer rows (or, for v6, delete Agent jobs).
 -- v6: one table for every job. Voice and timing as before; the Scene Agent and course export move in from
 -- visual_jobs (same ids, so their output directories stay valid). Template-flow jobs, candidates and frozen
 -- versions are retired.
 DO $$ BEGIN
-    IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname='jobs_kind_v6_check' AND conrelid='jobs'::regclass) THEN
+    IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname IN ('jobs_kind_v6_check','jobs_kind_v7_check') AND conrelid='jobs'::regclass) THEN
         DROP TABLE IF EXISTS scene_candidates;
         DROP TABLE IF EXISTS project_versions;
         DELETE FROM job_attempts WHERE job_id IN (SELECT id FROM jobs WHERE kind NOT IN ('voice','timing'));
@@ -98,6 +99,13 @@ DO $$ BEGIN
             FROM visual_jobs v WHERE v.kind IN ('agent','export');
             DROP TABLE visual_jobs;
         END IF;
+    END IF;
+END $$;
+-- v7: restyle, an Agent version re-rendered in the course's current theme (render lane, local only, no model call).
+DO $$ BEGIN
+    IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname='jobs_kind_v7_check' AND conrelid='jobs'::regclass) THEN
+        ALTER TABLE jobs DROP CONSTRAINT IF EXISTS jobs_kind_v6_check;
+        ALTER TABLE jobs ADD CONSTRAINT jobs_kind_v7_check CHECK (kind IN ('voice','timing','agent','export','restyle'));
     END IF;
 END $$;
 CREATE INDEX IF NOT EXISTS jobs_project_idx ON jobs(project_id,created_at DESC,id DESC);

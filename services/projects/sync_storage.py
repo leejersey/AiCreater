@@ -22,7 +22,7 @@ def files(conn):
         for asset in (row['config'] or {}).get('assets', []):
             yield PUBLIC / asset['storage_key'], asset['checksum'], (10 if asset['type'] == 'image' else 50) * 1024**2
     from services.visual.worker import file_limit, job_directory
-    for row in conn.execute("SELECT id, result FROM aicreater.jobs WHERE kind IN ('agent','export') AND state='succeeded'").fetchall():
+    for row in conn.execute("SELECT id, result FROM aicreater.jobs WHERE kind IN ('agent','export','restyle') AND state='succeeded'").fetchall():
         for name, checksum in ((row['result'] or {}).get('_files') or {}).items():
             yield job_directory(str(row['id'])) / name, checksum, file_limit(name)
 

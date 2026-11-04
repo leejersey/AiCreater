@@ -1,7 +1,9 @@
 import {canRetime,type SceneRow,type Job} from './editor';
 
 export type VisualJob = {
-  id:string; project_id:string; scene_id:string|null; kind:'agent'|'export';
+  id:string; project_id:string; scene_id:string|null; kind:'agent'|'export'|'restyle';
+  /** The theme the job rendered in; restyle_of is the Agent version a restyle re-rendered. */
+  theme_id?:string; restyle_of?:string;
   agent?:{model:string;max_turns:number;revision?:{of:string;feedback:string}};
   state:'queued'|'running'|'succeeded'|'failed'|'cancelled';
   stage?:string|null; error?:string|null;current?:boolean;
@@ -21,7 +23,7 @@ export function parseVisualJobs(value:unknown,projectId:string):VisualJob[] {
   const ids=new Set<string>();
   return value.jobs.map((v:unknown)=>{
     if(!object(v)||!identifier(v.id)||ids.has(v.id)||v.project_id!==projectId||
-      (v.scene_id!=null&&!identifier(v.scene_id))||(v.kind!=='agent'&&v.kind!=='export')||
+      (v.scene_id!=null&&!identifier(v.scene_id))||(v.kind!=='agent'&&v.kind!=='export'&&v.kind!=='restyle')||
       typeof v.state!=='string'||!['queued','running','succeeded','failed','cancelled'].includes(v.state)||
       (v.stage!=null&&(typeof v.stage!=='string'||v.stage.length>120))||
       (v.current!==undefined&&typeof v.current!=='boolean')||
@@ -30,6 +32,8 @@ export function parseVisualJobs(value:unknown,projectId:string):VisualJob[] {
     ids.add(v.id);
     if(v.input_summary!==undefined&&!object(v.input_summary))throw invalid();
     const summary=object(v.input_summary)?v.input_summary:{};
+    if(summary.theme_id!==undefined&&(typeof summary.theme_id!=='string'||!/^[a-z][a-z0-9-]{1,39}$/.test(summary.theme_id)))throw invalid();
+    if(v.kind==='restyle'&&!identifier(summary.agent_id))throw invalid();
     let agent:VisualJob['agent'];
     if(v.kind==='agent'){
       // Any configured model name; a strict value here would hide the whole job list when the default changes.
@@ -57,7 +61,8 @@ export function parseVisualJobs(value:unknown,projectId:string):VisualJob[] {
         ...(r.video?{video:'video.mp4'}:{}),...(r.srt?{srt:'video.srt'}:{}),
         ...(r.accepted!==undefined?{accepted:r.accepted as boolean}:{}),...(r.requests_dispatched!==undefined?{requests_dispatched:r.requests_dispatched as number|null}:{}),...(agentResult?{agent:agentResult}:{})};
     }else if(v.kind==='agent'&&v.state==='succeeded')throw invalid();
-    return {id:v.id,project_id:projectId,scene_id:(v.scene_id??null) as string|null,kind:v.kind,state:v.state as VisualJob['state'],stage:v.stage as string|null|undefined,error:v.error as string|null|undefined,...(typeof v.created_at==='string'?{created_at:v.created_at}:{}),...(agent?{agent}:{}),...(v.current!==undefined?{current:v.current as boolean}:{}),result};
+    return {id:v.id,project_id:projectId,scene_id:(v.scene_id??null) as string|null,kind:v.kind,state:v.state as VisualJob['state'],stage:v.stage as string|null|undefined,error:v.error as string|null|undefined,...(typeof v.created_at==='string'?{created_at:v.created_at}:{}),...(agent?{agent}:{}),...(v.current!==undefined?{current:v.current as boolean}:{}),
+      ...(typeof summary.theme_id==='string'?{theme_id:summary.theme_id}:{}),...(v.kind==='restyle'?{restyle_of:summary.agent_id as string}:{}),result};
   });
 }
 export function sceneAudioActions(row:SceneRow,jobs:Job[]) {
@@ -90,10 +95,10 @@ export function videoProgress(job:VisualJob,now=0){
  const active=job.state==='queued'||job.state==='running';
  const failureText=job.error||'任务执行失败。';
  const failureDetail=/未自动重试/.test(failureText)?failureText:failureText+' 未自动重试。';
- const step=job.state==='succeeded'&&job.result?.video?4:job.state==='running'?(job.kind==='export'||job.stage?.includes('渲染')?3:2):1;
- const label=job.state==='queued'?'等待执行':job.state==='running'?(job.kind==='export'?'渲染整课视频':'Agent 正在生成画面'):videoTaskStatus(job);
+ const step=job.state==='succeeded'&&job.result?.video?4:job.state==='running'?(job.kind!=='agent'||job.stage?.includes('渲染')?3:2):1;
+ const label=job.state==='queued'?'等待执行':job.state==='running'?(job.kind==='export'?'渲染整课视频':job.kind==='restyle'?'按新主题渲染本章':'Agent 正在生成画面'):videoTaskStatus(job);
  const agentStage=job.kind==='agent'&&job.state==='running'&&job.stage&&job.stage!=='agent'?job.stage:undefined;
- const detail=agentStage?agentStage+'。':job.state==='queued'?'任务已提交，等待执行器领取。':job.state==='running'?(job.kind==='export'?'正在本机渲染整课 MP4，视频文件尚未就绪。':'Agent 正在编写、检查和修正画面，通过后渲染本章视频。'):job.state==='failed'?failureDetail:job.state==='cancelled'?'任务已取消，不会自动重新提交。':job.result?.video?'可播放视频已就绪。':'没有生成可播放视频，请检查失败详情。';
+ const detail=agentStage?agentStage+'。':job.state==='queued'?'任务已提交，等待执行器领取。':job.state==='running'?(job.kind==='export'?'正在本机渲染整课 MP4，视频文件尚未就绪。':job.kind==='restyle'?'正在本机按课程当前主题重新渲染，不调用模型。':'Agent 正在编写、检查和修正画面，通过后渲染本章视频。'):job.state==='failed'?failureDetail:job.state==='cancelled'?'任务已取消，不会自动重新提交。':job.result?.video?'可播放视频已就绪。':'没有生成可播放视频，请检查失败详情。';
  const seconds=active&&job.created_at&&now>0?Math.max(0,Math.floor((now-Date.parse(job.created_at))/1000)):undefined;
  const elapsed=seconds===undefined?undefined:`已等待 ${seconds>=60?`${Math.floor(seconds/60)}分`:''}${seconds%60}秒`;
  return {active,step,label,detail,elapsed};
@@ -104,6 +109,7 @@ export function videoTaskStatus(job:VisualJob):string{
  if(job.state==='failed')return '视频生成失败';
  if(job.state==='cancelled')return '视频任务已取消';
  if(job.kind==='export')return job.result?.video?'整课视频已导出':'整课视频未生成';
+ if(job.kind==='restyle')return job.result?.video?'新主题预览已渲染':'新主题预览未生成';
  return job.result?.video?'Agent 视频已生成':'Agent 未生成视频';
 }
 export function reviewFrames(frames:string[]):string[] {
@@ -123,6 +129,12 @@ export function visualError(error:unknown):string {
 export function latestAgentJob(jobs:VisualJob[]):VisualJob|undefined{
  return jobs.find(j=>j.kind==='agent'&&j.current!==false);
 }
+/** The newest still-current re-render of an Agent version in the course's theme, if any. */
+export function restyleOf(jobs:VisualJob[],agentId:string|undefined):VisualJob|undefined{
+ return agentId?jobs.find(j=>j.kind==='restyle'&&j.restyle_of===agentId&&j.current!==false):undefined;
+}
+/** Jobs from before themes rendered in the default theme. */
+export function renderedTheme(job:VisualJob,defaultTheme:string):string{return job.theme_id??defaultTheme;}
 export function visualAgentBody(sceneId:string,revision:number,revise?:{job:string;feedback:string}){
  if(!identifier(sceneId)||!Number.isInteger(revision)||revision<1)throw invalid();
  if(revise&&(!identifier(revise.job)||!revise.feedback.trim()||revise.feedback.length>MAX_FEEDBACK))throw invalid();

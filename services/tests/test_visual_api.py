@@ -182,6 +182,52 @@ class VisualApiTests(unittest.TestCase):
         self.assertEqual((public['result']['status'],public['result']['turns'],public['result']['finish_by']),('passed',6,'model'))
         self.assertNotIn('_files',public['result'])
 
+    def test_a_new_theme_restyles_a_passed_version_without_a_model_call(self):
+        from services.visual import worker
+        import hashlib
+        source='export default function Scene(){return null;}'
+        sha=hashlib.sha256(source.encode()).hexdigest()
+        def write(output):
+            (output/'source.txt').write_text(source);(output/'video.mp4').write_bytes(b'mp4');(output/'video.srt').write_text('1\n')
+            (output/'stills').mkdir();(output/'stills'/'frame-30.png').write_bytes(b'png')
+            (output/'result.json').write_text(json.dumps({'status':'passed','model':'deepseek-flash-thinking','turns':4,'requests_dispatched':4,
+                'usage':{'inputTokens':1,'outputTokens':1,'cachedInputTokens':0},'sha256':sha,'finish_by':'model',
+                'frames':['stills/frame-30.png'],'video':'video.mp4','srt':'video.srt'}))
+        def check(job):
+            project=self.client.get('/api/projects/'+self.pid).json()
+            url=self.path+'/'+job['id']+'/restyle'
+            self.assertEqual(self.client.post(url,json={'expected_revision':project['revision']}).status_code,422)  # already in this theme
+            project=self.client.patch('/api/projects/'+self.pid+'/theme',json={'expected_revision':project['revision'],'theme_id':'paper-press'}).json()
+            self.assertEqual(self.client.post(url,json={'expected_revision':project['revision']-1}).status_code,409)
+            restyle=self.client.post(url,json={'expected_revision':project['revision']})
+            self.assertEqual(restyle.status_code,202,restyle.text);restyle=restyle.json()
+            self.assertEqual((restyle['kind'],restyle['input_summary']['agent_id'],restyle['input_summary']['theme_id']),('restyle',job['id'],'paper-press'))
+            self.assertEqual(self.client.post(url,json={'expected_revision':project['revision']}).json()['id'],restyle['id'])  # deduplicated
+            self.assertIsNone(worker.run_once(self.client.app.state.visual,lane='workflow',launcher=lambda *a,**k:self.fail('wrong lane')))
+            seen={}
+            def launcher(command,**options):
+                seen.update(command=command,env=options['env'],input=json.loads(Path(command[-2]).read_text()))
+                output=Path(command[-1]);output.mkdir()
+                (output/'video.mp4').write_bytes(b'paper');(output/'video.srt').write_text('1\n')
+                (output/'result.json').write_text(json.dumps({'video':'video.mp4','srt':'video.srt','durationInFrames':60}))
+                process=Mock();process.poll.return_value=0;process.returncode=0;return process
+            done=worker.run_once(self.client.app.state.visual,lane='render',launcher=launcher)
+            self.assertEqual(done['state'],'succeeded',done.get('error'))
+            self.assertTrue(seen['command'][1].endswith('scene-agent-course-job.ts'))
+            self.assertNotIn('DEEPSEEK_API_KEY',seen['env'])
+            self.assertEqual(seen['input']['theme']['id'],'paper-press')
+            self.assertEqual(Path(seen['input']['chapters'][0]['source_file']).read_text(),source)
+            listed=lambda job_id:next(j for j in self.client.get(self.path).json()['jobs'] if j['id']==job_id)
+            self.assertTrue(listed(done['id'])['current'])
+            self.assertEqual(self.client.get(self.path+'/'+done['id']+'/files/video.mp4').content,b'paper')
+            # Another theme change makes the restyled preview historical; the Agent version itself stays current.
+            project=self.client.get('/api/projects/'+self.pid).json()
+            self.client.patch('/api/projects/'+self.pid+'/theme',json={'expected_revision':project['revision'],'theme_id':'chalk-garden'})
+            self.assertFalse(listed(done['id'])['current'])
+            self.assertTrue(listed(job['id'])['current'])
+        job,done,_,_=self.run_agent_job(write,check)
+        self.assertEqual(done['state'],'succeeded',done.get('error'))
+
     def test_accepted_agent_video_exports_through_the_agent_course_renderer(self):
         from services.visual import worker
         source='export default function Scene(){return null;}'
