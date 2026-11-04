@@ -6,7 +6,7 @@ import uuid
 
 from psycopg.types.json import Jsonb
 
-from services import chapters
+from services import chapters, themes
 from services.projects import leases
 from services.projects.store import StoreError, identifier, revision, unicode_valid
 from services.visual.contract import measured_input, partition_narration
@@ -66,6 +66,8 @@ class VisualJobs:
         data = row.get('input') or {}
         summary = {k: data[k] for k in ('fingerprint',) if k in data}
         if row['kind'] == 'export': summary['chapter_count'] = len(data.get('chapters', []))
+        # Jobs from before themes rendered in the default theme.
+        summary['theme_id'] = (data.get('theme') or {}).get('id', themes.DEFAULT_THEME)
         if row['kind'] == 'agent': summary.update(model=data.get('model'), max_turns=data.get('max_turns'))
         if row['kind'] == 'agent' and isinstance(data.get('revision'), dict):
             summary.update(revision_of=data['revision'].get('job_id'), feedback=data['revision'].get('feedback'))
@@ -207,7 +209,7 @@ class VisualJobs:
             scene = self.store._scene(project, scene_id)
             if project['revision'] != expected_revision: raise StoreError('conflict', 'Project revision changed')
             data = measured_input(project, scene)
-            data.update(model=AGENT_MODEL, max_turns=max_turns)
+            data.update(model=AGENT_MODEL, max_turns=max_turns, theme=themes.snapshot(project['theme_id']))
             if revise is not None:
                 base = self._read(conn, project['id'], revise)
                 result = base.get('result') or {}
@@ -256,7 +258,8 @@ class VisualJobs:
                 if accepted is None: raise StoreError('not_ready', 'Every current chapter needs an accepted Agent video')
                 data = {k: copy.deepcopy(accepted['input'][k]) for k in ('scene', 'asset', 'fingerprint', 'brief', 'cues')}
                 chapters.append({**data, 'agent_id': str(accepted['id']), 'sha256': accepted['result']['sha256'], 'scene_id': scene['id']})
-            return self._submit(conn, project, None, 'export', {'chapters': chapters, 'project_revision': expected_revision}, expected_revision)
+            return self._submit(conn, project, None, 'export', {'chapters': chapters, 'project_revision': expected_revision,
+                                'theme': themes.snapshot(project['theme_id'])}, expected_revision)
 
     def _snapshot_current(self, project, scene_id, data):
         row = self.store._scene(project, scene_id)

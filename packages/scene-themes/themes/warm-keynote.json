@@ -1,0 +1,17 @@
+{
+  "schemaVersion": "scene-theme:1", "id": "warm-keynote", "version": 1,
+  "name": "Warm Keynote", "nameZh": "暖色发布会",
+  "descriptionZh": "奶油白底配青绿，大圆角卡片，现代产品发布会的轻松感。",
+  "mood": ["light", "friendly", "modern", "springy"], "bestFor": ["产品介绍", "轻松科普", "入门课程"],
+  "dark": false,
+  "colors": {
+    "background": "#fdfbf7", "surface": "#f6f0e4", "surface2": "#ece2cf",
+    "foreground": "#43302b", "muted": "#8a7969", "faint": "#b8a994", "rule": "#d9ccb0",
+    "accent": "#0f8f80", "accentSoft": "#0f8f801a", "secondary": "#c26a1a",
+    "positive": "#2e8b57", "negative": "#c2410c"
+  },
+  "fonts": {"display": "Noto Sans SC", "body": "Noto Sans SC", "mono": "JetBrains Mono"},
+  "shape": {"radius": 32, "ruleWidth": 1, "ruleDash": "none"},
+  "decoration": "none",
+  "caption": {"background": "#43302bf0", "foreground": "#fdfbf7"}
+}

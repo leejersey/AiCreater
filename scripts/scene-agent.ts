@@ -1,4 +1,4 @@
-// npm run scene-agent -- run <brief.json> [--model=<name>] --confirm-paid [--cues=cues.json] [--initial=Scene.tsx] [--out=dir] [--max-turns=n]
+// npm run scene-agent -- run <brief.json> [--model=<name>] --confirm-paid [--cues=cues.json] [--initial=Scene.tsx] [--out=dir] [--max-turns=n] [--theme=id]
 // Calls a paid model API. Without --confirm-paid it only prepares the workspace and prints the plan.
 import {existsSync} from 'node:fs';
 import {readFile} from 'node:fs/promises';
@@ -7,11 +7,12 @@ import {repositoryRoot} from '../packages/custom-scenes/src/files';
 import {runLoop} from '../packages/scene-agent/src/loop';
 import {createProvider,loadModels} from '../packages/scene-agent/src/provider/registry';
 import {RemotionStillRenderer} from '../packages/scene-agent/src/render/stills';
+import {builtinThemes,DEFAULT_THEME_ID} from '../packages/scene-themes/src/index';
 import {createWorkspace} from '../packages/scene-agent/src/workspace';
 
 // Thinking at low effort passed all eight RAG chapters; thinking off failed chapter 4 twice (eval/runs.md).
 export const DEFAULT_MODEL='deepseek-flash-thinking';
-const USAGE='Usage: npm run scene-agent -- run <brief.json> [--model=<name>, default '+DEFAULT_MODEL+'] [--confirm-paid] [--cues=cues.json] [--initial=Scene.tsx] [--out=dir] [--max-turns=n]';
+const USAGE='Usage: npm run scene-agent -- run <brief.json> [--model=<name>, default '+DEFAULT_MODEL+'] [--confirm-paid] [--cues=cues.json] [--initial=Scene.tsx] [--out=dir] [--max-turns=n] [--theme=id]';
 
 function parseArgs(argv:string[]){
  const [command,brief,...rest]=argv;
@@ -43,7 +44,9 @@ async function main(){
  const initialSource=typeof flags.initial==='string'?await readFile(flags.initial,'utf8'):undefined;
  const out=typeof flags.out==='string'?path.resolve(flags.out):path.join(repositoryRoot,'output/scene-agent',`${brief.id}-${model}-${new Date().toISOString().replace(/[:.]/g,'-')}`);
 
- console.log(`model ${model} (${entry.model}), budget ${budget.maxTurns} turns / ${budget.maxOutputTokensTotal} output tokens`);
+ const theme=builtinThemes().get(typeof flags.theme==='string'?flags.theme:DEFAULT_THEME_ID);
+ if(!theme)throw Error(`unknown theme ${flags.theme}; available: ${[...builtinThemes().keys()].join(', ')}`);
+ console.log(`model ${model} (${entry.model}), theme ${theme.id}, budget ${budget.maxTurns} turns / ${budget.maxOutputTokensTotal} output tokens`);
  if(flags['confirm-paid']!==true){
   console.log('Dry run: no model call. Re-run with --confirm-paid to call the provider API (this costs money).');
   return;
@@ -51,7 +54,7 @@ async function main(){
  const provider=createProvider(model,models); // fails fast on a missing key, before creating the workspace
  const workspace=await createWorkspace(out,{brief,cues,skillDir:path.join(repositoryRoot,'packages/scene-agent/skill'),initialSource});
  console.log(`workspace ${workspace.root}`);
- const renderer=new RemotionStillRenderer(workspace.brief);
+ const renderer=new RemotionStillRenderer(workspace.brief,theme);
  const controller=new AbortController();
  const stop=()=>controller.abort();
  process.once('SIGINT',stop);process.once('SIGTERM',stop);

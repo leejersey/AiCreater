@@ -21,7 +21,7 @@ class VisualStoreOfflineTests(unittest.TestCase):
         public = VisualJobs._public(row)
         self.assertNotIn('input', public)
         self.assertEqual(public['result'], {'status': 'passed', 'turns': 3, 'accepted': False})
-        self.assertEqual(public['input_summary'], {'model': 'm', 'max_turns': 25})
+        self.assertEqual(public['input_summary'], {'model': 'm', 'max_turns': 25, 'theme_id': 'blueprint'})
         self.assertFalse(public['accepted'])
 
     def test_turn_limit_is_checked_before_database_access(self):
@@ -72,9 +72,23 @@ class VisualStoreTests(unittest.TestCase):
             with self.assertRaisesRegex(StoreError, 'not_found'):
                 method(other['id'], job['id'])
         raw = self.jobs.get_raw(self.pid, job['id'])
-        self.assertEqual(set(raw['input']), {'brief', 'cues', 'scene', 'asset', 'fingerprint', 'model', 'max_turns'})
+        self.assertEqual(set(raw['input']), {'brief', 'cues', 'scene', 'asset', 'fingerprint', 'model', 'max_turns', 'theme'})
         self.assertNotIn('input', self.jobs.get(self.pid, job['id']))
         self.assertEqual(self.jobs.get(self.pid, job['id'])['input_summary']['max_turns'], 25)
+
+    def test_jobs_freeze_the_course_theme_and_a_new_theme_keeps_accepted_videos(self):
+        job = self.agent()
+        self.assertEqual(self.jobs.get_raw(self.pid, job['id'])['input']['theme']['id'], 'blueprint')
+        self.assertEqual(self.jobs.get(self.pid, job['id'])['input_summary']['theme_id'], 'blueprint')
+        project = self.store.set_theme(self.pid, 1, 'paper-press')
+        self.assertEqual((project['theme_id'], project['revision']), ('paper-press', 2))
+        self.assertEqual(self.store.set_theme(self.pid, 2, 'paper-press')['revision'], 2)  # no change, no new revision
+        # The Agent job's scene snapshot is unchanged, so it stays current; only exports depend on the revision.
+        self.assertTrue(self.jobs.get(self.pid, job['id'])['current'])
+        self.jobs.cancel(self.pid, job['id'])
+        self.assertEqual(self.jobs.get_raw(self.pid, self.agent(2)['id'])['input']['theme']['id'], 'paper-press')
+        with self.assertRaisesRegex(StoreError, 'validation'): self.store.set_theme(self.pid, 2, 'no-such-theme')
+        with self.assertRaisesRegex(StoreError, 'conflict'): self.store.set_theme(self.pid, 1, 'blueprint')
 
     def test_claim_is_fenced_and_never_retries(self):
         job = self.agent(); claim = self.jobs.claim('workflow')

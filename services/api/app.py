@@ -45,6 +45,7 @@ class CreateProject(Body):
     manuscript_format: Literal['plain', 'markdown'] = 'plain'
     mode: Literal['script'] = 'script'
     teaching_style: Literal['popular', 'technical'] = 'popular'
+    theme_id: str | None = Field(default=None, max_length=40)
 
 
 class Revision(Body):
@@ -62,6 +63,10 @@ class CostEstimate(Revision):
 
 class ProjectVoice(Revision):
     speaker: str = Field(min_length=1, max_length=200)
+
+
+class ProjectTheme(Revision):
+    theme_id: str = Field(min_length=1, max_length=40)
 
 
 class DeleteProject(Revision):
@@ -145,7 +150,7 @@ def create_app(store=None, *, authentication=True):
     @app.post('/api/projects', status_code=201)
     def create(body: CreateProject, request: Request):
         return request.app.state.store.create_project(body.title, body.source_text,
-            getattr(request.state, 'user', {}).get('id'), teaching_style=body.teaching_style,
+            getattr(request.state, 'user', {}).get('id'), teaching_style=body.teaching_style, theme_id=body.theme_id,
             **({'manuscript_format': 'markdown'} if body.manuscript_format == 'markdown' else {}))
 
     @app.get('/api/projects/{project_id}')
@@ -170,6 +175,15 @@ def create_app(store=None, *, authentication=True):
     @app.patch('/api/projects/{project_id}/voice')
     def project_voice(project_id: str, body: ProjectVoice, request: Request):
         return request.app.state.store.set_voice(project_id, body.expected_revision, body.speaker)
+
+    @app.patch('/api/projects/{project_id}/theme')
+    def project_theme(project_id: str, body: ProjectTheme, request: Request):
+        return request.app.state.store.set_theme(project_id, body.expected_revision, body.theme_id)
+
+    @app.get('/api/themes')
+    def theme_list():
+        from services import themes
+        return themes.summaries()
 
     @app.post('/api/projects/{project_id}/delete')
     def delete_project(project_id: str, body: DeleteProject, request: Request):

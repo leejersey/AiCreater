@@ -13,6 +13,7 @@ import {renderTimeouts} from '../../../custom-scenes/src/render-timeout';
 import {assertCaptionCueBinding,workbenchCaptionLines,type WorkbenchCaption} from '../../../custom-scenes/src/workbench-captions';
 import {workbenchSrt,type WorkbenchManifest,type WorkbenchScene} from '../../../custom-scenes/src/workbench';
 import {sourceSha256} from './stills';
+import {fontImports,hostTheme,jobTheme,type SceneTheme} from '../../../scene-themes/src/index';
 
 export type AgentVideoInput={source:string;brief:SceneBrief;cues:Cue[];scene:WorkbenchScene;audioFile:string};
 const AUDIO=/\.(mp3|wav|m4a|aac|ogg|flac)$/i;
@@ -46,10 +47,10 @@ export function courseManifest(inputs:AgentVideoInput[]):WorkbenchManifest{
 export const agentChapter=(input:AgentVideoInput)=>courseManifest([input]);
 
 /** Writes video.mp4 and video.srt for one chapter into `directory`. */
-export function renderAgentVideo(input:AgentVideoInput,directory:string){return renderCourseVideo([input],directory);}
+export function renderAgentVideo(input:AgentVideoInput,directory:string,theme:SceneTheme=jobTheme(undefined)){return renderCourseVideo([input],directory,theme);}
 
-/** Writes video.mp4 and video.srt for chapters played back to back into `directory`. */
-export async function renderCourseVideo(inputs:AgentVideoInput[],directory:string):Promise<{video:'video.mp4';srt:'video.srt';durationInFrames:number}>{
+/** Writes video.mp4 and video.srt for chapters played back to back into `directory`, in one theme. */
+export async function renderCourseVideo(inputs:AgentVideoInput[],directory:string,theme:SceneTheme=jobTheme(undefined)):Promise<{video:'video.mp4';srt:'video.srt';durationInFrames:number}>{
  for(const input of inputs){checkSource(input.source);await typecheckSource(input.source);}
  const manifest=courseManifest(inputs);
  const temp=await mkdtemp(path.join(repositoryRoot,'.scene-agent-render-'));
@@ -66,7 +67,7 @@ export async function renderCourseVideo(inputs:AgentVideoInput[],directory:strin
   const host=path.join(repositoryRoot,'packages/custom-scenes/src/workbench-video').split(path.sep).join('/');
   const names=inputs.map((_,i)=>`Scene${i}`);
   const entryPoint=path.join(temp,'index.tsx');
-  await writeFile(entryPoint,`import React from 'react';import {Composition,registerRoot} from 'remotion';import {WorkbenchVideo} from ${JSON.stringify(host)};${names.map(n=>`import ${n} from './${n}';`).join('')}const manifest=${JSON.stringify(manifest)};function Video(){return <WorkbenchVideo manifest={manifest} scenes={[${names.join(',')}]} fontText={${JSON.stringify(inputs.map(i=>i.source+i.brief.narration).join(''))}}/>}registerRoot(()=> <Composition id="AgentVideo" component={Video} width={1920} height={1080} fps={30} durationInFrames={${manifest.durationInFrames}}/>);`);
+  await writeFile(entryPoint,`import React from 'react';import {Composition,registerRoot} from 'remotion';${fontImports(theme)}import {WorkbenchVideo} from ${JSON.stringify(host)};${names.map(n=>`import ${n} from './${n}';`).join('')}const manifest=${JSON.stringify(manifest)};function Video(){return <WorkbenchVideo manifest={manifest} scenes={[${names.join(',')}]} fontText={${JSON.stringify(inputs.map(i=>i.source+i.brief.narration).join(''))}} theme={${JSON.stringify(hostTheme(theme))}}/>}registerRoot(()=> <Composition id="AgentVideo" component={Video} width={1920} height={1080} fps={30} durationInFrames={${manifest.durationInFrames}}/>);`);
   const serveUrl=await bundle({entryPoint,publicDir,outDir:path.join(temp,'bundle')});
   browser=await openBrowser('chrome',{logLevel:'error',browserExecutable:process.env.REMOTION_BROWSER_EXECUTABLE??(existsSync('/Applications/Google Chrome.app/Contents/MacOS/Google Chrome')?'/Applications/Google Chrome.app/Contents/MacOS/Google Chrome':undefined)});
   const composition=await selectComposition({serveUrl,id:'AgentVideo',puppeteerInstance:browser,logLevel:'error'});

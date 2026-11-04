@@ -1,0 +1,17 @@
+{
+  "schemaVersion": "scene-theme:1", "id": "chalk-garden", "version": 1,
+  "name": "Chalk Garden", "nameZh": "黑板",
+  "descriptionZh": "深石板黑板配粉笔黄，手写字体，像老师在黑板上边讲边画。",
+  "mood": ["dark", "classroom", "hand-drawn", "warm"], "bestFor": ["通俗科普", "课堂讲解", "概念入门"],
+  "dark": true,
+  "colors": {
+    "background": "#1e1e24", "surface": "#28282f", "surface2": "#34343c",
+    "foreground": "#f4f4f5", "muted": "#a1a1aa", "faint": "#71717a", "rule": "#ffffff40",
+    "accent": "#facc15", "accentSoft": "#facc1524", "secondary": "#7dd3fc",
+    "positive": "#86efac", "negative": "#fca5a5"
+  },
+  "fonts": {"display": "LXGW WenKai", "body": "LXGW WenKai", "mono": "JetBrains Mono"},
+  "shape": {"radius": 16, "ruleWidth": 2, "ruleDash": "10 8"},
+  "decoration": "grain",
+  "caption": {"background": "#121216f0", "foreground": "#f4f4f5"}
+}

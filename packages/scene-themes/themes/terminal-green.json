@@ -1,0 +1,17 @@
+{
+  "schemaVersion": "scene-theme:1", "id": "terminal-green", "version": 1,
+  "name": "Terminal Green", "nameZh": "终端",
+  "descriptionZh": "纯黑配磷光绿，全等宽字体，直角，像老式终端屏幕。",
+  "mood": ["dark", "hacker", "retro", "crisp"], "bestFor": ["编程", "命令行", "AI 工具"],
+  "dark": true,
+  "colors": {
+    "background": "#050a07", "surface": "#0a1410", "surface2": "#0f1c17",
+    "foreground": "#41ff97", "muted": "#2ab673", "faint": "#1a8a55", "rule": "#41ff974d",
+    "accent": "#41ff97", "accentSoft": "#41ff971a", "secondary": "#ffd166",
+    "positive": "#41ff97", "negative": "#ff5f56"
+  },
+  "fonts": {"display": "JetBrains Mono", "body": "JetBrains Mono", "mono": "JetBrains Mono"},
+  "shape": {"radius": 0, "ruleWidth": 1, "ruleDash": "none"},
+  "decoration": "scanlines",
+  "caption": {"background": "#000000eb", "foreground": "#41ff97"}
+}

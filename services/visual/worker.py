@@ -133,7 +133,7 @@ def command_input(jobs,job):
         audio=jobs.store.asset_file(job['project_id'],data['asset']['id'])
         if _hash(audio)!=data['asset']['checksum']:raise StoreError('assets','配音已改变')
         command={'brief':data['brief'],'cues':data['cues'],'scene':data['scene'],'audio_file':str(audio),
-                 'model':data['model'],'max_turns':data['max_turns']}
+                 'model':data['model'],'max_turns':data['max_turns'],**({'theme':data['theme']} if data.get('theme') else {})}
         if data.get('revision'):
             base=jobs.get_raw(job['project_id'],data['revision']['job_id'])
             source=local_file(jobs.store.objects,base,'source.txt')
@@ -141,7 +141,7 @@ def command_input(jobs,job):
             command['revision']={'feedback':data['revision']['feedback'],'source_file':str(source),'sha256':data['revision']['sha256']}
         return command
     if any('agent_id' not in chapter for chapter in data['chapters']):raise StoreError('conflict','导出章节必须都是已确认的 Agent 视频')
-    return {'chapters':[_agent_chapter(jobs,job['project_id'],chapter) for chapter in data['chapters']]}
+    return {'chapters':[_agent_chapter(jobs,job['project_id'],chapter) for chapter in data['chapters']],**({'theme':data['theme']} if data.get('theme') else {})}
 
 
 def _stop(process):

@@ -49,6 +49,22 @@ class ApiTests(ProjectFixture, unittest.TestCase):
             self.assertEqual(self.client.patch(path,json={'expected_revision':2,**fields}).status_code,422)
         self.assertEqual(self.store.get_project(self.project['id'])['voice']['speaker'],'public_voice')
 
+    def test_themes_are_listed_and_a_course_switches_theme_by_revision(self):
+        listed=self.client.get('/api/themes').json()
+        self.assertEqual([t['id'] for t in listed if t['default']],['blueprint'])
+        self.assertTrue({'chalk-garden','paper-press'}<=({t['id'] for t in listed}))
+        self.assertEqual(set(listed[0]['preview']),{'background','surface','foreground','accent'})
+        path='/api/projects/'+self.project['id']+'/theme'
+        self.assertEqual(self.store.get_project(self.project['id'])['theme_id'],'blueprint')
+        response=self.client.patch(path,json={'expected_revision':1,'theme_id':'chalk-garden'})
+        self.assertEqual((response.status_code,response.json()['theme_id']),(200,'chalk-garden'))
+        self.assertEqual(self.client.patch(path,json={'expected_revision':1,'theme_id':'blueprint'}).status_code,409)
+        for fields in [{'theme_id':'../x'},{'theme_id':'blueprint','colors':{}},{'theme_id':1}]:
+            self.assertEqual(self.client.patch(path,json={'expected_revision':2,**fields}).status_code,422)
+        created=self.client.post('/api/projects',json={'title':'主题','source_text':'一句话。','theme_id':'swiss-ikb'})
+        self.assertEqual((created.status_code,created.json()['theme_id']),(201,'swiss-ikb'))
+        self.assertEqual(self.client.post('/api/projects',json={'title':'主题','source_text':'一句话。','theme_id':'nope'}).status_code,422)
+
     def test_cost_estimates_are_readonly_and_match_real_submission_dedup(self):
         row=self.project['scenes'][0];project_id=self.project['id']
         url='/api/projects/'+project_id+'/estimate'

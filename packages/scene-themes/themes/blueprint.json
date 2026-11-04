@@ -1,0 +1,17 @@
+{
+  "schemaVersion": "scene-theme:1", "id": "blueprint", "version": 1,
+  "name": "Blueprint", "nameZh": "蓝图",
+  "descriptionZh": "深藏青底配青色强调，工程图纸气质。现有课程的默认画面。",
+  "mood": ["dark", "engineering", "precise"], "bestFor": ["技术架构", "系统拆解", "工程教程"],
+  "dark": true,
+  "colors": {
+    "background": "#0e1a2e", "surface": "#142441", "surface2": "#1c2f54",
+    "foreground": "#d6e5ff", "muted": "#6c89b8", "faint": "#3e5680", "rule": "#78c8ff4d",
+    "accent": "#4dd2ff", "accentSoft": "#4dd2ff1a", "secondary": "#f2bd64",
+    "positive": "#5fd38d", "negative": "#ff6b6b"
+  },
+  "fonts": {"display": "Noto Sans SC", "body": "Noto Sans SC", "mono": "JetBrains Mono"},
+  "shape": {"radius": 8, "ruleWidth": 2, "ruleDash": "8 6"},
+  "decoration": "none",
+  "caption": {"background": "#08111ff0", "foreground": "#f1f5ff"}
+}

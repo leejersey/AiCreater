@@ -7,7 +7,8 @@ import {copyFile,mkdir,mkdtemp,readFile,rm,writeFile} from 'node:fs/promises';
 import {existsSync} from 'node:fs';
 import {createHash} from 'node:crypto';
 import path from 'node:path';
-import {checkSource,sceneTheme,type SceneBrief} from '../../../custom-scenes/src/contract';
+import {checkSource,type SceneBrief} from '../../../custom-scenes/src/contract';
+import {fontImports,jobTheme,sceneThemeProps,themeFonts,type SceneTheme} from '../../../scene-themes/src/index';
 import {repositoryRoot} from '../../../custom-scenes/src/files';
 import type {GeometryAudit} from '../../../custom-scenes/src/geometry-audit';
 import {decodePng,emptySpace,inkCoverage,type EmptySpace} from './ink';
@@ -28,12 +29,15 @@ export const sourceSha256=(source:string)=>createHash('sha256').update(source).d
 const STILL_SCALE=0.5; // 960×540 PNGs; geometry is measured in SVG user units, independent of scale
 const FRAME_TIMEOUT_MS=20000;
 
-function entrySource(brief:SceneBrief,source:string){
- return `import React,{useEffect,useLayoutEffect,useState,useRef} from 'react';import {Composition,registerRoot,useCurrentFrame,delayRender,continueRender,cancelRender} from 'remotion';import '@fontsource/noto-sans-sc/400.css';import Scene from './Scene';import {measureScene,hasCompleteSvgCoverage} from './geometry-audit';import {measurePanels} from './panels';import {measureLabels} from './labels';
+// The audit frames use the theme's background, fonts and colors but not its decoration, so blank and empty-area checks
+// compare the picture against a flat background.
+function entrySource(brief:SceneBrief,source:string,theme:SceneTheme){
+ const props=sceneThemeProps(theme);
+ return `import React,{useEffect,useLayoutEffect,useState,useRef} from 'react';import {Composition,registerRoot,useCurrentFrame,delayRender,continueRender,cancelRender} from 'remotion';${fontImports(theme)}import Scene from './Scene';import {measureScene,hasCompleteSvgCoverage} from './geometry-audit';import {measurePanels} from './panels';import {measureLabels} from './labels';
 function Wrapped(){
  const frame=useCurrentFrame();const root=useRef<HTMLDivElement>(null);const released=useRef(false);
  const [ready,setReady]=useState(false);const [handle]=useState(()=>delayRender('font and geometry'));
- useEffect(()=>{let live=true;Promise.all([document.fonts.load('400 44px "Noto Sans SC"',${JSON.stringify(source)}),document.fonts.ready]).then(()=>{if(live)setReady(true)}).catch(cancelRender);return()=>{live=false}},[handle]);
+ useEffect(()=>{let live=true;Promise.all([...${JSON.stringify(themeFonts(theme).faces)}.map(face=>document.fonts.load(face,${JSON.stringify(source)})),document.fonts.ready]).then(()=>{if(live)setReady(true)}).catch(cancelRender);return()=>{live=false}},[handle]);
  useLayoutEffect(()=>{
   if(!ready||!root.current)return;
   const svg=root.current.querySelector('svg');const complete=hasCompleteSvgCoverage(root.current);
@@ -41,7 +45,7 @@ function Wrapped(){
   console.debug('SCENE_GEOMETRY:'+JSON.stringify({frame,audit}));
   if(!released.current){released.current=true;continueRender(handle)}
  },[ready,frame,handle]);
- return <div ref={root} style={{width:'100%',height:'100%',background:${JSON.stringify(sceneTheme.background)},fontFamily:'"Noto Sans SC"',overflow:'hidden'}}><Scene frame={frame} fps={30} width={1920} height={1080} theme={${JSON.stringify(sceneTheme)}}/></div>
+ return <div ref={root} style={{width:'100%',height:'100%',background:${JSON.stringify(props.background)},fontFamily:${JSON.stringify(props.fontBody)},overflow:'hidden'}}><Scene frame={frame} fps={30} width={1920} height={1080} theme={${JSON.stringify(props)}}/></div>
 }
 registerRoot(()=> <Composition id="CustomScene" component={Wrapped} width={1920} height={1080} fps={30} durationInFrames={${brief.durationInFrames}}/>);`;
 }
@@ -58,7 +62,7 @@ export function conciseError(error:unknown):string{
 export class RemotionStillRenderer implements StillRenderer{
  private browser?:Awaited<ReturnType<typeof openBrowser>>;
  private bundled?:{sha:string;serveUrl:string;temp:string};
- constructor(private readonly brief:SceneBrief){}
+ constructor(private readonly brief:SceneBrief,private readonly theme:SceneTheme=jobTheme(undefined)){}
 
  async render(source:string,frames:number[],outDir:string):Promise<StillsResult>{
   checkSource(source); // local execution is guarded by the source contract, not sandboxed
@@ -79,7 +83,7 @@ export class RemotionStillRenderer implements StillRenderer{
      try{const item=JSON.parse(log.text.slice('SCENE_GEOMETRY:'.length));if(item.frame===frame&&Array.isArray(item.audit?.issues))audit=item.audit;}catch{}
     }});
     const png=decodePng(await readFile(file));
-    const ink=inkCoverage(png,sceneTheme.background),space=emptySpace(png,sceneTheme.background);
+    const ink=inkCoverage(png,this.theme.colors.background),space=emptySpace(png,this.theme.colors.background);
     result.frames.push({frame,file,ink,space,audit:audit??{issues:[{kind:'missing-audit',target:'scene',detail:'Geometry audit did not complete for this frame'}],labels:0,movers:0,routes:0,obstacles:0}});
    }catch(error){result.failures.push({frame,error:conciseError(error)});}
    finally{clearTimeout(timer);}
@@ -98,7 +102,7 @@ export class RemotionStillRenderer implements StillRenderer{
    await copyFile(path.join(repositoryRoot,'packages/scene-agent/src/render/panels.ts'),path.join(temp,'panels.ts'));
    await copyFile(path.join(repositoryRoot,'packages/scene-agent/src/render/labels.ts'),path.join(temp,'labels.ts'));
    const entryPoint=path.join(temp,'index.tsx');
-   await writeFile(entryPoint,entrySource(this.brief,source));
+   await writeFile(entryPoint,entrySource(this.brief,source,this.theme));
    const publicDir=path.join(temp,'public');await mkdir(publicDir);
    const serveUrl=await bundle({entryPoint,publicDir,outDir:path.join(temp,'bundle')});
    this.bundled={sha,serveUrl,temp};

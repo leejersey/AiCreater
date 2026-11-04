@@ -1,5 +1,6 @@
 // Worker entry for a visual job of kind "agent": tsx scripts/scene-agent-job.ts <input.json> <new output dir>
-// Input: {brief, cues, scene, audio_file, model, max_turns, revision?:{feedback, source_file, sha256}}. With revision, the run
+// Input: {brief, cues, scene, audio_file, model, max_turns, theme?, revision?:{feedback, source_file, sha256}}. theme is the
+// course's frozen theme (absent on jobs from before themes: the default). With revision, the run
 // starts from that earlier accepted-or-passed source and the person's feedback instead of an empty scene. Runs the scene-agent loop in <out>/workspace and,
 // if the scene passes the gates, renders the voiced chapter video. Calls a paid model API; the worker only
 // launches this for a job the user confirmed with a turn limit.
@@ -15,6 +16,7 @@ import {defaultFrames} from '../packages/scene-agent/src/tools/checks';
 import {RemotionStillRenderer,sourceSha256} from '../packages/scene-agent/src/render/stills';
 import {agentChapter,renderAgentVideo} from '../packages/scene-agent/src/render/video';
 import {createWorkspace} from '../packages/scene-agent/src/workspace';
+import {jobTheme} from '../packages/scene-themes/src/index';
 
 async function main(){
  const [inputFile,outArg]=process.argv.slice(2);
@@ -22,7 +24,7 @@ async function main(){
  const input=JSON.parse(await readFile(inputFile,'utf8'));
  const out=path.resolve(outArg);
  await mkdir(out); // a new directory per attempt; never reuse another job's output
- const brief=parseBrief(input.brief),cues=parseCues(input.cues,brief);
+ const brief=parseBrief(input.brief),cues=parseCues(input.cues,brief),theme=jobTheme(input.theme);
  const models=loadModels(),entry=models[input.model];
  if(!entry)throw Error(`unknown model ${input.model}`);
  if(!Number.isInteger(input.max_turns)||input.max_turns<1||input.max_turns>entry.budget.maxTurns)throw Error('invalid turn limit');
@@ -44,7 +46,7 @@ async function main(){
   if(typeof input.revision.feedback!=='string'||!input.revision.feedback.trim())throw Error('revision feedback is empty');
  }
  const workspace=await createWorkspace(path.join(out,'workspace'),{brief,cues,skillDir:path.join(repositoryRoot,'packages/scene-agent/skill'),initialSource});
- const renderer=new RemotionStillRenderer(workspace.brief);
+ const renderer=new RemotionStillRenderer(workspace.brief,theme);
  let run;
  try{run=await runLoop({provider,workspace,renderer,budget:{...entry.budget,maxTurns:input.max_turns},...(input.revision?{revision:{feedback:input.revision.feedback}}:{})});}
  finally{await renderer.close();}
@@ -65,7 +67,7 @@ async function main(){
    await copyFile(path.join(stills,name),path.join(out,'stills',`frame-${frame}.png`));
    frames.push(`stills/frame-${frame}.png`);
   }
-  Object.assign(result,{sha256:run.finish.gates.sourceSha256,finish_by:run.finish.by,frames},await renderAgentVideo({source,brief,cues,scene:input.scene,audioFile:input.audio_file},out));
+  Object.assign(result,{sha256:run.finish.gates.sourceSha256,finish_by:run.finish.by,frames},await renderAgentVideo({source,brief,cues,scene:input.scene,audioFile:input.audio_file},out,theme));
  }
  await writeFile(path.join(out,'result.json'),JSON.stringify(result,null,2));
  console.log(JSON.stringify({status:run.status,reason:run.reason,turns:run.turns}));

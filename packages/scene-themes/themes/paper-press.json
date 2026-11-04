@@ -1,0 +1,17 @@
+{
+  "schemaVersion": "scene-theme:1", "id": "paper-press", "version": 1,
+  "name": "Paper Press", "nameZh": "纸刊",
+  "descriptionZh": "暖奶油纸面配火热橙，宋体衬线，安静的编辑刊物感。",
+  "mood": ["light", "editorial", "calm", "literary"], "bestFor": ["概念讲解", "人文社科", "读书分享"],
+  "dark": false,
+  "colors": {
+    "background": "#efe7d6", "surface": "#f5f0e5", "surface2": "#e6dcc6",
+    "foreground": "#1a1714", "muted": "#6b685e", "faint": "#98948a", "rule": "#bfb59f",
+    "accent": "#d63a1e", "accentSoft": "#d63a1e1a", "secondary": "#2f6f8f",
+    "positive": "#2e7d4f", "negative": "#b3261e"
+  },
+  "fonts": {"display": "Noto Serif SC", "body": "Noto Serif SC", "mono": "JetBrains Mono"},
+  "shape": {"radius": 8, "ruleWidth": 1, "ruleDash": "none"},
+  "decoration": "grain",
+  "caption": {"background": "#f5f0e5f2", "foreground": "#1a1714"}
+}

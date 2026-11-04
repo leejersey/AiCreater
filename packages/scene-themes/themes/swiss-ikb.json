@@ -1,0 +1,17 @@
+{
+  "schemaVersion": "scene-theme:1", "id": "swiss-ikb", "version": 1,
+  "name": "Swiss IKB", "nameZh": "瑞士蓝",
+  "descriptionZh": "净白底配克莱因蓝，细线网格与直角，信息设计的理性感。",
+  "mood": ["light", "rational", "minimal", "crisp"], "bestFor": ["数据讲解", "信息图", "方法论"],
+  "dark": false,
+  "colors": {
+    "background": "#fafaf8", "surface": "#f0f0ee", "surface2": "#e2e2df",
+    "foreground": "#0a0a0a", "muted": "#6b6b6b", "faint": "#a8a8a8", "rule": "#cfcfcc",
+    "accent": "#002fa7", "accentSoft": "#002fa714", "secondary": "#c8102e",
+    "positive": "#1a7f37", "negative": "#c8102e"
+  },
+  "fonts": {"display": "Noto Sans SC", "body": "Noto Sans SC", "mono": "JetBrains Mono"},
+  "shape": {"radius": 0, "ruleWidth": 1, "ruleDash": "none"},
+  "decoration": "grid",
+  "caption": {"background": "#0a0a0aeb", "foreground": "#fafaf8"}
+}

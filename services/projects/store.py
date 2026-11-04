@@ -13,7 +13,7 @@ import psycopg
 from psycopg.rows import dict_row
 from psycopg.types.json import Jsonb
 
-from services import chapters
+from services import chapters, themes
 
 ROOT = Path(__file__).resolve().parents[2]
 
@@ -143,7 +143,7 @@ class Store:
             scene['id'], scene['project_id'] = str(scene['id']), str(scene['project_id'])
         return {**row, 'id': str(row['id']), 'scenes': scenes,
                 'voice': copy.deepcopy(row['voice'] or self.profile['voice']), 'voice_configured': row['voice'] is not None,
-                'teaching_style': effective_teaching_style(row['config']),
+                'teaching_style': effective_teaching_style(row['config']), 'theme_id': themes.effective(row['config']),
                 'source_text': ''.join(s['scene']['narration']['text'] for s in scenes) if scenes else row['source_text']}
 
     def profile_for(self, project):
@@ -178,7 +178,7 @@ class Store:
             raise StoreError('assets', 'Media asset verification failed')
         return file
 
-    def create_project(self, title, source_text, owner_id=None, teaching_style=None, manuscript_format='plain'):
+    def create_project(self, title, source_text, owner_id=None, teaching_style=None, manuscript_format='plain', theme_id=None):
         document = None
         if manuscript_format == 'markdown':
             from services.workflow.manuscript_document import parse_document, narration_text
@@ -195,8 +195,9 @@ class Store:
             raise StoreError('validation', 'Expected title and 1–4000 code points of script')
         unicode_valid([title, source_text])
         style = normalize_teaching_style(teaching_style)
+        theme = themes.require(theme_id if theme_id is not None else themes.DEFAULT_THEME)
         project_id = str(uuid.uuid4())
-        config = {'assets': [], 'teaching_style': style}
+        config = {'assets': [], 'teaching_style': style, 'theme_id': theme}
         if document is not None:
             config['manuscript'] = document
         with self.connection() as conn:
@@ -217,6 +218,17 @@ class Store:
             voice = {**project['voice'], 'speaker': speaker}
             if project['voice_configured'] and project['voice'] == voice: return project
             conn.execute('UPDATE projects SET voice=%s,revision=revision+1 WHERE id=%s', [Jsonb(voice), project['id']])
+            return self._read(conn, project['id'])
+
+    def set_theme(self, project_id, expected_revision, theme_id):
+        """One theme per course. Accepted Agent videos stay accepted (their source is theme-agnostic); the next export renders
+        in the new theme, and earlier exports stop being current because the revision moves."""
+        themes.require(theme_id)
+        with self.connection() as conn:
+            project = self._structure_project(conn, project_id, expected_revision)
+            if project['theme_id'] == theme_id: return project
+            conn.execute("UPDATE projects SET config=jsonb_set(config,'{theme_id}',to_jsonb(%s::text)),revision=revision+1 WHERE id=%s",
+                         [theme_id, project['id']])
             return self._read(conn, project['id'])
 
     @staticmethod
