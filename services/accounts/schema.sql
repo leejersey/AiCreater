@@ -4,11 +4,14 @@ CREATE TABLE IF NOT EXISTS users (
     password_hash text NOT NULL,
     created_at timestamptz NOT NULL DEFAULT now()
 );
-CREATE TABLE IF NOT EXISTS user_image_settings (
+-- Retired with image generation; it held no rows when it was replaced (2026-11-04).
+DROP TABLE IF EXISTS user_image_settings;
+CREATE TABLE IF NOT EXISTS user_model_settings (
     user_id uuid PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE,
     base_url text NOT NULL,
+    model text NOT NULL CHECK (length(model) BETWEEN 1 AND 200),
     encrypted_api_key text NOT NULL,
-    updated_at timestamptz NOT NULL DEFAULT now()
+    updated_at timestamptz NOT NULL DEFAULT clock_timestamp()
 );
 CREATE TABLE IF NOT EXISTS user_sessions (
     token_hash text PRIMARY KEY CHECK (length(token_hash)=64),

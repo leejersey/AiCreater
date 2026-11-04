@@ -85,7 +85,7 @@ class TeachingStyleApiOfflineTests(unittest.TestCase):
 
         from services.workflow.providers import Settings
         offline = Settings('sk', 'deepseek-flash', 'tts', '', '', 'seed-tts-2.0', 'speaker')
-        with patch('services.api.app.Settings.from_env', return_value=offline), \
+        with patch('services.api.app.resolve_llm', return_value=offline), \
                 patch('services.api.app.generate_manuscript', return_value='正文') as gen:
             ms = client.post('/api/manuscripts/generate', json={
                 'title': 'RAG', 'teaching_style': 'technical'})

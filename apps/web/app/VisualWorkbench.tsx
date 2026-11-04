@@ -5,7 +5,8 @@ import {request,parseJobs,parseSceneJob,type Project,type Job} from '../lib/edit
 import {confirmEstimate} from '../lib/cost-estimates';
 import {currentVoiceJob} from '../lib/course';
 import {parseVisualJobs,visualFileUrl,measuredReady,reviewFrames,visualError,sceneAudioActions,videoTaskStatus,videoProgress,latestAgentJob,canAcceptAgent,exportedVersion,chapterStatus,agentBatchScenes,visualAgentBody,restyleOf,renderedTheme,AGENT_MAX_TURNS,estimatedSeconds,codePointOffset,AGENT_MAX_SECONDS,type VisualJob} from '../lib/visual-workbench';
-import {confirmVisualAction,visualAgentAction,visualAgentReviseAction} from '../lib/visual-workbench-actions';
+import {agentModelLabel,confirmVisualAction,visualAgentAction,visualAgentReviseAction,type AgentModel} from '../lib/visual-workbench-actions';
+import {parseModelSettings} from '../lib/model-settings';
 import {useConfirm} from './ConfirmContext';
 import {VoiceSettings} from './VoiceSettings';
 import {ThemeSettings} from './ThemeSettings';
@@ -79,7 +80,7 @@ export function VisualAgentPanel({projectId,job,exported,now,updatedAt,disabled,
  const [feedback,setFeedback]=useState('');
  return <div aria-label="Agent 视频" className="vw-current-video"><h3>Agent 视频</h3>
   {!job&&<p>由 Agent 自行设计画面并检查，通过后直接生成本章视频（使用当前配音与字幕）。</p>}
-  {job&&job.state==='succeeded'&&job.result?.agent&&<p>{job.result.agent.finish_by==='model'?'Agent 已自检并通过检查':'Agent 未自行收尾，已采用最后一个通过检查的版本'} · {job.result.agent.turns} 轮 · 输出 {job.result.agent.output_tokens.toLocaleString('zh-CN')} token</p>}
+  {job&&job.state==='succeeded'&&job.result?.agent&&<p>{job.result.agent.finish_by==='model'?'Agent 已自检并通过检查':'Agent 未自行收尾，已采用最后一个通过检查的版本'} · {job.result.agent.turns} 轮 · 输出 {job.result.agent.output_tokens.toLocaleString('zh-CN')} token{job.agent?.llm?.source==='account'?` · 模型 ${job.agent.llm.model}（你的配置）`:''}</p>}
   {job?.agent?.revision&&<p className="hint">按意见修改自上一版：「{job.agent.revision.feedback}」</p>}
   {job&&job.result?.accepted===true&&<p>已确认此版本 · 可用于整课导出</p>}
   {job&&onAccept&&canAcceptAgent(job)&&!job.result?.accepted&&<div className="vw-toolbar"><button disabled={disabled} onClick={onAccept}><Check size={14}/>看完后确认此版本</button></div>}
@@ -101,6 +102,8 @@ export default function VisualWorkbench({routeProjectId}:{routeProjectId:string}
   const [jobs,setJobs]=useState<VisualJob[]>([]);
   const [voiceJobs,setVoiceJobs]=useState<Job[]>([]);
   const [themes,setThemes]=useState<ThemeSummary[]>([]);
+  const [llm,setLlm]=useState<AgentModel|undefined>();
+  useEffect(()=>{let live=true;request<unknown>('/api/auth/model-settings').then(v=>{if(live)setLlm(parseModelSettings(v));}).catch(()=>{});return()=>{live=false;};},[]);
   useEffect(()=>{let live=true;request<unknown>('/api/themes').then(v=>{if(live)setThemes(parseThemes(v));}).catch(()=>{});return()=>{live=false;};},[]);
   const [selected,setSelected]=useState('');
   const [busy,setBusy]=useState(false);
@@ -170,7 +173,7 @@ export default function VisualWorkbench({routeProjectId}:{routeProjectId:string}
         {!project.scenes.length&&<button disabled={disabled||active} onClick={()=>void act(async()=>{setProject(await request<Project>(base+'/visual/prepare',{expected_revision:project.revision}));})}>整理口播章节（免费）</button>}
         {!!project.scenes.length&&<span className="vw-course-progress">已确认 {confirmedCount}/{project.scenes.length}{missing.length?` · 未确认：第 ${missing.join('、')} 章`:''}</span>}
         <button disabled={disabled||active||!batch.length} title={batch.length?undefined:'没有可批量生成的章节（需已配音、未确认、未在生成）'} onClick={()=>void act(async()=>{
-          if(!await confirm({title:`批量 Agent 生成 ${batch.length} 章（付费）`,message:`为第 ${batch.map(s=>project.scenes.indexOf(s)+1).join('、')} 章各提交一个 Agent 任务，依次执行。每章最多 ${AGENT_MAX_TURNS} 轮模型调用，合计最多 ${batch.length*AGENT_MAX_TURNS} 轮；失败不自动重试。每章完成后仍需你看过并确认。`,confirmText:`确认最多 ${batch.length*AGENT_MAX_TURNS} 轮付费调用`,variant:'warning'}))return;
+          if(!await confirm({title:`批量 Agent 生成 ${batch.length} 章（付费）`,message:`为第 ${batch.map(s=>project.scenes.indexOf(s)+1).join('、')} 章各提交一个 Agent 任务，依次执行。模型：${agentModelLabel(llm)}。每章最多 ${AGENT_MAX_TURNS} 轮模型调用，合计最多 ${batch.length*AGENT_MAX_TURNS} 轮；失败不自动重试。每章完成后仍需你看过并确认。`,confirmText:`确认最多 ${batch.length*AGENT_MAX_TURNS} 轮付费调用`,variant:'warning'}))return;
           for(const scene of batch)await submit('/agent',visualAgentBody(scene.id,project.revision));
         })}><Film size={14}/>批量 Agent 生成{batch.length?` ${batch.length} 章`:''}（付费）</button>
         <button disabled={disabled||active||!project.scenes.length||missing.length>0} title={missing.length?'每章都需要一个已确认的视频':undefined} onClick={()=>void act(async()=>{
@@ -207,8 +210,8 @@ export default function VisualWorkbench({routeProjectId}:{routeProjectId:string}
           <div className="vw-step" aria-label="第 2 步：生成视频"><h3>第 2 步 · 生成视频</h3>
           <p>{measuredReady(row)?'配音已就绪，可以生成视频。':'配音完成后才能生成可确认、可导出的视频。'}</p>
           <VisualAgentPanel key={row.id} projectId={project.id} job={agentJob} exported={exportedVersion(sceneJobs)} now={now} updatedAt={updatedAt} disabled={disabled} blockedReason={!measuredReady(row)?(row.state==='needs_timing'?'先完成第 1 步：实测对齐（免费）。':'先完成第 1 步：添加配音。'):active?'项目内有任务进行中，结束后再生成。':undefined}
-            onStart={()=>void act(()=>confirmVisualAction(visualAgentAction(row.id,project.revision),confirm,submit))}
-            onRevise={text=>{if(agentJob)void act(()=>confirmVisualAction(visualAgentReviseAction(row.id,project.revision,agentJob.id,text),confirm,submit));}}
+            onStart={()=>void act(()=>confirmVisualAction(visualAgentAction(row.id,project.revision,llm),confirm,submit))}
+            onRevise={text=>{if(agentJob)void act(()=>confirmVisualAction(visualAgentReviseAction(row.id,project.revision,agentJob.id,text,llm),confirm,submit));}}
             onRefresh={()=>void act(refresh)} onCancel={()=>{if(agentJob)cancelVisual(agentJob);}}
             onAccept={()=>void act(async()=>{const job=agentJob!;
               if(await confirm({title:'确认 Agent 视频',message:'确认已播放并检查画面、口播和字幕同步？确认后整课导出将使用此版本；口播或配音变化后确认失效。',detail:'SHA-256: '+job.result!.sha256,confirmText:'确认此版本'}))await submit('/'+job.id+'/accept',{confirmed:true,sha256:job.result!.sha256});})}>

@@ -1,5 +1,7 @@
 # 个人中心自定义模型配置（替代 GPT Image 2）
 
+状态：已实现（2026-11-04）。实现中补充了两点，见「请求时的目标地址检查」第 5、6 条。
+
 用户已确认：新方案不再需要生图；个人中心改为可自行配置的 **OpenAI 兼容 LLM**（Base URL + API Key + 模型 ID），默认 DeepSeek；选方案 **A**（改造现有账号加密配置，真正接入全部 LLM 调用）；未配置时 **回退** 服务端 `.env` 的 `DEEPSEEK_API_KEY` / `DEEPSEEK_MODEL`。
 
 ## 目标与边界
@@ -48,6 +50,8 @@
 2. **连接到第 1 步检查过的 IP**（保留原主机名做 TLS SNI 与证书校验），不再二次解析，防止 DNS 重绑定。
 3. 不跟随重定向；超时与响应体积上限保持现状。
 4. 拒绝时报 `ProviderError(config, unsafe_destination, …)`，不发请求、不计费；错误信息不回显解析出的地址。
+5. **不经过 `HTTP(S)_PROXY`**：代理会自己解析域名，等于绕过检查。Python 用 `httpx.Client(trust_env=False)`（否则 `pinned_post` 拒绝），Node 直接用 `node:https`。
+6. **Fake-IP 代理**：Fake-IP 模式的本机代理把所有域名都解析到 `198.18.0.0/15`（开发机实测 api.deepseek.com、火山域名均如此），严格检查会拒绝所有请求。`LLM_FAKE_IP_CIDR=198.18.0.0/15` 声明该网段由本机代理接管、予以放行，其余非公网地址照旧拒绝；默认不设置。
 
 服务端回退（`source=env`）的固定 DeepSeek 地址同样走这条路径。
 

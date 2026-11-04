@@ -4,6 +4,8 @@ import logging
 
 import httpx
 
+from services.accounts.model_settings import DEEPSEEK_BASE_URL
+from services.workflow.destination import pinned_post
 from services.workflow.providers import ProviderError, _status
 
 from services.workflow.manuscript_document import format_document
@@ -82,26 +84,29 @@ def _user_message(title, audience, duration_hint, outline, teaching_style):
     return '\n'.join(lines)
 
 
-def generate_manuscript(title, settings, client, *, audience='', duration_hint='', outline='', user_id=None,
+def generate_manuscript(title, llm, client, *, audience='', duration_hint='', outline='', user_id=None,
                       teaching_style='popular', manuscript_format='plain'):
+    """llm: services.accounts.model_settings.LLM (the account's model or the server's DeepSeek)."""
     if manuscript_format not in ('plain', 'markdown'):
         raise ProviderError('manuscript', 'input_limit', 'Unsupported manuscript format')
     if teaching_style not in _TEACHING_STYLES:
         raise ProviderError('manuscript', 'input_limit', 'teaching_style must be popular or technical')
     title = _validate(title, audience, duration_hint, outline)
     system = _DOCUMENT_SYSTEM if manuscript_format == 'markdown' else _SYSTEM_TECHNICAL if teaching_style == 'technical' else _SYSTEM_POPULAR
-    body = {'model': settings.model, 'messages': [
+    if not llm.api_key: raise ProviderError('config', 'missing_setting', '请在个人中心配置模型，或在服务端设置 DEEPSEEK_API_KEY')
+    body = {'model': llm.model, 'messages': [
         {'role': 'system', 'content': system},
         {'role': 'user', 'content': _user_message(title, audience, duration_hint, outline, teaching_style)}],
         'max_tokens': 8192}
     if manuscript_format == 'markdown':
         body['response_format'] = {'type': 'json_object'}
-    if settings.model in ['deepseek-flash', 'deepseek-v4-flash']:
+    # A DeepSeek-only switch: other OpenAI-compatible services may reject unknown fields.
+    if llm.model in ['deepseek-flash', 'deepseek-v4-flash'] and llm.base_url == DEEPSEEK_BASE_URL:
         body['thinking'] = {'type': 'disabled'}
     chars, ok = 0, False
     try:
-        response = client.post('https://api.deepseek.com/chat/completions', follow_redirects=False,
-                               headers={'Authorization': 'Bearer ' + settings.llm_key}, json=body)
+        response = pinned_post(client, llm.base_url.rstrip('/') + '/chat/completions',
+                               headers={'Authorization': 'Bearer ' + llm.api_key}, json=body)
         _status(response, 'manuscript')
         if len(response.content) > 1024 * 1024:
             raise ProviderError('manuscript', 'response_limit', 'Response exceeds 1 MiB')

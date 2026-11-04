@@ -50,6 +50,10 @@ def _answered_turns(transcript,maximum):
     return min(count,maximum)
 
 
+class LlmChanged(Exception):
+    """The course owner's model settings changed after the job was confirmed; it must not run with the new ones."""
+
+
 class AgentStopped(Exception):
     """The scene-agent run ended without a gated scene; a normal outcome, reported as a failed job."""
     def __init__(self, reason=None):
@@ -95,10 +99,27 @@ def store_files(objects,job_id,result,callback=None):
         objects.put(checked_file(directory,name),checksum,file_limit(name),callback)
 
 
-def child_environment(kind):
+def child_environment(kind,llm=None):
+    """An allowlisted environment. Agent runs get one model key: the course owner's (ACCOUNT_LLM_*) or the server's
+    DeepSeek key. Database, encryption and storage secrets never reach the child."""
     keys=['PATH','HOME','TMPDIR','TMP','TEMP','LANG','LC_ALL','TZ','SYSTEMROOT','REMOTION_BROWSER_EXECUTABLE']
-    if kind=='agent':keys+=['DEEPSEEK_API_KEY']
-    return {key:os.environ[key] for key in keys if key in os.environ}
+    if kind=='agent':keys+=['LLM_FAKE_IP_CIDR']+([] if llm and llm.source=='account' else ['DEEPSEEK_API_KEY'])
+    env={key:os.environ[key] for key in keys if key in os.environ}
+    if kind=='agent' and llm and llm.source=='account':
+        env.update(ACCOUNT_LLM_BASE_URL=llm.base_url,ACCOUNT_LLM_API_KEY=llm.api_key,ACCOUNT_LLM_MODEL=llm.model)
+    return env
+
+
+def job_llm(jobs,job):
+    """The model an Agent job may run with: the one frozen when it was confirmed, still current. Jobs from before
+    account settings ran on the server's DeepSeek key and still do."""
+    from services.accounts.model_settings import resolve_llm
+    frozen=job['input'].get('llm')
+    if frozen is None:return None
+    with jobs.store.connection() as conn:owner=jobs.owner(conn,job['project_id'])
+    current=resolve_llm(jobs.store,owner)
+    if current.public()!=frozen:raise LlmChanged()
+    return current
 
 
 def _json(path,maximum=1024*1024):
@@ -195,6 +216,7 @@ def run_once(jobs,lane='workflow',*,timeout=None,heartbeat_interval=5,launcher=N
     try:
         if not jobs.get(job['project_id'],job['id']).get('current'):
             raise RuntimeError('Frozen input is stale')
+        llm=job_llm(jobs,job) if job['kind']=='agent' else None
         data=command_input(jobs,job)
         if not jobs.heartbeat(job['id'],token):raise RuntimeError('Job cancelled or lease lost')
         WORK_ROOT.mkdir(parents=True,exist_ok=True,mode=0o700)
@@ -207,7 +229,7 @@ def run_once(jobs,lane='workflow',*,timeout=None,heartbeat_interval=5,launcher=N
         log_path=WORK_ROOT/(job['id']+'.log')
         with log_path.open('xb') as log:
             os.chmod(log_path,0o600)
-            process=(launcher or subprocess.Popen)(command,cwd=ROOT,env=child_environment(job['kind']),stdin=subprocess.DEVNULL,stdout=log,stderr=log,start_new_session=True)
+            process=(launcher or subprocess.Popen)(command,cwd=ROOT,env=child_environment(job['kind'],llm),stdin=subprocess.DEVNULL,stdout=log,stderr=log,start_new_session=True)
             started=time.monotonic();beat=0
             # Stop the child 60 s before its lease runs out, so the job is finished here rather than expired by recovery.
             limit=timeout or LEASE_SECONDS[job['kind']]-60
@@ -233,7 +255,8 @@ def run_once(jobs,lane='workflow',*,timeout=None,heartbeat_interval=5,launcher=N
             # Paid turns are reported whether the run passed, stopped or crashed after some turns.
             count=_answered_turns(directory/'workspace'/'transcript.jsonl',job['input']['max_turns'])
             stopped=sys.exc_info()[1]
-            if isinstance(stopped,AgentStopped):
+            if isinstance(stopped,LlmChanged):failure_code='agent_llm_changed'
+            elif isinstance(stopped,AgentStopped):
                 # Failed runs carry detail after the code ("provider_request: HTTP 400 …"); only the code is public.
                 code=stopped.reason.split(':',1)[0] if isinstance(stopped.reason,str) else ''
                 failure_code='agent_'+(code if re.fullmatch(r'[a-z_]{1,40}',code) else 'stopped')

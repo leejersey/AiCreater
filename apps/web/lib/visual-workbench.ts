@@ -4,7 +4,7 @@ export type VisualJob = {
   id:string; project_id:string; scene_id:string|null; kind:'agent'|'export'|'restyle';
   /** The theme the job rendered in; restyle_of is the Agent version a restyle re-rendered. */
   theme_id?:string; restyle_of?:string;
-  agent?:{model:string;max_turns:number;revision?:{of:string;feedback:string}};
+  agent?:{model:string;max_turns:number;revision?:{of:string;feedback:string};llm?:{source:'account'|'env';model:string}};
   state:'queued'|'running'|'succeeded'|'failed'|'cancelled';
   stage?:string|null; error?:string|null;current?:boolean;
   created_at?:string;
@@ -39,7 +39,10 @@ export function parseVisualJobs(value:unknown,projectId:string):VisualJob[] {
       // Any configured model name; a strict value here would hide the whole job list when the default changes.
       if(typeof summary.model!=='string'||!/^[a-z0-9][a-z0-9._-]{0,79}$/.test(summary.model)||!Number.isInteger(summary.max_turns)||Number(summary.max_turns)<1||Number(summary.max_turns)>AGENT_MAX_TURNS)throw invalid();
       if((summary.revision_of!==undefined||summary.feedback!==undefined)&&(!identifier(summary.revision_of)||typeof summary.feedback!=='string'||!summary.feedback.trim()||summary.feedback.length>MAX_FEEDBACK))throw invalid();
-      agent={model:summary.model,max_turns:Number(summary.max_turns),...(summary.revision_of!==undefined?{revision:{of:summary.revision_of as string,feedback:summary.feedback as string}}:{})};
+      const llm=summary.llm as Record<string,unknown>|undefined;
+      if(llm!==undefined&&(!object(llm)||!['account','env'].includes(llm.source as string)||typeof llm.model!=='string'||!/^[\x21-\x7e]{1,200}$/.test(llm.model)))throw invalid();
+      agent={model:summary.model,max_turns:Number(summary.max_turns),...(summary.revision_of!==undefined?{revision:{of:summary.revision_of as string,feedback:summary.feedback as string}}:{}),
+        ...(llm?{llm:{source:llm.source as 'account'|'env',model:llm.model as string}}:{})};
     }else if(Object.hasOwn(summary,'max_turns'))throw invalid();
     let result:VisualJob['result']=null;
     if(v.result!=null){

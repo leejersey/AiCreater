@@ -21,7 +21,7 @@ class VisualStoreOfflineTests(unittest.TestCase):
         public = VisualJobs._public(row)
         self.assertNotIn('input', public)
         self.assertEqual(public['result'], {'status': 'passed', 'turns': 3, 'accepted': False})
-        self.assertEqual(public['input_summary'], {'model': 'm', 'max_turns': 25, 'theme_id': 'blueprint'})
+        self.assertEqual(public['input_summary'], {'model': 'm', 'max_turns': 25, 'theme_id': 'blueprint', 'llm': {'source': 'env', 'model': 'deepseek-flash'}})
         self.assertFalse(public['accepted'])
 
     def test_turn_limit_is_checked_before_database_access(self):
@@ -72,7 +72,8 @@ class VisualStoreTests(unittest.TestCase):
             with self.assertRaisesRegex(StoreError, 'not_found'):
                 method(other['id'], job['id'])
         raw = self.jobs.get_raw(self.pid, job['id'])
-        self.assertEqual(set(raw['input']), {'brief', 'cues', 'scene', 'asset', 'fingerprint', 'model', 'max_turns', 'theme'})
+        self.assertEqual(set(raw['input']), {'brief', 'cues', 'scene', 'asset', 'fingerprint', 'model', 'max_turns', 'theme', 'llm'})
+        self.assertEqual(raw['input']['llm']['source'], 'env')  # a project without an owner uses the server's key
         self.assertNotIn('input', self.jobs.get(self.pid, job['id']))
         self.assertEqual(self.jobs.get(self.pid, job['id'])['input_summary']['max_turns'], 25)
 

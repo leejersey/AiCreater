@@ -72,15 +72,14 @@ docker compose --project-name aicreater-workbench --env-file .env.local-services
 
 健康检查：`npm run workbench:status`（API、网页、执行器、排队任务、磁盘余量），或 `curl --fail http://127.0.0.1:8000/health`。
 
-## 个人中心 GPT Image 2 配置（需维护窗口启用）
+## 个人中心模型配置（2026-11-04 起，替代 GPT Image 2）
 
-新增配置入口位于 `/account`，现有密码修改保留。账号可设置自己的公网 HTTPS Base URL/API Key、替换或删除；不开放管理员读取他人密钥。保存不调用供应商，不测试模型兼容性，也不产生生图任务。第三方地址需本人确认可信，不在 URL 填写密钥。不支持本机、内网、HTTP、带用户信息/查询参数/片段的地址。
+`/account` 的「模型配置」让每个账号保存自己的 OpenAI 兼容模型：Base URL、API Key、模型 ID（默认 `https://api.deepseek.com`、`deepseek-flash`）。讲稿生成与 Agent 生成画面都用它；未配置时用服务端 `.env` 的 `DEEPSEEK_API_KEY` / `DEEPSEEK_MODEL`。设计见 [规格](superpowers/specs/2026-11-04-account-model-settings-design.md)。
 
-1. 在已信任的本机终端离线生成一次 Fernet 密钥，例如 `python -c 'from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())'`。仅在本机私有 `.env` 设置 `ACCOUNT_CREDENTIALS_KEY=<生成值>`，不要发送到聊天/日志或配置为 `NEXT_PUBLIC_`；保持文件0600，独立备份该值。不要覆盖已有有效值。
-2. 确认已安装 `requirements.txt`（新增明确依赖 cryptography 46.0.5），按本手册任务检查与受控停启流程重启API。启动时既有schema初始化会创建 `user_image_settings`；网页开发模式刷新即可，生产模式需重新构建发布。不要盲目重启worker或恢复收费队列。
-3. 登录个人中心，保存地址和API Key。页面只显示已保存状态，不回显密钥，不能将“已保存”理解为“服务可用”。缺少/错误加密配置会明确拒绝保存；读取状态和删除不依赖加密密钥。
-
-DB中的密文没有独立加密密钥就无法解密；丢失或直接更换加密密钥后，需要每个账号重新填写自己的 API Key。地址改变必须重新填 Key，防止把旧供应商密钥自动带给新地址。删除配置不影响已有课程/图片。初始开发与临时库测试未改动真实配置或服务；后续用户授权重启时已补充本地服务加密密钥并重启API/网页。尚未执行浏览器端完整验收。用户要求保存时不做网络验证，现仅保留URL格式/显式本机内网地址检查，不执行DNS、连通性或模型测试，避免代理Fake-IP误拦截。未来生图发送时仍必须实现目标安全与代理兼容策略，不能将保存成功当作连接可用或免除请求时的安全保护。
+- **加密**：密钥用 `.env` 里的 `ACCOUNT_CREDENTIALS_KEY`（Fernet）加密存在 `user_model_settings`，只在服务端解密，查询接口不回显。生成方式：`python -c 'from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())'`，独立备份；丢失或更换后每个账号都要重新填写 Key（读不出的配置按未配置处理，回退到服务端 DeepSeek）。旧表 `user_image_settings` 在初始化时删除（替换时为 0 行）。
+- **请求时的目标地址检查**：保存只检查格式；每次调用前解析域名，所有地址都必须是公网地址，并直接连接检查过的地址（证书仍按原域名校验），不跟随重定向，也不经过 `HTTP(S)_PROXY`。被拒绝时不发请求、不计费，Agent 任务显示「模型地址解析到非公网地址」。
+- **Fake-IP 代理**：本机若用 Fake-IP 模式的代理（所有域名都解析到 `198.18.0.0/15`），在 `.env.local-services` 设 `LLM_FAKE_IP_CIDR=198.18.0.0/15`，否则所有模型请求都会被拒绝；该网段的真实去向由代理决定。没有这类代理的机器不要设置。
+- **Agent 任务按提交时的模型执行**：提交时把来源、地址、模型和配置版本记入任务（不含密钥）；执行前配置变了，任务判为过期、不启动、不计费，需要重新提交。账号模式下子进程只拿到 `ACCOUNT_LLM_*` 三个变量（不含服务端 DeepSeek 密钥），请求不带 DeepSeek 专有参数，能力按保守值（输出上限 8192 token、不并行调用工具），轮数与输出 token 上限不变。
 
 ## 3. 安全停机
 

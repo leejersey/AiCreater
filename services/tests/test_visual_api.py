@@ -112,6 +112,35 @@ class VisualApiTests(unittest.TestCase):
         # Leave no queued job behind: workers in other tests claim the oldest queued job of their lane.
         self.assertEqual(self.client.post(self.path+'/'+job['id']+'/cancel',json={}).json()['state'],'cancelled')
 
+    def test_the_owners_model_is_frozen_at_submission_and_a_later_change_stops_the_job(self):
+        from cryptography.fernet import Fernet
+        from services.visual import worker
+        key=Fernet.generate_key().decode()
+        with patch.dict(os.environ,{'ACCOUNT_CREDENTIALS_KEY':key,'DEEPSEEK_API_KEY':'sk-server','DATABASE_URL':'postgresql://secret'}),\
+             patch.object(worker,'WORK_ROOT',self.store.public.resolve()/'visual'),patch.object(worker,'_stop'):
+            saved=self.client.post('/api/auth/model-settings',json={'base_url':'https://api.example.com/v1','api_key':'sk-own','model':'qwen-plus'},headers={'Origin':'http://127.0.0.1:3000'})
+            self.assertEqual(saved.status_code,200,saved.text)
+            project,row,_=self.ready_scene()
+            body={'scene_id':row['id'],'expected_revision':project['revision'],'confirmed':True,'max_turns':25}
+            job=self.client.post(self.path+'/agent',json=body).json()
+            self.assertEqual(job['input_summary']['llm'],{'source':'account','model':'qwen-plus'})
+            raw=self.client.app.state.visual.get_raw(self.pid,job['id'])
+            self.assertEqual(raw['input']['llm']['base_url'],'https://api.example.com/v1')
+            self.assertNotIn('sk-own',json.dumps(raw['input']))
+            # Changed after confirming: never runs with the new settings, nothing launched.
+            self.client.post('/api/auth/model-settings',json={'base_url':'https://api.example.com/v1','api_key':'','model':'qwen-max'},headers={'Origin':'http://127.0.0.1:3000'})
+            done=worker.run_once(self.client.app.state.visual,launcher=lambda *a,**k:self.fail('launched with changed settings'))
+            self.assertEqual(done['state'],'failed');self.assertIn('模型配置在提交后变更',done['error'])
+            # Unchanged: the child gets the owner's key and not the server's.
+            again=self.client.post(self.path+'/agent',json=body).json()
+            seen={}
+            def launcher(command,**options):
+                seen.update(env=options['env']);raise RuntimeError('stop here')
+            worker.run_once(self.client.app.state.visual,launcher=launcher)
+            self.assertEqual((seen['env']['ACCOUNT_LLM_API_KEY'],seen['env']['ACCOUNT_LLM_MODEL']),('sk-own','qwen-max'))
+            self.assertNotIn('DEEPSEEK_API_KEY',seen['env']);self.assertNotIn('ACCOUNT_CREDENTIALS_KEY',seen['env'])
+            self.assertEqual(again['input_summary']['llm']['model'],'qwen-max')
+
     def run_agent_job(self,write,check=lambda job:None):
         from services.visual import worker
         project,row,text=self.ready_scene()

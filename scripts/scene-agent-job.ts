@@ -11,12 +11,28 @@ import {parseCues} from '../packages/custom-scenes/src/cues';
 import {repositoryRoot} from '../packages/custom-scenes/src/files';
 import {runLoop} from '../packages/scene-agent/src/loop';
 import {createProvider,loadModels} from '../packages/scene-agent/src/provider/registry';
+import {OpenAICompatibleProvider} from '../packages/scene-agent/src/provider/openai-compatible';
+import {safeFetch} from '../packages/scene-agent/src/provider/safe-fetch';
 import {ProviderError} from '../packages/scene-agent/src/provider/types';
 import {defaultFrames} from '../packages/scene-agent/src/tools/checks';
 import {RemotionStillRenderer,sourceSha256} from '../packages/scene-agent/src/render/stills';
 import {agentChapter,renderAgentVideo} from '../packages/scene-agent/src/render/video';
 import {createWorkspace} from '../packages/scene-agent/src/workspace';
 import {jobTheme} from '../packages/scene-themes/src/index';
+
+/** The course owner's own OpenAI-compatible model, passed by the worker in ACCOUNT_LLM_*; undefined without one.
+ * Unknown services get no vendor switches (DeepSeek's thinking / reasoning echo) and conservative limits; the turn
+ * and token budget (runLoop below) stays the configured Agent's, so cost stays capped. */
+function accountProvider(){
+ const {ACCOUNT_LLM_BASE_URL:baseUrl,ACCOUNT_LLM_API_KEY:apiKey,ACCOUNT_LLM_MODEL:model}=process.env;
+ if(!apiKey)return undefined;
+ // Out of the environment before anything else starts: renders launch a browser that would inherit it.
+ delete process.env.ACCOUNT_LLM_API_KEY;delete process.env.ACCOUNT_LLM_BASE_URL;delete process.env.ACCOUNT_LLM_MODEL;
+ if(!baseUrl||!model)throw Error('account model settings are incomplete');
+ return new OpenAICompatibleProvider({name:`account:${model}`,baseUrl,model,apiKey,
+  capabilities:{vision:false,parallelToolCalls:false,contextTokens:64000,maxOutputTokens:8192,promptCache:false,appendOnlyHistory:false}},
+  {fetch:safeFetch()});
+}
 
 async function main(){
  const [inputFile,outArg]=process.argv.slice(2);
@@ -31,7 +47,7 @@ async function main(){
  // Fail before any model call if the measured audio and captions cannot make a video.
  agentChapter({source:'',brief,cues,scene:input.scene,audioFile:input.audio_file});
  let provider;
- try{provider=createProvider(input.model,models);}
+ try{provider=accountProvider()??createProvider(input.model,models);}
  catch(error){
   // No usable key: report it like a rejected key, with nothing spent.
   if(!(error instanceof ProviderError))throw error;

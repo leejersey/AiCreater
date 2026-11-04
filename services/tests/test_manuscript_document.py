@@ -24,8 +24,11 @@ class ManuscriptDocumentTests(unittest.TestCase):
         client = MagicMock()
         client.post.return_value = MagicMock(status_code=200, content=b'{}', json=lambda: {
             'choices': [{'finish_reason': 'stop', 'message': {'content': json.dumps({'sections': SECTIONS})}}]})
-        text = generate_manuscript('uv', Settings('sk', 'deepseek-flash', '', '', '', '', ''), client,
-                                     manuscript_format='markdown')
+        from unittest.mock import patch
+        from services.accounts.model_settings import LLM
+        with patch('services.workflow.destination.socket.getaddrinfo', return_value=[(2, 1, 6, '', ('93.184.216.34', 443))]):
+            text = generate_manuscript('uv', LLM('https://api.deepseek.com', 'sk', 'deepseek-flash', 'env', None), client,
+                                       manuscript_format='markdown')
         self.assertEqual(m.parse_document(text)['sections'], SECTIONS)
         self.assertEqual(client.post.call_args.kwargs['json']['response_format'], {'type': 'json_object'})
 

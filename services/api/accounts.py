@@ -2,7 +2,7 @@
 from fastapi import APIRouter, Request, Response
 from pydantic import BaseModel, ConfigDict, Field
 from services.accounts.auth import COOKIE, SESSION_SECONDS
-from services.accounts.image_settings import ImageSettings
+from services.accounts.model_settings import ModelSettings
 from services.projects.store import StoreError
 
 
@@ -18,10 +18,11 @@ class PasswordChange(BaseModel):
     new_password:str=Field(min_length=6,max_length=128)
 
 
-class ImageSettingsBody(BaseModel):
+class ModelSettingsBody(BaseModel):
     model_config=ConfigDict(extra='forbid',strict=True)
     base_url:str=Field(min_length=1,max_length=2048)
     api_key:str=Field(default='',max_length=2048,repr=False)
+    model:str=Field(min_length=1,max_length=200)
 
 
 class Empty(BaseModel):
@@ -58,22 +59,22 @@ def login(body:Credentials,request:Request,response:Response):
     set_session(response,token)
     return user
 
-@router.get('/image-settings')
-def image_settings(request:Request,response:Response):
+@router.get('/model-settings')
+def model_settings(request:Request,response:Response):
     response.headers['Cache-Control']='no-store'
-    return ImageSettings(request.app.state.store).get(request.state.user['id'])
+    return ModelSettings(request.app.state.store).get(request.state.user['id'])
 
 
-@router.post('/image-settings')
-def save_image_settings(body:ImageSettingsBody,request:Request,response:Response):
+@router.post('/model-settings')
+def save_model_settings(body:ModelSettingsBody,request:Request,response:Response):
     response.headers['Cache-Control']='no-store'
-    return ImageSettings(request.app.state.store).save(request.state.user['id'],body.base_url,body.api_key)
+    return ModelSettings(request.app.state.store).save(request.state.user['id'],body.base_url,body.api_key,body.model)
 
 
-@router.post('/image-settings/clear')
-def clear_image_settings(body:Empty,request:Request,response:Response):
+@router.post('/model-settings/clear')
+def clear_model_settings(body:Empty,request:Request,response:Response):
     response.headers['Cache-Control']='no-store'
-    return ImageSettings(request.app.state.store).clear(request.state.user['id'])
+    return ModelSettings(request.app.state.store).clear(request.state.user['id'])
 
 
 @router.get('/me')

@@ -7,6 +7,7 @@ import uuid
 from psycopg.types.json import Jsonb
 
 from services import chapters, themes
+from services.accounts.model_settings import resolve_llm
 from services.projects import leases
 from services.projects.store import StoreError, identifier, revision, unicode_valid
 from services.visual.contract import measured_input, partition_narration
@@ -34,6 +35,8 @@ AGENT_ERRORS = {
     'agent_provider_request': '模型服务拒绝了请求格式（例如上下文过长）；运行记录已保留，未自动重试。',
     'agent_provider_response': '模型服务返回了无法读取的响应；运行记录已保留，未自动重试。',
     'agent_internal': 'Agent 运行出错；运行记录已保留，未自动重试。',
+    'agent_llm_changed': '模型配置在提交后变更，未启动 Agent、未计费；请重新提交。',
+    'agent_provider_destination': '模型地址解析到非公网地址，已拒绝连接、未发出请求；请在个人中心检查 Base URL。',
 }
 AGENT_MODEL = 'deepseek-flash-thinking'
 AGENT_MAX_TURNS = 25
@@ -69,6 +72,8 @@ class VisualJobs:
         # Jobs from before themes rendered in the default theme.
         summary['theme_id'] = (data.get('theme') or {}).get('id', themes.DEFAULT_THEME)
         if row['kind'] == 'agent': summary.update(model=data.get('model'), max_turns=data.get('max_turns'))
+        # Which model actually runs it; jobs from before account settings used the server's DeepSeek.
+        if row['kind'] == 'agent': summary['llm'] = {k: (data.get('llm') or {'source': 'env', 'model': 'deepseek-flash'}).get(k) for k in ('source', 'model')}
         if row['kind'] == 'restyle': summary['agent_id'] = data.get('agent_id')
         if row['kind'] == 'agent' and isinstance(data.get('revision'), dict):
             summary.update(revision_of=data['revision'].get('job_id'), feedback=data['revision'].get('feedback'))
@@ -210,7 +215,10 @@ class VisualJobs:
             scene = self.store._scene(project, scene_id)
             if project['revision'] != expected_revision: raise StoreError('conflict', 'Project revision changed')
             data = measured_input(project, scene)
-            data.update(model=AGENT_MODEL, max_turns=max_turns, theme=themes.snapshot(project['theme_id']))
+            # The model is fixed when the person confirms; a later change to their settings makes this job stale, never
+            # silently switches who runs or pays for it.
+            data.update(model=AGENT_MODEL, max_turns=max_turns, theme=themes.snapshot(project['theme_id']),
+                        llm=resolve_llm(self.store, self.owner(conn, project['id'])).public())
             if revise is not None:
                 base = self._read(conn, project['id'], revise)
                 result = base.get('result') or {}
@@ -219,6 +227,11 @@ class VisualJobs:
                     raise StoreError('conflict', '只能在本章当前有效、已通过检查的 Agent 版本上修改')
                 data['revision'] = {'job_id': base['id'], 'sha256': result['sha256'], 'feedback': feedback.strip()}
             return self._submit(conn, project, scene['id'], 'agent', data, scene['revision'])
+
+    @staticmethod
+    def owner(conn, project_id):
+        row = conn.execute('SELECT owner_id FROM projects WHERE id=%s', [project_id]).fetchone()
+        return str(row['owner_id']) if row and row['owner_id'] else None
 
     @staticmethod
     def _acceptable(row):

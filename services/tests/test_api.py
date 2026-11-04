@@ -30,7 +30,7 @@ class ApiTests(ProjectFixture, unittest.TestCase):
         self.assertEqual(response.json()['config']['manuscript']['markdown'],markdown)
         self.assertEqual(self.client.post('/api/projects',json={**body,'source_text':'plain text'}).status_code,422)
         self.assertEqual(self.client.post('/api/projects',json={**body,'manuscript_format':'html'}).status_code,422)
-        with patch('services.api.app.Settings.from_env',return_value=None), \
+        with patch('services.api.app.resolve_llm',return_value=None), \
              patch('services.api.app.generate_manuscript',return_value=markdown) as generate:
             generated = self.client.post('/api/manuscripts/generate',json={'title':'uv','manuscript_format':'markdown'})
         self.assertEqual(generated.status_code,200)

@@ -1,10 +1,10 @@
 'use client';
 import React, { useEffect, useRef, useState } from 'react';
 import { request } from '../../lib/editor';
-import { parseImageSettings, type ImageSettingsStatus } from '../../lib/image-settings';
+import { DEFAULT_BASE_URL, DEFAULT_MODEL, parseModelSettings, type ModelSettingsStatus } from '../../lib/model-settings';
 import { useConfirm } from '../ConfirmContext';
 import {
-  ImageIcon,
+  Sparkles,
   Globe,
   Key,
   Shield,
@@ -19,9 +19,10 @@ import {
   Check,
 } from '../Icons';
 
-export function ImageSettings() {
-  const [saved, setSaved] = useState<ImageSettingsStatus | null>(null);
-  const [url, setUrl] = useState('https://api.openai.com/v1');
+export function ModelSettings() {
+  const [saved, setSaved] = useState<ModelSettingsStatus | null>(null);
+  const [url, setUrl] = useState(DEFAULT_BASE_URL);
+  const [model, setModel] = useState(DEFAULT_MODEL);
   const [key, setKey] = useState('');
   const [showKey, setShowKey] = useState(false);
   const [loading, setLoading] = useState(true);
@@ -32,9 +33,10 @@ export function ImageSettings() {
   const confirm = useConfirm();
 
   function accept(value: unknown) {
-    const status = parseImageSettings(value);
+    const status = parseModelSettings(value);
     setSaved(status);
     setUrl(status.base_url);
+    setModel(status.model);
     setKey('');
   }
 
@@ -44,7 +46,7 @@ export function ImageSettings() {
     setMessage('');
     setKey('');
     try {
-      const value = await request('/api/auth/image-settings', undefined, 'GET', signal);
+      const value = await request('/api/auth/model-settings', undefined, 'GET', signal);
       if (mounted.current && !signal?.aborted) accept(value);
     } catch (e) {
       if (mounted.current && !signal?.aborted) {
@@ -68,15 +70,15 @@ export function ImageSettings() {
   const needsKey = !saved?.configured || url.trim() !== saved.base_url;
 
   return (
-    <section className="settings-card" aria-labelledby="image-settings-title">
+    <section className="settings-card" aria-labelledby="model-settings-title">
       <div className="settings-card-header">
         <div className="settings-card-icon-wrap">
-          <ImageIcon size={22} className="settings-card-icon" />
+          <Sparkles size={22} className="settings-card-icon" />
         </div>
         <div className="settings-card-title-group">
           <div className="settings-title-row">
-            <h2 id="image-settings-title" className="settings-card-title">
-              GPT Image 2 配置
+            <h2 id="model-settings-title" className="settings-card-title">
+              模型配置
             </h2>
             <div className="settings-status-pill">
               {loading ? (
@@ -89,17 +91,17 @@ export function ImageSettings() {
                 </span>
               ) : saved.configured ? (
                 <span className="status-badge status-configured" role="status">
-                  <span className="status-dot dot-green" /> 已保存密钥（不回显；未验证服务兼容性）
+                  <span className="status-dot dot-green" /> 已保存（密钥不回显；未验证服务兼容性）
                 </span>
               ) : (
                 <span className="status-badge status-unconfigured" role="status">
-                  <span className="status-dot dot-amber" /> 未配置
+                  <span className="status-dot dot-amber" /> 未配置 · 使用服务端 DeepSeek
                 </span>
               )}
             </div>
           </div>
           <p className="settings-card-desc">
-            仅当前账号可用。保存不会调用生图，也不会产生模型费用；尚未接通生图任务。
+            仅当前账号可用：讲稿生成和 Agent 生成画面都会使用这里的模型（OpenAI 兼容接口），费用由你的服务商收取。保存不调用模型、不产生费用；未配置时使用服务端 DeepSeek。已排队的 Agent 任务按提交时的配置执行，保存新配置后它们会停止，需要重新提交。
           </p>
         </div>
       </div>
@@ -142,13 +144,13 @@ export function ImageSettings() {
           setBusy(true);
           setError('');
           setMessage('');
-          const body = { base_url: url, api_key: key };
+          const body = { base_url: url, api_key: key, model: model.trim() };
           setKey('');
           try {
-            const result = await request('/api/auth/image-settings', body);
+            const result = await request('/api/auth/model-settings', body);
             if (mounted.current) {
               accept(result);
-              setMessage('配置已保存，不会自动生成图片。');
+              setMessage('配置已保存，不会自动调用模型。');
             }
           } catch (e) {
             if (mounted.current) {
@@ -162,34 +164,35 @@ export function ImageSettings() {
         <fieldset disabled={busy || loading || !saved} className="settings-fieldset">
           <div className="form-field-item">
             <div className="form-label-bar">
-              <label htmlFor="image-base-url" className="form-field-label">
+              <label htmlFor="model-base-url" className="form-field-label">
                 <Globe size={14} className="field-label-icon" /> Base URL
               </label>
               <div className="form-field-tags">
                 <span className="field-tag">HTTPS 协议</span>
-                {url !== 'https://api.openai.com/v1' && (
+                {url !== DEFAULT_BASE_URL && (
                   <button
                     type="button"
                     className="btn-tag-action"
                     onClick={() => {
-                      setUrl('https://api.openai.com/v1');
+                      setUrl(DEFAULT_BASE_URL);
+                      setModel(DEFAULT_MODEL);
                       setKey('');
                     }}
                   >
-                    重置为官方地址
+                    重置为 DeepSeek
                   </button>
                 )}
               </div>
             </div>
             <div className="input-with-icon-wrapper">
               <input
-                id="image-base-url"
+                id="model-base-url"
                 type="url"
                 required
                 maxLength={2048}
                 autoComplete="off"
                 className="input-styled"
-                placeholder="https://api.openai.com/v1"
+                placeholder={DEFAULT_BASE_URL}
                 value={url}
                 onChange={(e) => {
                   setUrl(e.target.value);
@@ -199,13 +202,39 @@ export function ImageSettings() {
             </div>
             <p className="field-hint">
               <Info size={13} className="hint-icon" />
-              填写 API 根地址，例如 https://api.openai.com/v1。保存不检查 DNS 或连通性；仅支持 HTTPS，不能包含密钥、查询参数或片段，不支持直接填写本机/内网地址。
+              填写 OpenAI 兼容接口的根地址（会在后面拼接 /chat/completions），例如 https://api.deepseek.com。仅支持 HTTPS，不能包含密钥、查询参数或片段；每次调用前会检查它解析到公网地址，本机/内网地址会被拒绝。
             </p>
           </div>
 
           <div className="form-field-item">
             <div className="form-label-bar">
-              <label htmlFor="image-api-key" className="form-field-label">
+              <label htmlFor="model-id" className="form-field-label">
+                <Sparkles size={14} className="field-label-icon" /> 模型 ID
+              </label>
+            </div>
+            <div className="input-with-icon-wrapper">
+              <input
+                id="model-id"
+                required
+                maxLength={200}
+                pattern={'[\\x21-\\x7e]{1,200}'}
+                autoComplete="off"
+                spellCheck={false}
+                className="input-styled"
+                placeholder={DEFAULT_MODEL}
+                value={model}
+                onChange={(e) => setModel(e.target.value)}
+              />
+            </div>
+            <p className="field-hint">
+              <Info size={13} className="hint-icon" />
+              服务商的模型名称，例如 deepseek-flash、qwen-plus。Agent 需要模型支持工具调用（function calling）。
+            </p>
+          </div>
+
+          <div className="form-field-item">
+            <div className="form-label-bar">
+              <label htmlFor="model-api-key" className="form-field-label">
                 <Key size={14} className="field-label-icon" /> API Key
               </label>
               <div className="form-field-tags">
@@ -218,7 +247,7 @@ export function ImageSettings() {
             </div>
             <div className="input-with-icon-wrapper password-input-wrap">
               <input
-                id="image-api-key"
+                id="model-api-key"
                 type={showKey ? 'text' : 'password'}
                 required={needsKey}
                 maxLength={2048}
@@ -261,8 +290,8 @@ export function ImageSettings() {
                   setBusy(true);
                   try {
                     const ok = await confirm({
-                      title: '删除图片服务配置？',
-                      message: '仅删除当前账号保存的地址和密钥，不删除已有图片或课程。',
+                      title: '删除模型配置？',
+                      message: '仅删除当前账号保存的地址、模型和密钥，之后改用服务端 DeepSeek；已排队的 Agent 任务会停止，需要重新提交。',
                       confirmText: '删除配置',
                       variant: 'danger',
                     });
@@ -270,7 +299,7 @@ export function ImageSettings() {
                     setError('');
                     setMessage('');
                     setKey('');
-                    const result = await request('/api/auth/image-settings/clear', {});
+                    const result = await request('/api/auth/model-settings/clear', {});
                     if (mounted.current) {
                       accept(result);
                       setMessage('配置已删除。');

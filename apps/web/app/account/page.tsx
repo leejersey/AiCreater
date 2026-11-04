@@ -3,7 +3,7 @@ import { useState } from 'react';
 import { AccountGate, AccountNav, useAccount } from '../AccountSession';
 import { request } from '../../lib/editor';
 import { parseAccount } from '../../lib/accounts';
-import { ImageSettings } from './ImageSettings';
+import { ModelSettings } from './ModelSettings';
 import {
   User,
   Shield,
@@ -12,7 +12,7 @@ import {
   CheckCircle,
   AlertCircle,
   Spinner,
-  ImageIcon,
+  Sparkles,
   Check,
   Eye,
   EyeOff,
@@ -215,7 +215,7 @@ function PasswordSettings() {
 
 function AccountPanel() {
   const { user } = useAccount();
-  const [activeTab, setActiveTab] = useState<'all' | 'image' | 'security'>('all');
+  const [activeTab, setActiveTab] = useState<'all' | 'model' | 'security'>('all');
 
   const usernameInitial = user?.username ? user.username.charAt(0).toUpperCase() : 'U';
 
@@ -262,11 +262,11 @@ function AccountPanel() {
               <button
                 type="button"
                 role="tab"
-                aria-selected={activeTab === 'image'}
-                className={`tab-pill-btn ${activeTab === 'image' ? 'active' : ''}`}
-                onClick={() => setActiveTab('image')}
+                aria-selected={activeTab === 'model'}
+                className={`tab-pill-btn ${activeTab === 'model' ? 'active' : ''}`}
+                onClick={() => setActiveTab('model')}
               >
-                <ImageIcon size={14} /> GPT Image 2
+                <Sparkles size={14} /> 模型配置
               </button>
               <button
                 type="button"
@@ -282,7 +282,7 @@ function AccountPanel() {
 
           {/* 设置分区卡片列表 */}
           <div className="account-cards-container">
-            {(activeTab === 'all' || activeTab === 'image') && <ImageSettings />}
+            {(activeTab === 'all' || activeTab === 'model') && <ModelSettings />}
             {(activeTab === 'all' || activeTab === 'security') && <PasswordSettings />}
           </div>
         </main>

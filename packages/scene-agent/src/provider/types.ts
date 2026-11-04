@@ -52,7 +52,8 @@ export interface Provider{
 // unavailable: rate limit, 5xx, network or timeout after transport retries.
 // request: the provider rejected the request shape (4xx) — a harness bug, not a model failure.
 // response: the provider answered with something the adapter cannot read.
-export type ProviderErrorCode='auth'|'unavailable'|'request'|'response'|'aborted';
+// destination: a configured endpoint resolves to a non-public address; nothing was sent.
+export type ProviderErrorCode='auth'|'unavailable'|'request'|'response'|'aborted'|'destination';
 export class ProviderError extends Error{
  constructor(readonly code:ProviderErrorCode,message:string,readonly status?:number){super(message);this.name='ProviderError';}
 }

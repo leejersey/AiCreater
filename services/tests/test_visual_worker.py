@@ -12,6 +12,13 @@ class VisualWorkerTests(unittest.TestCase):
         with patch.dict(os.environ,{'DEEPSEEK_API_KEY':'secret','DATABASE_URL':'db','VOLCENGINE_API_KEY':'tts','MINIO_SECRET_KEY':'s','PATH':'/bin'},clear=True):
             self.assertEqual(child_environment('export'),{'PATH':'/bin'})
             self.assertEqual(child_environment('agent'),{'PATH':'/bin','DEEPSEEK_API_KEY':'secret'})
+        from services.accounts.model_settings import LLM
+        own=LLM('https://api.example.com/v1','own-key','qwen-plus','account','v1')
+        with patch.dict(os.environ,{'DEEPSEEK_API_KEY':'secret','DATABASE_URL':'db','ACCOUNT_CREDENTIALS_KEY':'k','TOS_SECRET_KEY':'t','LLM_FAKE_IP_CIDR':'198.18.0.0/15','PATH':'/bin'},clear=True):
+            self.assertEqual(child_environment('agent',own),{'PATH':'/bin','LLM_FAKE_IP_CIDR':'198.18.0.0/15','ACCOUNT_LLM_BASE_URL':'https://api.example.com/v1',
+                'ACCOUNT_LLM_API_KEY':'own-key','ACCOUNT_LLM_MODEL':'qwen-plus'})
+            self.assertEqual(child_environment('export',own),{'PATH':'/bin'})
+            self.assertEqual(child_environment('restyle',own),{'PATH':'/bin'})
 
     def test_owned_directory_and_file_paths_reject_symlinks_and_traversal(self):
         from services.visual.worker import checked_file,job_directory

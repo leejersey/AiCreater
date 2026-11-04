@@ -7,8 +7,29 @@ from services.workflow.providers import ProviderError, Settings
 
 
 class ManuscriptHelperTests(unittest.TestCase):
-    def settings(self):
-        return Settings('sk', 'deepseek-flash', '', 'app', 'ak', 'seed-tts-2.0', 'speaker')
+    def setUp(self):
+        # No DNS in unit tests: the destination check answers with a public address.
+        patcher = patch('services.workflow.destination.socket.getaddrinfo', return_value=[(2, 1, 6, '', ('93.184.216.34', 443))])
+        patcher.start(); self.addCleanup(patcher.stop)
+
+    def test_an_account_model_is_called_at_its_own_url_with_its_key_and_no_deepseek_switch(self):
+        from services.workflow import manuscript as m
+        client = MagicMock()
+        client.post.return_value = MagicMock(status_code=200, content=b'{}',
+            json=lambda: {'choices': [{'finish_reason': 'stop', 'message': {'content': '正文。'}}]})
+        m.generate_manuscript('蒸发', self.settings(base_url='https://api.example.com/v1', api_key='own', model='deepseek-flash', source='account'), client)
+        args, kwargs = client.post.call_args
+        self.assertEqual(args[0], 'https://93.184.216.34/v1/chat/completions')
+        self.assertEqual((kwargs['headers']['Host'], kwargs['headers']['Authorization']), ('api.example.com', 'Bearer own'))
+        self.assertNotIn('thinking', kwargs['json'])  # same model name, but not DeepSeek's endpoint
+        m.generate_manuscript('蒸发', self.settings(), client)
+        self.assertEqual(client.post.call_args.kwargs['json']['thinking'], {'type': 'disabled'})
+        with self.assertRaises(ProviderError):
+            m.generate_manuscript('蒸发', self.settings(api_key=''), client)
+
+    def settings(self, **change):
+        from services.accounts.model_settings import LLM
+        return LLM(**{'base_url': 'https://api.deepseek.com', 'api_key': 'sk', 'model': 'deepseek-flash', 'source': 'env', 'version': None, **change})
 
     def test_rejects_blank_title_and_overlong_hints(self):
         from services.workflow import manuscript as m
@@ -87,12 +108,12 @@ class ManuscriptApiOfflineTests(unittest.TestCase):
         from services.workflow.providers import ProviderError
         store = MagicMock()
         app = create_app(store, authentication=False)
-        app.state.jobs = MagicMock()
+        app.state.jobs = MagicMock(); app.state.store = store  # no lifespan here; resolve_llm is patched below
         client = TestClient(app, base_url='http://127.0.0.1:8000', client=('127.0.0.1', 50000))
         bad = client.post('/api/manuscripts/generate', json={'title': ''})
         self.assertIn(bad.status_code, (400, 422))
         offline = Settings('sk', 'deepseek-flash', 'tts', '', '', 'seed-tts-2.0', 'speaker')
-        with patch('services.api.app.Settings.from_env', return_value=offline), \
+        with patch('services.api.app.resolve_llm', return_value=offline), \
                 patch('services.api.app.generate_manuscript', return_value='讲稿正文') as gen:
             ok = client.post('/api/manuscripts/generate', json={
                 'title': '蒸发', 'audience': '初中', 'duration_hint': '3分钟', 'outline': '定义'})
@@ -103,17 +124,17 @@ class ManuscriptApiOfflineTests(unittest.TestCase):
             self.assertEqual(gen.call_args.kwargs['audience'], '初中')
             self.assertEqual(gen.call_args.kwargs['duration_hint'], '3分钟')
             self.assertEqual(gen.call_args.kwargs['outline'], '定义')
-        with patch('services.api.app.Settings.from_env', return_value=offline), \
+        with patch('services.api.app.resolve_llm', return_value=offline), \
                 patch('services.api.app.generate_manuscript', side_effect=ProviderError('manuscript', 'output_limit', 'too long')):
             over = client.post('/api/manuscripts/generate', json={'title': '蒸发'})
             self.assertEqual(over.status_code, 422)
             self.assertEqual(over.json()['code'], 'output_limit')
-        with patch('services.api.app.Settings.from_env', return_value=offline), \
+        with patch('services.api.app.resolve_llm', return_value=offline), \
                 patch('services.api.app.generate_manuscript', side_effect=ProviderError('config', 'missing_setting', 'DEEPSEEK_API_KEY')):
             missing = client.post('/api/manuscripts/generate', json={'title': '蒸发'})
             self.assertEqual(missing.status_code, 503)
             self.assertEqual(missing.json()['code'], 'missing_setting')
-        with patch('services.api.app.Settings.from_env', return_value=offline), \
+        with patch('services.api.app.resolve_llm', return_value=offline), \
                 patch('services.api.app.generate_manuscript', side_effect=ProviderError('manuscript', 'transport_error', 'down')):
             down = client.post('/api/manuscripts/generate', json={'title': '蒸发'})
             self.assertEqual(down.status_code, 502)

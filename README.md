@@ -75,7 +75,7 @@ Markdown 使用固定格式：每段 `## [s1] 标题`（ID 唯一），依次包
 - 注册 / 登录 / 退出 / 修改密码
 - 课程按用户隔离，草稿按用户隔离
 - 会话过期后原位续登，不丢失编辑内容
-- 个人中心可保存 GPT Image 2 的 Base URL 与 API Key（按账号加密保存，需在 `.env` 配置 `ACCOUNT_CREDENTIALS_KEY`）；目前没有功能使用它
+- **模型配置**：个人中心可保存自己的 OpenAI 兼容模型（Base URL、API Key、模型 ID，按账号加密保存，需在 `.env` 配置 `ACCOUNT_CREDENTIALS_KEY`），讲稿生成和 Agent 生成画面都会使用，费用由你的服务商收取；未配置时使用服务端 DeepSeek。每次调用前检查地址解析到公网（Fake-IP 代理需设 `LLM_FAKE_IP_CIDR`）；Agent 任务按提交时的模型执行，之后改配置会让排队中的任务停止
 
 ---
 

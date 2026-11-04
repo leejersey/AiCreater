@@ -20,8 +20,9 @@ from services.projects.jobs import Jobs
 from services.projects.estimates import estimate_project, estimate_retry
 from services.projects.store import Store, StoreError
 from services.projects.storage import ObjectStore
+from services.accounts.model_settings import resolve_llm
 from services.workflow.manuscript import generate_manuscript
-from services.workflow.providers import ProviderError, Settings
+from services.workflow.providers import ProviderError
 from services.projects.store import ROOT
 
 
@@ -73,7 +74,7 @@ class DeleteProject(Revision):
 
 
 def _provider_error_status(code):
-    if code in ('output_limit', 'input_limit'):
+    if code in ('output_limit', 'input_limit', 'unsafe_destination'):
         return 422
     if code in ('missing_setting', 'invalid_auth', 'invalid_setting'):
         return 503
@@ -136,9 +137,10 @@ def create_app(store=None, *, authentication=True):
     @app.post('/api/manuscripts/generate')
     def manuscript_generate(body: GenerateManuscript, request: Request):
         try:
-            settings = Settings.from_env()
-            with httpx.Client(timeout=120) as client:
-                text = generate_manuscript(body.title, settings, client, audience=body.audience,
+            llm = resolve_llm(request.app.state.store, getattr(request.state, 'user', {}).get('id'))
+            # Direct, never via HTTP(S)_PROXY: the destination check pins the connection to an address it checked.
+            with httpx.Client(timeout=120, trust_env=False) as client:
+                text = generate_manuscript(body.title, llm, client, audience=body.audience,
                     duration_hint=body.duration_hint, outline=body.outline,
                     user_id=getattr(request.state, 'user', {}).get('id'),
                     teaching_style=body.teaching_style, manuscript_format=body.manuscript_format)
