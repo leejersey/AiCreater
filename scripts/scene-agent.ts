@@ -20,7 +20,7 @@ function parseArgs(argv:string[]){
  const flags:Record<string,string|true>={};
  for(const arg of rest){
   const match=/^--([a-z-]+)(?:=(.+))?$/.exec(arg);
-  if(!match||!['model','confirm-paid','cues','initial','out','max-turns'].includes(match[1]))throw Error(`unknown argument ${arg}\n${USAGE}`);
+  if(!match||!['model','confirm-paid','cues','initial','out','max-turns','theme'].includes(match[1]))throw Error(`unknown argument ${arg}\n${USAGE}`);
   flags[match[1]]=match[2]??true;
  }
  if(flags.model===true)throw Error(`--model needs a name\n${USAGE}`);
