@@ -26,7 +26,7 @@
     "@remotion/bundler": "4.0.534",
     "@remotion/renderer": "4.0.534",
     "ajv": "8.20.0",
-    "next": "16.4.0",
+    "next": "16.4.5",
     "postcss": "8.5.29",
     "react": "19.2.0",
     "react-dom": "19.2.0",
