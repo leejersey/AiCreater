@@ -9,6 +9,8 @@ export type VisualJob = {
   stage?:string|null; error?:string|null;current?:boolean;
   created_at?:string;
   result:{sha256?:string;frames?:string[];video?:string;srt?:string;accepted?:boolean;requests_dispatched?:number|null;
+   /** pending: published from this machine only; the object-storage upload failed and the runner retries it. */
+   backup?:'pending';
    agent?:{status:'passed';turns:number;finish_by:'model'|'harness';output_tokens:number}}|null;
 };
 export const AGENT_MAX_TURNS=25,MAX_FEEDBACK=2000;
@@ -51,7 +53,7 @@ export function parseVisualJobs(value:unknown,projectId:string):VisualJob[] {
       if((r.sha256!==undefined&&!sha(r.sha256))||
         (r.frames!==undefined&&(!Array.isArray(r.frames)||!r.frames.every(f=>file(f)&&f.startsWith('stills/'))))||
         (r.video!==undefined&&r.video!=='video.mp4')||(r.srt!==undefined&&r.srt!=='video.srt')||
-        (r.accepted!==undefined&&typeof r.accepted!=='boolean')||
+        (r.accepted!==undefined&&typeof r.accepted!=='boolean')||(r.backup!==undefined&&r.backup!=='pending')||
         (r.requests_dispatched!=null&&(!Number.isInteger(r.requests_dispatched)||Number(r.requests_dispatched)<0||Number(r.requests_dispatched)>(agent?.max_turns??0))))throw invalid();
       let agentResult:NonNullable<VisualJob['result']>['agent'];
       if(v.kind==='agent'&&v.state==='succeeded'){
@@ -63,7 +65,7 @@ export function parseVisualJobs(value:unknown,projectId:string):VisualJob[] {
       }
       result={...(r.sha256!==undefined?{sha256:r.sha256 as string}:{}),...(r.frames!==undefined?{frames:r.frames as string[]}:{}),
         ...(r.video?{video:'video.mp4'}:{}),...(r.srt?{srt:'video.srt'}:{}),
-        ...(r.accepted!==undefined?{accepted:r.accepted as boolean}:{}),...(r.requests_dispatched!==undefined?{requests_dispatched:r.requests_dispatched as number|null}:{}),...(agentResult?{agent:agentResult}:{})};
+        ...(r.accepted!==undefined?{accepted:r.accepted as boolean}:{}),...(r.backup==='pending'?{backup:'pending' as const}:{}),...(r.requests_dispatched!==undefined?{requests_dispatched:r.requests_dispatched as number|null}:{}),...(agentResult?{agent:agentResult}:{})};
     }else if(v.kind==='agent'&&v.state==='succeeded')throw invalid();
     return {id:v.id,project_id:projectId,scene_id:(v.scene_id??null) as string|null,kind:v.kind,state:v.state as VisualJob['state'],stage:v.stage as string|null|undefined,error:v.error as string|null|undefined,...(typeof v.created_at==='string'?{created_at:v.created_at}:{}),...(agent?{agent}:{}),...(v.current!==undefined?{current:v.current as boolean}:{}),
       ...(typeof summary.theme_id==='string'?{theme_id:summary.theme_id}:{}),...(typeof summary.theme_accent==='string'?{theme_accent:summary.theme_accent}:{}),...(v.kind==='restyle'?{restyle_of:summary.agent_id as string}:{}),result};

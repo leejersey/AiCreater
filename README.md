@@ -191,7 +191,7 @@ npm run test:workflow    # Python 后端测试（未设置 TEST_DATABASE_URL 时
 
 配音、对齐、Agent 与导出任务都在同一张 `jobs` 表里，由 `services/projects/leases.py` 统一领取与续租：租约时限按类型设定（配音与对齐 15 分钟，Agent 与导出 30 分钟，超时由执行器回收），运行中靠心跳续租，每条队列（workflow / render）同时只运行一个任务；取消运行中的 Agent 任务时，执行器在下一次心跳停止。付费任务（配音、Agent）只在用户确认后入队；Agent 未通过检查时停止并保留运行记录，不自动重试。
 
-媒体以火山 TOS 私有桶为主副本，经 S3 兼容端点访问，不开放公共链接，下载都经过 API 校验哈希。配音音频、Agent 视频（源码、MP4、字幕、审查帧）与整课导出都存入 TOS；本机目录只是渲染缓存，缺失时下载或导出会自动从 TOS 取回。Agent 视频上传失败时任务仍会发布、付费结果不丢，之后执行 `python -m services.projects.sync_storage` 补传（可重复执行）。
+媒体以火山 TOS 私有桶为主副本，经 S3 兼容端点访问，不开放公共链接，下载都经过 API 校验哈希。配音音频、Agent 视频（源码、MP4、字幕、审查帧）与整课导出都存入 TOS；本机目录只是渲染缓存，缺失时下载或导出会自动从 TOS 取回。Agent 视频上传失败时任务仍会发布、付费结果不丢，页面提示「尚未备份到 TOS」，执行器每 10 分钟自动补传；也可手动运行 `python -m services.projects.sync_storage`（可重复执行）。
 
 ---
 

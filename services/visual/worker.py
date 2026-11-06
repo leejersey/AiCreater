@@ -99,6 +99,22 @@ def store_files(objects,job_id,result,callback=None):
         objects.put(checked_file(directory,name),checksum,file_limit(name),callback)
 
 
+def retry_storage(jobs,limit=20):
+    """Uploads published files whose upload failed when their job finished. Returns (stored, still_pending)."""
+    if not jobs.store.objects:return 0,0
+    with jobs.store.connection() as conn:
+        rows=conn.execute("""SELECT id,result FROM jobs WHERE kind IN ('agent','export','restyle') AND state='succeeded'
+            AND result->'_stored'='false'::jsonb ORDER BY ended_at LIMIT %s""",[limit]).fetchall()
+    stored=0
+    for row in rows:
+        try:store_files(jobs.store.objects,str(row['id']),row['result'])
+        except (StoreError,OSError,ValueError):continue
+        with jobs.store.connection() as conn:
+            conn.execute("UPDATE jobs SET result=result-'_stored' WHERE id=%s AND result->'_stored'='false'::jsonb",[row['id']])
+        stored+=1
+    return stored,len(rows)-stored
+
+
 def child_environment(kind,llm=None):
     """An allowlisted environment. Agent runs get one model key: the course owner's (ACCOUNT_LLM_*) or the server's
     DeepSeek key. Database, encryption and storage secrets never reach the child."""
@@ -245,8 +261,10 @@ def run_once(jobs,lane='workflow',*,timeout=None,heartbeat_interval=5,launcher=N
         result=publishable_result(job,directory)
         try:store_files(jobs.store.objects,job['id'],result,lambda:jobs.heartbeat(job['id'],token))
         except StoreError:
-            # The paid result is kept and published from the local copy; `python -m services.projects.sync_storage` uploads it later.
-            print(f'visual {job["id"]}: object storage upload failed; run services.projects.sync_storage',file=sys.stderr,flush=True)
+            # The paid result is kept and published from the local copy, marked as not yet stored: the page says so and
+            # the runner's retry_storage uploads it later.
+            result['_stored']=False
+            print(f'visual {job["id"]}: object storage upload failed; retried by the runner',file=sys.stderr,flush=True)
         return finish(result)
     except (Exception,KeyboardInterrupt):
         if process:_stop(process)

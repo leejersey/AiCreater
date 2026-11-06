@@ -178,3 +178,13 @@ test('a passed version can be revised with feedback: body, confirmation, parsing
  const [failed]=parseVisualJobs({jobs:[{...passed,state:'failed',result:{requests_dispatched:3}}]},'p');
  assert.doesNotMatch(panel(failed,()=>{}),/按意见修改（付费）/); // only a passed version can be revised
 });
+
+test('a video not yet backed up to object storage says so',async()=>{
+ const {VisualMedia}=await import('../app/VisualWorkbench');
+ const [job]=parseVisualJobs({jobs:[{id:'e1',project_id:'p',scene_id:null,kind:'export',state:'succeeded',result:{video:'video.mp4',srt:'video.srt',backup:'pending'}}]},'p');
+ assert.equal(job.result?.backup,'pending');
+ assert.match(renderToStaticMarkup(createElement(VisualMedia,{projectId:'p',job})),/尚未备份到 TOS/);
+ const [stored]=parseVisualJobs({jobs:[{id:'e2',project_id:'p',scene_id:null,kind:'export',state:'succeeded',result:{video:'video.mp4',srt:'video.srt'}}]},'p');
+ assert.doesNotMatch(renderToStaticMarkup(createElement(VisualMedia,{projectId:'p',job:stored})),/尚未备份/);
+ assert.throws(()=>parseVisualJobs({jobs:[{id:'e3',project_id:'p',scene_id:null,kind:'export',state:'succeeded',result:{video:'video.mp4',backup:'maybe'}}]},'p'));
+});

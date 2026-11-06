@@ -237,7 +237,8 @@ export default function VisualWorkbench({routeProjectId}:{routeProjectId:string}
 }
 const STILL_LABELS=['开头','中段','结尾'];
 export function VisualMedia({projectId,job,diagnostics=false}:{projectId:string;job:VisualJob;diagnostics?:boolean}) {
-  return <>{job.state==='succeeded'&&job.result?.video&&<video controls preload="metadata" src={visualFileUrl(projectId,job.id,job.result.video)}/>}
+  return <>{job.result?.backup==='pending'&&<p className="vw-warning" role="status">这个视频尚未备份到 TOS（上传失败），目前只保存在本机；执行器每 10 分钟自动重试，备份前请勿清理本机缓存。</p>}
+    {job.state==='succeeded'&&job.result?.video&&<video controls preload="metadata" src={visualFileUrl(projectId,job.id,job.result.video)}/>}
     {diagnostics&&<div className="vw-stills">{reviewFrames(job.result?.frames??[]).map((name,i)=><figure key={name}><img alt={STILL_LABELS[i]} src={visualFileUrl(projectId,job.id,name)}/><figcaption>{STILL_LABELS[i]}</figcaption></figure>)}</div>}
     {job.state==='succeeded'&&job.result?.video&&<a href={visualFileUrl(projectId,job.id,job.result.video)} download>下载 MP4</a>}{' '}
     {job.state==='succeeded'&&job.result?.srt&&<a href={visualFileUrl(projectId,job.id,job.result.srt)} download>下载 SRT</a>}</>;

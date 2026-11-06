@@ -64,6 +64,8 @@ class VisualJobs:
     @staticmethod
     def _public(row, current=True):
         result = {k: copy.deepcopy(v) for k, v in (row.get('result') or {}).items() if k in RESULT_FIELDS}
+        # Published from the local copy only: the object-storage upload failed and the runner retries it.
+        if (row.get('result') or {}).get('_stored') is False: result['backup'] = 'pending'
         accepted = bool(current and row['state'] == 'succeeded' and (row.get('result') or {}).get('accepted') is True)
         if row['kind'] == 'agent': result['accepted'] = accepted
         data = row.get('input') or {}

@@ -57,5 +57,34 @@ class VisualWorkerTests(unittest.TestCase):
             with self.assertRaises(ValueError):worker.local_file(objects,job,'video.srt')
             with self.assertRaises(ValueError):worker.local_file(None,job,'source.txt')
 
+    def test_a_failed_upload_is_retried_and_its_mark_cleared(self):
+        import hashlib
+        from unittest.mock import MagicMock
+        from services.projects.storage import ObjectStore
+        from services.tests.test_storage import FakeClient
+        from services.visual import worker
+        with tempfile.TemporaryDirectory() as directory, patch.object(worker,'WORK_ROOT',Path(directory).resolve()):
+            job_id='0b4f6f39-5d55-4b1c-9b2a-2f8f2b3c8a12';folder=worker.job_directory(job_id);folder.mkdir(parents=True)
+            (folder/'video.mp4').write_bytes(b'mp4');(folder/'video.srt').write_bytes(b'1')
+            result={'video':'video.mp4','srt':'video.srt','_stored':False,'_files':{n:hashlib.sha256((folder/n).read_bytes()).hexdigest() for n in ('video.mp4','video.srt')}}
+            client=FakeClient();jobs=MagicMock();jobs.store.objects=ObjectStore(client,'private-test')
+            conn=jobs.store.connection.return_value.__enter__.return_value
+            conn.execute.return_value.fetchall.return_value=[{'id':job_id,'result':result}]
+            client.fail=True
+            self.assertEqual(worker.retry_storage(jobs),(0,1))  # still down: stays pending
+            client.fail=False
+            self.assertEqual(worker.retry_storage(jobs),(1,0))
+            self.assertEqual(len(client.data),2)
+            self.assertIn("result-'_stored'",conn.execute.call_args.args[0])
+
+    def test_pending_backup_is_public_and_nothing_else_from_private_fields(self):
+        import uuid
+        from services.visual.store import VisualJobs
+        row={'id':uuid.uuid4(),'project_id':uuid.uuid4(),'scene_id':None,'kind':'export','state':'succeeded','stage':'complete','created_at':None,'error':None,
+             'input':{},'result':{'video':'video.mp4','srt':'video.srt','_stored':False,'_files':{}}}
+        self.assertEqual(VisualJobs._public(row)['result'],{'video':'video.mp4','srt':'video.srt','backup':'pending'})
+        row['result'].pop('_stored')
+        self.assertNotIn('backup',VisualJobs._public(row)['result'])
+
 
 if __name__=='__main__':unittest.main()

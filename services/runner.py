@@ -17,6 +17,7 @@ from services.config import ROOT, load_local_config
 
 LANES = ('workflow', 'render')
 IDLE_SECONDS = 2
+STORAGE_RETRY_SECONDS = 600  # render lane, while idle: re-upload published files whose upload failed
 
 
 def open_store():
@@ -50,6 +51,7 @@ def serve(lane):
     signal.signal(signal.SIGINT, stop); signal.signal(signal.SIGTERM, stop)
     store = open_store()
     print(f'runner {lane}: ready', flush=True)
+    retried = 0.0
     while not stopping:
         try: result = poll(store, lane)
         except KeyboardInterrupt: break
@@ -57,6 +59,15 @@ def serve(lane):
             print(f'runner {lane}: poll failed ({type(error).__name__}); retrying', file=sys.stderr, flush=True)
             result = None
         if result: print(f'runner {lane}: job {result["id"]} {result["state"]}', flush=True)
+        elif lane == 'render' and time.monotonic() - retried >= STORAGE_RETRY_SECONDS:
+            retried = time.monotonic()
+            try:
+                from services.visual.store import VisualJobs
+                from services.visual.worker import retry_storage
+                stored, pending = retry_storage(VisualJobs(store))
+                if stored or pending: print(f'runner {lane}: object storage retry stored {stored}, pending {pending}', flush=True)
+            except Exception as error:
+                print(f'runner {lane}: object storage retry failed ({type(error).__name__})', file=sys.stderr, flush=True)
         elif not stopping: time.sleep(IDLE_SECONDS)
     return 0
 

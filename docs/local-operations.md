@@ -114,4 +114,4 @@ named volume只提供持久化，不是可恢复备份。备份必须在停写�
 
 配音音频、Agent 视频（源码、MP4、字幕、审查帧）与整课导出都存入 TOS 私有桶，配置在 `.env`：`TOS_REGION`（如 `cn-beijing`）、`TOS_BUCKET`、`TOS_ACCESS_KEY`、`TOS_SECRET_KEY`；`TOS_ENDPOINT` 留空即 `https://tos-s3-<region>.volces.com`（S3 兼容端点，虚拟主机风格）。桶须在控制台预先建好、不加桶策略，AK/SK 用只授权该桶的 IAM 子用户。不设 `TOS_BUCKET` 时媒体只留本机缓存。
 
-本机目录（`apps/renderer/public/generated/`、`output/visual-workbench/`）是渲染用的缓存：缺失时下载与导出会从 TOS 取回并校验哈希。Agent 视频上传失败时任务仍会发布（付费结果不丢），日志提示补跑 `python -m services.projects.sync_storage`——它把数据库引用的全部音频与已发布视频文件上传到 TOS，按内容哈希寻址，可重复执行，输出 `missing`/`failed` 应为 0。配音上传失败则配音任务失败。words 侧车文件不上传，见上文备份说明。
+本机目录（`apps/renderer/public/generated/`、`output/visual-workbench/`）是渲染用的缓存：缺失时下载与导出会从 TOS 取回并校验哈希。Agent / 导出 / 重渲染的文件上传失败时任务仍会发布（付费结果不丢），结果里记为待备份：页面在该视频上方提示「尚未备份到 TOS」，执行器的 render 队列空闲时每 10 分钟自动补传，成功后提示消失。也可以手动运行 `python -m services.projects.sync_storage` 一次补传数据库引用的全部音频与视频（按内容哈希寻址，可重复执行，输出 `missing`/`failed` 应为 0）。配音上传失败则配音任务失败。words 侧车文件不上传，见上文备份说明。
