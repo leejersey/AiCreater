@@ -138,8 +138,16 @@ export function jobTheme(value:unknown):SceneTheme{
  return value===undefined||value===null?builtinThemes().get(DEFAULT_THEME_ID)!:parseTheme(value);
 }
 /** Everything a render host needs from a theme, as plain JSON for a generated bundle entry. */
+/** CSS that puts scene text in the theme's body font, for scenes written before themes with a font of their own.
+ * Monospace text (font names with "mono" or "Courier") keeps its font. Empty for the default theme, so every video made
+ * before themes renders exactly as it was confirmed. */
+export function fontOverrideCss(theme:SceneTheme):string{
+ if(theme.id===DEFAULT_THEME_ID)return '';
+ const keep=['mono','courier'].flatMap(k=>[`:not([font-family*="${k}" i])`,`:not([style*="${k}" i])`]).join('');
+ return `svg text${keep}{font-family:${FONTS[theme.fonts.body].stack} !important}`;
+}
 export function hostTheme(theme:SceneTheme){
- return{props:sceneThemeProps(theme),decoration:theme.decoration,caption:theme.caption,faces:themeFonts(theme).faces};
+ return{props:sceneThemeProps(theme),decoration:theme.decoration,caption:theme.caption,faces:themeFonts(theme).faces,fontCss:fontOverrideCss(theme)};
 }
 /** `import '…css';` lines for a generated bundle entry: the theme's bundled fonts. */
 export function fontImports(theme:SceneTheme):string{

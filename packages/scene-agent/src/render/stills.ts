@@ -8,7 +8,7 @@ import {existsSync} from 'node:fs';
 import {createHash} from 'node:crypto';
 import path from 'node:path';
 import {checkSource,type SceneBrief} from '../../../custom-scenes/src/contract';
-import {fontImports,jobTheme,sceneThemeProps,themeFonts,type SceneTheme} from '../../../scene-themes/src/index';
+import {fontImports,fontOverrideCss,jobTheme,sceneThemeProps,themeFonts,type SceneTheme} from '../../../scene-themes/src/index';
 import {repositoryRoot} from '../../../custom-scenes/src/files';
 import type {GeometryAudit} from '../../../custom-scenes/src/geometry-audit';
 import {decodePng,emptySpace,inkCoverage,type EmptySpace} from './ink';
@@ -45,7 +45,7 @@ function Wrapped(){
   console.debug('SCENE_GEOMETRY:'+JSON.stringify({frame,audit}));
   if(!released.current){released.current=true;continueRender(handle)}
  },[ready,frame,handle]);
- return <div ref={root} style={{width:'100%',height:'100%',background:${JSON.stringify(props.background)},fontFamily:${JSON.stringify(props.fontBody)},overflow:'hidden'}}><Scene frame={frame} fps={30} width={1920} height={1080} theme={${JSON.stringify(props)}}/></div>
+ return <div ref={root} style={{width:'100%',height:'100%',background:${JSON.stringify(props.background)},fontFamily:${JSON.stringify(props.fontBody)},overflow:'hidden'}}>${fontOverrideCss(theme)?`<style>{${JSON.stringify(fontOverrideCss(theme))}}</style>`:''}<Scene frame={frame} fps={30} width={1920} height={1080} theme={${JSON.stringify(props)}}/></div>
 }
 registerRoot(()=> <Composition id="CustomScene" component={Wrapped} width={1920} height={1080} fps={30} durationInFrames={${brief.durationInFrames}}/>);`;
 }

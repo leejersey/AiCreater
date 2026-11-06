@@ -5,7 +5,7 @@ import {workbenchCaptionLines,workbenchDisplayCaptions} from './workbench-captio
 import type {FrozenChapter,WorkbenchManifest} from './workbench';
 type SceneComponent=React.ComponentType<{frame:number;fps:number;width:number;height:number;theme:SceneThemeProps}>;
 // The theme as the host needs it: what the Scene receives, plus what only the host draws (decoration, caption bar, fonts).
-export type HostTheme={props:SceneThemeProps;decoration:Decoration;caption:{background:string;foreground:string};faces:string[]};
+export type HostTheme={props:SceneThemeProps;decoration:Decoration;caption:{background:string;foreground:string};faces:string[];fontCss?:string};
 
 const CAPTION_TOP=980; // decoration stays above the caption area
 /** The theme's one signature texture. Drawn by the host, never by scenes, and left out of the frames the audit measures. */
@@ -32,5 +32,5 @@ function Chapter({chapter,Scene,theme}:{chapter:FrozenChapter;Scene:SceneCompone
 export function WorkbenchVideo({manifest,scenes,fontText,theme}:{manifest:WorkbenchManifest;scenes:SceneComponent[];fontText:string;theme:HostTheme}){
  const [handle]=useState(()=>delayRender('Workbench host fonts'));
  useEffect(()=>{let live=true;Promise.all([...theme.faces.map(face=>document.fonts.load(face,fontText)),document.fonts.ready]).then(()=>{if(live)continueRender(handle);}).catch(cancelRender);return()=>{live=false;};},[handle,fontText,theme]);
- return <AbsoluteFill style={{background:theme.props.background,fontFamily:theme.props.fontBody,overflow:'hidden'}}>{manifest.chapters.map((chapter,i)=><Sequence key={i} from={chapter.from} durationInFrames={chapter.scene.duration_frames}><Chapter chapter={chapter} Scene={scenes[i]} theme={theme}/></Sequence>)}</AbsoluteFill>;
+ return <AbsoluteFill style={{background:theme.props.background,fontFamily:theme.props.fontBody,overflow:'hidden'}}>{theme.fontCss&&<style>{theme.fontCss}</style>}{manifest.chapters.map((chapter,i)=><Sequence key={i} from={chapter.from} durationInFrames={chapter.scene.duration_frames}><Chapter chapter={chapter} Scene={scenes[i]} theme={theme}/></Sequence>)}</AbsoluteFill>;
 }

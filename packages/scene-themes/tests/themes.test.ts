@@ -47,3 +47,11 @@ test('unreadable or malformed themes are rejected with the rule that failed',()=
 test('every bundled font stylesheet is installed',()=>{
  for(const font of Object.values(FONTS))for(const css of font.css)assert.ok(existsSync(path.join(THEMES_DIR,'../../../node_modules',css)),css);
 });
+
+test('non-default themes put scene text in their body font, keeping monospace text and the default theme as they were',async()=>{
+ const {fontOverrideCss}=await import('../src/index');
+ const themes=builtinThemes();
+ assert.equal(fontOverrideCss(themes.get('blueprint')!),'');
+ const css=fontOverrideCss(themes.get('paper-press')!);
+ assert.match(css,/^svg text:not\(\[font-family\*="mono" i\]\):not\(\[style\*="mono" i\]\):not\(\[font-family\*="courier" i\]\):not\(\[style\*="courier" i\]\)\{font-family:"Noto Serif SC", "Noto Sans SC", serif !important\}$/);
+});
