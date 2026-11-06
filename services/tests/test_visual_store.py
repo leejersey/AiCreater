@@ -91,6 +91,21 @@ class VisualStoreTests(unittest.TestCase):
         with self.assertRaisesRegex(StoreError, 'validation'): self.store.set_theme(self.pid, 2, 'no-such-theme')
         with self.assertRaisesRegex(StoreError, 'conflict'): self.store.set_theme(self.pid, 1, 'blueprint')
 
+    def test_a_course_accent_is_checked_frozen_and_shown(self):
+        project = self.store.set_theme(self.pid, 1, 'paper-press', '#1F4E9C')
+        self.assertEqual((project['theme_id'], project['theme_accent'], project['revision']), ('paper-press', '#1f4e9c', 2))
+        job = self.agent(2)
+        frozen = self.jobs.get_raw(self.pid, job['id'])['input']['theme']['colors']
+        self.assertEqual((frozen['accent'], frozen['accentSoft']), ('#1f4e9c', '#1f4e9c1a'))
+        self.assertEqual(self.jobs.get(self.pid, job['id'])['input_summary']['theme_accent'], '#1f4e9c')
+        self.jobs.cancel(self.pid, job['id'])
+        for bad in ['#efe7d6', 'blue', '#fff']:  # unreadable on the paper background, or not #rrggbb
+            with self.subTest(accent=bad), self.assertRaisesRegex(StoreError, 'validation'): self.store.set_theme(self.pid, 2, 'paper-press', bad)
+        self.assertEqual(self.store.set_theme(self.pid, 2, 'paper-press', '#1f4e9c')['revision'], 2)  # unchanged
+        project = self.store.set_theme(self.pid, 2, 'paper-press')  # back to the theme's own accent
+        self.assertEqual((project['theme_accent'], project['revision']), (None, 3))
+        self.assertNotIn('theme_accent', self.jobs.get(self.pid, self.agent(3)['id'])['input_summary'])
+
     def test_claim_is_fenced_and_never_retries(self):
         job = self.agent(); claim = self.jobs.claim('workflow')
         self.assertEqual(claim['id'], job['id'])

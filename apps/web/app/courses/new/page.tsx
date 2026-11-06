@@ -8,7 +8,7 @@ import {useLocalDraft,DraftNotice} from '../../LocalDraft';
 import {ArrowLeft,Sparkles,Spinner,AlertCircle} from '../../Icons';
 import {useConfirm} from '../../ConfirmContext';
 import {outlinePlaceholder, isTeachingStyle, type TeachingStyle} from '../../../lib/teaching-style';
-import {parseThemes,suggestedTheme,type ThemeSummary} from '../../../lib/themes';
+import {parseThemes,suggestTheme,type ThemeSummary} from '../../../lib/themes';
 import {ThemePicker} from '../../ThemePicker';
 
 const initial = {title:'',source:'',audience:'',duration_hint:'',outline:'',teaching_style:'popular' as TeachingStyle,manuscript_format:'markdown' as 'markdown'|'plain'};
@@ -23,7 +23,8 @@ export default function NewCourse(){
   useEffect(()=>{let live=true;request<unknown>('/api/themes').then(v=>{if(live)setThemes(parseThemes(v));}).catch(()=>{});return()=>{live=false;};},[]);
   const style=isTeachingStyle(draft.value.teaching_style)?draft.value.teaching_style:'popular';
   // Until the person picks one, the theme follows the teaching style's suggestion.
-  const suggested=themes.length?suggestedTheme(themes,style):undefined;
+  const suggestion=themes.length?suggestTheme(themes,style,draft.value.source):undefined;
+  const suggested=suggestion?.id;
   const themeId=draft.value.theme_id&&themes.some(t=>t.id===draft.value.theme_id)?draft.value.theme_id:suggested;
 
   async function onGenerate(){
@@ -112,6 +113,7 @@ export default function NewCourse(){
             {themes.length>0&&<div>
               <label style={{marginBottom:'6px'}}>画面主题</label>
               <ThemePicker themes={themes} value={themeId??''} suggested={suggested} onChange={id=>draft.change({theme_id:id})}/>
+              {suggestion&&<p className="hint">推荐「{themes.find(t=>t.id===suggestion.id)?.name_zh}」：{suggestion.reason}{draft.value.theme_id&&draft.value.theme_id!==suggestion.id?'（你已另选）':''}。</p>}
               <p className="hint">整门课使用同一个主题，决定背景、配色、字体与字幕条。之后可在工作台更换，已确认的章节不用重新生成。</p>
             </div>}
 

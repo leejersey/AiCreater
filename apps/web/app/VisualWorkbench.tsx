@@ -4,7 +4,7 @@ import type {SceneRow} from '../lib/editor';
 import {request,parseJobs,parseSceneJob,type Project,type Job} from '../lib/editor';
 import {confirmEstimate} from '../lib/cost-estimates';
 import {currentVoiceJob} from '../lib/course';
-import {parseVisualJobs,visualFileUrl,measuredReady,reviewFrames,visualError,sceneAudioActions,videoTaskStatus,videoProgress,latestAgentJob,canAcceptAgent,exportedVersion,chapterStatus,agentBatchScenes,visualAgentBody,restyleOf,renderedTheme,AGENT_MAX_TURNS,estimatedSeconds,codePointOffset,AGENT_MAX_SECONDS,type VisualJob} from '../lib/visual-workbench';
+import {parseVisualJobs,visualFileUrl,measuredReady,reviewFrames,visualError,sceneAudioActions,videoTaskStatus,videoProgress,latestAgentJob,canAcceptAgent,exportedVersion,chapterStatus,agentBatchScenes,visualAgentBody,restyleOf,renderedTheme,sameLook,AGENT_MAX_TURNS,estimatedSeconds,codePointOffset,AGENT_MAX_SECONDS,type VisualJob} from '../lib/visual-workbench';
 import {agentModelLabel,confirmVisualAction,visualAgentAction,visualAgentReviseAction,type AgentModel} from '../lib/visual-workbench-actions';
 import {parseModelSettings} from '../lib/model-settings';
 import {useConfirm} from './ConfirmContext';
@@ -60,12 +60,12 @@ export function ChapterEditor({row,isLast,isOnly,voiced,disabled,blockedReason,o
 }
 /** One paid job designs, checks and renders the chapter. */
 /** A version drawn before the course changed theme: say so, and offer (or show) a free re-render in the current theme. */
-export function ThemeNotice({projectId,job,restyle,themes,courseTheme,now,updatedAt,disabled,blockedReason,onRestyle,onRefresh,onCancel}:{projectId:string;job:VisualJob;restyle?:VisualJob;
- themes:ThemeSummary[];courseTheme:string;now:number;updatedAt:number;disabled:boolean;blockedReason?:string;onRestyle:()=>void;onRefresh:()=>void;onCancel:()=>void}){
+export function ThemeNotice({projectId,job,restyle,themes,courseTheme,courseAccent,now,updatedAt,disabled,blockedReason,onRestyle,onRefresh,onCancel}:{projectId:string;job:VisualJob;restyle?:VisualJob;
+ themes:ThemeSummary[];courseTheme:string;courseAccent?:string|null;now:number;updatedAt:number;disabled:boolean;blockedReason?:string;onRestyle:()=>void;onRefresh:()=>void;onCancel:()=>void}){
  const fallback=themes.find(t=>t.default)?.id??courseTheme;
- const rendered=renderedTheme(job,fallback);
- if(job.state!=='succeeded'||rendered===courseTheme)return null;
- const [was,now_]=[themeName(themes,rendered),themeName(themes,courseTheme)];
+ if(job.state!=='succeeded'||sameLook(job,fallback,courseTheme,courseAccent))return null;
+ const look=(id:string,accent?:string|null)=>themeName(themes,id)+(accent?` · 强调色 ${accent}`:'');
+ const [was,now_]=[look(renderedTheme(job,fallback),job.theme_accent),look(courseTheme,courseAccent)];
  const running=!!restyle&&['queued','running'].includes(restyle.state);
  return <div className="vw-theme-note" aria-label="主题提示">
   <p>这个版本按「{was}」主题渲染，课程现在是「{now_}」。确认不受影响，整课导出会按「{now_}」渲染。</p>
@@ -184,8 +184,8 @@ export default function VisualWorkbench({routeProjectId}:{routeProjectId:string}
       <div className="vw-layout"><aside aria-label="章节列表"><h2>口播章节 · {project.scenes.length}</h2>
         {!project.scenes.length&&<p>尚未整理章节</p>}
         {project.scenes.map((s,i)=><button key={s.id} aria-pressed={s.id===row?.id} disabled={busy||dirty} onClick={()=>setSelected(s.id)}><span>{i+1}. {s.scene.narration.text.slice(0,36)}</span><small data-status={statuses[i].key}>{statuses[i].label}</small></button>)}
-        <ThemeSettings key={project.id+':'+(project.theme_id??'')} project={project} themes={themes} disabled={disabled||active} act={act}
-          onSave={async theme_id=>{setProject(await request<Project>(base+'/theme',{expected_revision:project.revision,theme_id},'PATCH'));}}/>
+        <ThemeSettings key={project.id+':'+(project.theme_id??'')+':'+(project.theme_accent??'')} project={project} themes={themes} disabled={disabled||active} act={act}
+          onSave={async (theme_id,accent)=>{setProject(await request<Project>(base+'/theme',{expected_revision:project.revision,theme_id,...(accent?{accent}:{})},'PATCH'));}}/>
         <VoiceSettings key={project.id} project={project} dirty={dirty} busy={busy} formEditing={dirty} onDirty={setDirty} act={act} onSave={async speaker=>{setProject(await request<Project>(base+'/voice',{expected_revision:project.revision,speaker},'PATCH'));setDirty(false);}}/>
       </aside><div className="vw-content">
         {activeJob&&activeJob.id!==agentJob?.id&&<div><h2>当前项目有任务正在执行</h2><VisualTaskProgress job={activeJob} now={now} updatedAt={updatedAt} disabled={busy} onRefresh={()=>void act(refresh)} onCancel={()=>cancelVisual(activeJob)}/>{activeJob.scene_id&&<button onClick={()=>setSelected(activeJob.scene_id!)}>查看执行中的章节</button>}</div>}
@@ -215,7 +215,7 @@ export default function VisualWorkbench({routeProjectId}:{routeProjectId:string}
             onRefresh={()=>void act(refresh)} onCancel={()=>{if(agentJob)cancelVisual(agentJob);}}
             onAccept={()=>void act(async()=>{const job=agentJob!;
               if(await confirm({title:'确认 Agent 视频',message:'确认已播放并检查画面、口播和字幕同步？确认后整课导出将使用此版本；口播或配音变化后确认失效。',detail:'SHA-256: '+job.result!.sha256,confirmText:'确认此版本'}))await submit('/'+job.id+'/accept',{confirmed:true,sha256:job.result!.sha256});})}>
-            {agentJob&&project.theme_id&&themes.length>0&&<ThemeNotice projectId={project.id} job={agentJob} restyle={restyleOf(sceneJobs,agentJob.id)} themes={themes} courseTheme={project.theme_id}
+            {agentJob&&project.theme_id&&themes.length>0&&<ThemeNotice projectId={project.id} job={agentJob} restyle={restyleOf(sceneJobs,agentJob.id)} themes={themes} courseTheme={project.theme_id} courseAccent={project.theme_accent}
               now={now} updatedAt={updatedAt} disabled={disabled} blockedReason={active?'项目内有任务进行中，结束后再重渲染。':undefined}
               onRefresh={()=>void act(refresh)} onCancel={()=>{const r=restyleOf(sceneJobs,agentJob.id);if(r)cancelVisual(r);}}
               onRestyle={()=>void act(async()=>{

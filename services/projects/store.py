@@ -143,7 +143,7 @@ class Store:
             scene['id'], scene['project_id'] = str(scene['id']), str(scene['project_id'])
         return {**row, 'id': str(row['id']), 'scenes': scenes,
                 'voice': copy.deepcopy(row['voice'] or self.profile['voice']), 'voice_configured': row['voice'] is not None,
-                'teaching_style': effective_teaching_style(row['config']), 'theme_id': themes.effective(row['config']),
+                'teaching_style': effective_teaching_style(row['config']), 'theme_id': themes.effective(row['config']), 'theme_accent': themes.accent_of(row['config']),
                 'source_text': ''.join(s['scene']['narration']['text'] for s in scenes) if scenes else row['source_text']}
 
     def profile_for(self, project):
@@ -220,15 +220,17 @@ class Store:
             conn.execute('UPDATE projects SET voice=%s,revision=revision+1 WHERE id=%s', [Jsonb(voice), project['id']])
             return self._read(conn, project['id'])
 
-    def set_theme(self, project_id, expected_revision, theme_id):
-        """One theme per course. Accepted Agent videos stay accepted (their source is theme-agnostic); the next export renders
-        in the new theme, and earlier exports stop being current because the revision moves."""
+    def set_theme(self, project_id, expected_revision, theme_id, accent=None):
+        """One theme per course, optionally with its own accent color. Accepted Agent videos stay accepted (their source is
+        theme-agnostic); the next export renders in the new theme, and earlier exports stop being current because the
+        revision moves."""
         themes.require(theme_id)
+        accent = themes.check_accent(theme_id, accent)
         with self.connection() as conn:
             project = self._structure_project(conn, project_id, expected_revision)
-            if project['theme_id'] == theme_id: return project
-            conn.execute("UPDATE projects SET config=jsonb_set(config,'{theme_id}',to_jsonb(%s::text)),revision=revision+1 WHERE id=%s",
-                         [theme_id, project['id']])
+            if project['theme_id'] == theme_id and project['theme_accent'] == accent: return project
+            conn.execute("""UPDATE projects SET config=jsonb_set(jsonb_set(config,'{theme_id}',to_jsonb(%s::text)),'{theme_accent}',%s::jsonb),
+                revision=revision+1 WHERE id=%s""", [theme_id, json.dumps(accent), project['id']])
             return self._read(conn, project['id'])
 
     @staticmethod

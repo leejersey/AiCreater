@@ -71,6 +71,10 @@ class VisualJobs:
         if row['kind'] == 'export': summary['chapter_count'] = len(data.get('chapters', []))
         # Jobs from before themes rendered in the default theme.
         summary['theme_id'] = (data.get('theme') or {}).get('id', themes.DEFAULT_THEME)
+        # The accent the job rendered with when it differs from its theme's own (a course color).
+        frozen = data.get('theme') or {}
+        if frozen.get('id') in themes._themes() and frozen['colors']['accent'] != themes.snapshot(frozen['id'])['colors']['accent']:
+            summary['theme_accent'] = frozen['colors']['accent']
         if row['kind'] == 'agent': summary.update(model=data.get('model'), max_turns=data.get('max_turns'))
         # Which model actually runs it; jobs from before account settings used the server's DeepSeek.
         if row['kind'] == 'agent': summary['llm'] = {k: (data.get('llm') or {'source': 'env', 'model': 'deepseek-flash'}).get(k) for k in ('source', 'model')}
@@ -217,7 +221,7 @@ class VisualJobs:
             data = measured_input(project, scene)
             # The model is fixed when the person confirms; a later change to their settings makes this job stale, never
             # silently switches who runs or pays for it.
-            data.update(model=AGENT_MODEL, max_turns=max_turns, theme=themes.snapshot(project['theme_id']),
+            data.update(model=AGENT_MODEL, max_turns=max_turns, theme=themes.course_snapshot(project),
                         llm=resolve_llm(self.store, self.owner(conn, project['id'])).public())
             if revise is not None:
                 base = self._read(conn, project['id'], revise)
@@ -273,7 +277,7 @@ class VisualJobs:
                 data = {k: copy.deepcopy(accepted['input'][k]) for k in ('scene', 'asset', 'fingerprint', 'brief', 'cues')}
                 chapters.append({**data, 'agent_id': str(accepted['id']), 'sha256': accepted['result']['sha256'], 'scene_id': scene['id']})
             return self._submit(conn, project, None, 'export', {'chapters': chapters, 'project_revision': expected_revision,
-                                'theme': themes.snapshot(project['theme_id'])}, expected_revision)
+                                'theme': themes.course_snapshot(project)}, expected_revision)
 
     def restyle(self, project_id, job_id, expected_revision):
         """Re-renders a passed Agent version of a chapter in the course's current theme: its own source, audio and captions,
@@ -285,10 +289,10 @@ class VisualJobs:
             agent = self._read(conn, project['id'], job_id)
             if not self._acceptable(agent) or not self._current(conn, project, agent):
                 raise StoreError('conflict', '只能为本章当前有效、已通过检查的 Agent 版本重渲染')
-            if (agent['input'].get('theme') or {}).get('id', themes.DEFAULT_THEME) == project['theme_id']:
+            if (agent['input'].get('theme') or themes.snapshot(themes.DEFAULT_THEME)) == themes.course_snapshot(project):
                 raise StoreError('validation', '这个版本已经是课程当前的主题')
             data = {k: copy.deepcopy(agent['input'][k]) for k in ('scene', 'asset', 'fingerprint', 'brief', 'cues')}
-            data.update(agent_id=str(agent['id']), sha256=agent['result']['sha256'], theme=themes.snapshot(project['theme_id']))
+            data.update(agent_id=str(agent['id']), sha256=agent['result']['sha256'], theme=themes.course_snapshot(project))
             scene = self.store._scene(project, agent['scene_id'])
             return self._submit(conn, project, scene['id'], 'restyle', data, scene['revision'])
 
@@ -309,7 +313,7 @@ class VisualJobs:
             if row['kind'] == 'restyle':
                 # Current while its Agent version is, and the course is still in the theme it was rendered in.
                 agent = self._read(conn, project['id'], data['agent_id'])
-                return (data['theme']['id'] == project['theme_id'] and agent['kind'] == 'agent' and
+                return (data['theme'] == themes.course_snapshot(project) and agent['kind'] == 'agent' and
                         (agent.get('result') or {}).get('sha256') == data['sha256'] and self._snapshot_current(project, row['scene_id'], data))
             return row['kind'] == 'agent' and self._snapshot_current(project, row['scene_id'], data)
         except (StoreError, KeyError, TypeError, ValueError):

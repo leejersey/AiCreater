@@ -2402,3 +2402,7 @@ aside[aria-label="章节列表"] small[data-status="running"] { color:#4dd2ff; }
 aside .theme-picker { grid-template-columns:1fr 1fr; }
 .vw-theme-note { margin:12px 0; padding:10px 12px; border:1px dashed var(--line-strong); border-radius:var(--radius-md); }
 .vw-theme-note > p:first-child { margin-top:0; }
+.theme-accent-field { display:flex; flex-direction:column; gap:6px; margin-top:10px; font-size:13px; }
+.theme-accent-field > span { display:flex; align-items:center; gap:8px; }
+.theme-accent-field input[type=color] { width:36px; height:28px; padding:0; border:1px solid var(--line); background:none; }
+.theme-accent-chip { display:inline-block; width:10px; height:10px; border-radius:2px; margin:0 4px; vertical-align:middle; }

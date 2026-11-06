@@ -67,6 +67,7 @@ class ProjectVoice(Revision):
 
 class ProjectTheme(Revision):
     theme_id: str = Field(min_length=1, max_length=40)
+    accent: str | None = Field(default=None, pattern=r'^#[0-9a-fA-F]{6}$')
 
 
 class DeleteProject(Revision):
@@ -180,7 +181,7 @@ def create_app(store=None, *, authentication=True):
 
     @app.patch('/api/projects/{project_id}/theme')
     def project_theme(project_id: str, body: ProjectTheme, request: Request):
-        return request.app.state.store.set_theme(project_id, body.expected_revision, body.theme_id)
+        return request.app.state.store.set_theme(project_id, body.expected_revision, body.theme_id, body.accent)
 
     @app.get('/api/themes')
     def theme_list():

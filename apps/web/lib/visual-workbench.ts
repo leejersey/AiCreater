@@ -3,7 +3,7 @@ import {canRetime,type SceneRow,type Job} from './editor';
 export type VisualJob = {
   id:string; project_id:string; scene_id:string|null; kind:'agent'|'export'|'restyle';
   /** The theme the job rendered in; restyle_of is the Agent version a restyle re-rendered. */
-  theme_id?:string; restyle_of?:string;
+  theme_id?:string; theme_accent?:string; restyle_of?:string;
   agent?:{model:string;max_turns:number;revision?:{of:string;feedback:string};llm?:{source:'account'|'env';model:string}};
   state:'queued'|'running'|'succeeded'|'failed'|'cancelled';
   stage?:string|null; error?:string|null;current?:boolean;
@@ -34,6 +34,7 @@ export function parseVisualJobs(value:unknown,projectId:string):VisualJob[] {
     const summary=object(v.input_summary)?v.input_summary:{};
     if(summary.theme_id!==undefined&&(typeof summary.theme_id!=='string'||!/^[a-z][a-z0-9-]{1,39}$/.test(summary.theme_id)))throw invalid();
     if(v.kind==='restyle'&&!identifier(summary.agent_id))throw invalid();
+    if(summary.theme_accent!==undefined&&(typeof summary.theme_accent!=='string'||!/^#[0-9a-f]{6}$/.test(summary.theme_accent)))throw invalid();
     let agent:VisualJob['agent'];
     if(v.kind==='agent'){
       // Any configured model name; a strict value here would hide the whole job list when the default changes.
@@ -65,7 +66,7 @@ export function parseVisualJobs(value:unknown,projectId:string):VisualJob[] {
         ...(r.accepted!==undefined?{accepted:r.accepted as boolean}:{}),...(r.requests_dispatched!==undefined?{requests_dispatched:r.requests_dispatched as number|null}:{}),...(agentResult?{agent:agentResult}:{})};
     }else if(v.kind==='agent'&&v.state==='succeeded')throw invalid();
     return {id:v.id,project_id:projectId,scene_id:(v.scene_id??null) as string|null,kind:v.kind,state:v.state as VisualJob['state'],stage:v.stage as string|null|undefined,error:v.error as string|null|undefined,...(typeof v.created_at==='string'?{created_at:v.created_at}:{}),...(agent?{agent}:{}),...(v.current!==undefined?{current:v.current as boolean}:{}),
-      ...(typeof summary.theme_id==='string'?{theme_id:summary.theme_id}:{}),...(v.kind==='restyle'?{restyle_of:summary.agent_id as string}:{}),result};
+      ...(typeof summary.theme_id==='string'?{theme_id:summary.theme_id}:{}),...(typeof summary.theme_accent==='string'?{theme_accent:summary.theme_accent}:{}),...(v.kind==='restyle'?{restyle_of:summary.agent_id as string}:{}),result};
   });
 }
 export function sceneAudioActions(row:SceneRow,jobs:Job[]) {
@@ -138,6 +139,10 @@ export function restyleOf(jobs:VisualJob[],agentId:string|undefined):VisualJob|u
 }
 /** Jobs from before themes rendered in the default theme. */
 export function renderedTheme(job:VisualJob,defaultTheme:string):string{return job.theme_id??defaultTheme;}
+/** Whether a job rendered in the course's current theme and accent. */
+export function sameLook(job:VisualJob,defaultTheme:string,courseTheme:string,courseAccent?:string|null):boolean{
+ return renderedTheme(job,defaultTheme)===courseTheme&&(job.theme_accent??null)===(courseAccent??null);
+}
 export function visualAgentBody(sceneId:string,revision:number,revise?:{job:string;feedback:string}){
  if(!identifier(sceneId)||!Number.isInteger(revision)||revision<1)throw invalid();
  if(revise&&(!identifier(revise.job)||!revise.feedback.trim()||revise.feedback.length>MAX_FEEDBACK))throw invalid();

@@ -58,3 +58,31 @@ test('the Agent panel says when a version was drawn in an older theme, and offer
  assert.match(shown,/<video[^>]+\/visual\/r1\/files\/video\.mp4/);
  assert.doesNotMatch(shown,/重渲染预览（免费）/);
 });
+
+test('the manuscript decides the suggestion when its words clearly point one way',async()=>{
+ const {suggestTheme}=await import('../lib/themes');
+ const ids=['blueprint','chalk-garden','paper-press','terminal-green','swiss-ikb','warm-keynote'].map(id=>theme(id));
+ const themes=parseThemes(ids);
+ assert.deepEqual(suggestTheme(themes,'popular','先安装依赖：```bash\npip install uv\n```，然后在终端运行命令，再写一个函数。'),{id:'terminal-green',reason:'文稿里有代码和命令'});
+ assert.equal(suggestTheme(themes,'popular','今年数据显示增长率 12%，同比上升 3.5%，各指标分布如下图表。').id,'swiss-ikb');
+ assert.equal(suggestTheme(themes,'technical','唐代诗人与文化思想，以及宋代文学的历史。').id,'paper-press');
+ // Too few or tied signals: the teaching style decides.
+ assert.deepEqual(suggestTheme(themes,'popular','今天聊聊一个有趣的问题。'),{id:'chalk-garden',reason:'按「通俗科普」推荐'});
+ assert.equal(suggestTheme(themes,'technical','').id,'blueprint');
+});
+
+test('a version drawn with another accent is not the course look, and says which accent',async()=>{
+ const {createElement}=await import('react');
+ const {renderToStaticMarkup}=await import('react-dom/server');
+ const {ThemeNotice}=await import('../app/VisualWorkbench');
+ const {sameLook}=await import('../lib/visual-workbench');
+ const themes=parseThemes([theme('blueprint'),theme('paper-press')]);
+ const [agent]=parseVisualJobs({jobs:[{id:'a1',project_id:'p',scene_id:'s',kind:'agent',state:'succeeded',current:true,
+  input_summary:{model:'deepseek-flash-thinking',max_turns:25,theme_id:'paper-press'},
+  result:{status:'passed',turns:6,requests_dispatched:6,finish_by:'model',usage:{outputTokens:1},sha256:'a'.repeat(64),video:'video.mp4',srt:'video.srt',frames:['stills/frame-1.png']}}]},'p');
+ assert.equal(sameLook(agent,'blueprint','paper-press',null),true);
+ assert.equal(sameLook(agent,'blueprint','paper-press','#1f4e9c'),false);
+ const html=renderToStaticMarkup(createElement(ThemeNotice,{projectId:'p',job:agent,themes,courseTheme:'paper-press',courseAccent:'#1f4e9c',now:0,updatedAt:0,disabled:false,onRestyle(){},onRefresh(){},onCancel(){}} as never));
+ assert.match(html,/这个版本按「纸刊」主题渲染，课程现在是「纸刊 · 强调色 #1f4e9c」/);
+ assert.throws(()=>parseVisualJobs({jobs:[{id:'x',project_id:'p',scene_id:'s',kind:'restyle',state:'queued',input_summary:{agent_id:'a1',theme_id:'paper-press',theme_accent:'red'}}]},'p'));
+});

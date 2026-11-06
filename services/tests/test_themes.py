@@ -18,4 +18,13 @@ class ThemeRegistryTests(unittest.TestCase):
         with self.assertRaises(StoreError): themes.require(None)
 
 
+    def test_a_course_accent_replaces_the_accent_and_its_translucent_fill(self):
+        theme = themes.snapshot('chalk-garden', '#7dd3fc')
+        self.assertEqual((theme['colors']['accent'], theme['colors']['accentSoft']), ('#7dd3fc', '#7dd3fc24'))
+        self.assertEqual(themes.snapshot('chalk-garden')['colors']['accent'], '#facc15')
+        self.assertIsNone(themes.check_accent('blueprint', None))
+        with self.assertRaises(StoreError): themes.check_accent('blueprint', '#10203a')  # dark on dark
+        self.assertEqual(round(themes.contrast('#000000', '#ffffff')), 21)
+
+
 if __name__ == '__main__': unittest.main()
