@@ -4,7 +4,7 @@ import type {SceneRow} from '../lib/editor';
 import {request,parseJobs,parseSceneJob,type Project,type Job} from '../lib/editor';
 import {confirmEstimate} from '../lib/cost-estimates';
 import {currentVoiceJob} from '../lib/course';
-import {parseVisualJobs,visualFileUrl,measuredReady,reviewFrames,visualError,sceneAudioActions,videoTaskStatus,videoProgress,latestAgentJob,canAcceptAgent,exportedVersion,chapterStatus,agentBatchScenes,visualAgentBody,restyleOf,renderedTheme,sameLook,AGENT_MAX_TURNS,estimatedSeconds,codePointOffset,AGENT_MAX_SECONDS,type VisualJob} from '../lib/visual-workbench';
+import {parseVisualJobs,visualFileUrl,measuredReady,reviewFrames,visualError,sceneAudioActions,videoTaskStatus,videoProgress,latestAgentJob,canAcceptAgent,exportedVersion,chapterStatus,agentBatchScenes,visualAgentBody,restyleOf,renderedTheme,sameLook,nextStep,type NextStep,AGENT_MAX_TURNS,estimatedSeconds,codePointOffset,AGENT_MAX_SECONDS,type VisualJob} from '../lib/visual-workbench';
 import {agentModelLabel,confirmVisualAction,visualAgentAction,visualAgentReviseAction,type AgentModel} from '../lib/visual-workbench-actions';
 import {parseModelSettings} from '../lib/model-settings';
 import {useConfirm} from './ConfirmContext';
@@ -75,7 +75,8 @@ export function ThemeNotice({projectId,job,restyle,themes,courseTheme,courseAcce
     {restyle?.state==='failed'&&<p role="alert">{restyle.error||'重渲染失败，未自动重试。'}</p>}</>}
  </div>;
 }
-export function VisualAgentPanel({projectId,job,exported,now,updatedAt,disabled,blockedReason,onStart,onRefresh,onCancel,onAccept,onRevise,children}:{projectId:string;job?:VisualJob;exported?:VisualJob;now:number;updatedAt:number;disabled:boolean;blockedReason?:string;onStart:()=>void;onRefresh:()=>void;onCancel:()=>void;onAccept?:()=>void;onRevise?:(feedback:string)=>void;children?:React.ReactNode}){
+/** hidePrimary: the workbench's 「下一步」 bar starts and confirms; generating again and revising move to 「更多操作」. */
+export function VisualAgentPanel({projectId,job,exported,now,updatedAt,disabled,blockedReason,onStart,onRefresh,onCancel,onAccept,onRevise,children,hidePrimary=false}:{projectId:string;job?:VisualJob;exported?:VisualJob;now:number;updatedAt:number;disabled:boolean;blockedReason?:string;onStart:()=>void;onRefresh:()=>void;onCancel:()=>void;onAccept?:()=>void;onRevise?:(feedback:string)=>void;children?:React.ReactNode;hidePrimary?:boolean}){
  const running=!!job&&['queued','running'].includes(job.state);
  const [feedback,setFeedback]=useState('');
  return <div aria-label="Agent 视频" className="vw-current-video"><h3>Agent 视频</h3>
@@ -83,17 +84,20 @@ export function VisualAgentPanel({projectId,job,exported,now,updatedAt,disabled,
   {job&&job.state==='succeeded'&&job.result?.agent&&<p>{job.result.agent.finish_by==='model'?'Agent 已自检并通过检查':'Agent 未自行收尾，已采用最后一个通过检查的版本'} · {job.result.agent.turns} 轮 · 输出 {job.result.agent.output_tokens.toLocaleString('zh-CN')} token{job.agent?.llm?.source==='account'?` · 模型 ${job.agent.llm.model}（你的配置）`:''}</p>}
   {job?.agent?.revision&&<p className="hint">按意见修改自上一版：「{job.agent.revision.feedback}」</p>}
   {job&&job.result?.accepted===true&&<p>已确认此版本 · 可用于整课导出</p>}
-  {job&&onAccept&&canAcceptAgent(job)&&!job.result?.accepted&&<div className="vw-toolbar"><button disabled={disabled} onClick={onAccept}><Check size={14}/>看完后确认此版本</button></div>}
+  {!hidePrimary&&job&&onAccept&&canAcceptAgent(job)&&!job.result?.accepted&&<div className="vw-toolbar"><button disabled={disabled} onClick={onAccept}><Check size={14}/>看完后确认此版本</button></div>}
   {job&&job.state==='succeeded'&&<VisualMedia projectId={projectId} job={job} diagnostics/>}
   {children}
   <p>整课导出将使用：{!exported?'暂无已确认的版本':exported.id===job?.id?'上方这个版本':`更早确认的版本${exported.created_at?`（${new Date(exported.created_at).toLocaleString('zh-CN',{hour12:false})}）`:''}`}</p>
   {job&&job.state!=='succeeded'&&<VisualTaskProgress job={job} now={now} updatedAt={updatedAt} disabled={disabled} onRefresh={onRefresh} onCancel={onCancel}/>}
   {job?.state==='failed'&&typeof job.result?.requests_dispatched==='number'&&<p>{job.result.requests_dispatched?`本次已消耗 ${job.result.requests_dispatched} 轮模型调用。`:'本次没有产生模型消耗。'}</p>}
-  {job&&onRevise&&canAcceptAgent(job)&&<div className="vw-revise"><label>修改意见（说清楚哪里不满意、想要怎样，比如「第 2 段的流程图太小，放大到占画面一半」）
-   <textarea maxLength={2000} rows={3} value={feedback} disabled={disabled||running||!!blockedReason} onChange={e=>setFeedback(e.target.value)}/></label>
-   <div className="vw-toolbar"><button disabled={disabled||running||!!blockedReason||!feedback.trim()} onClick={()=>onRevise(feedback)}>按意见修改（付费）</button></div></div>}
-  <div className="vw-toolbar"><button disabled={disabled||running||!!blockedReason} onClick={onStart}><Film size={14}/>{job?'Agent 重新生成（付费）':'Agent 生成视频（付费）'}</button></div>
-  {blockedReason&&!running&&<p>{blockedReason}</p>}
+  {(()=>{
+   const actions=<>{job&&onRevise&&canAcceptAgent(job)&&<div className="vw-revise"><label>修改意见（说清楚哪里不满意、想要怎样，比如「第 2 段的流程图太小，放大到占画面一半」）
+    <textarea maxLength={2000} rows={3} value={feedback} disabled={disabled||running||!!blockedReason} onChange={e=>setFeedback(e.target.value)}/></label>
+    <div className="vw-toolbar"><button disabled={disabled||running||!!blockedReason||!feedback.trim()} onClick={()=>onRevise(feedback)}>按意见修改（付费）</button></div></div>}
+   {(!hidePrimary||job)&&<div className="vw-toolbar"><button disabled={disabled||running||!!blockedReason} onClick={onStart}><Film size={14}/>{job?'Agent 重新生成（付费）':'Agent 生成视频（付费）'}</button></div>}
+   {blockedReason&&!running&&<p>{blockedReason}</p>}</>;
+   return hidePrimary?(job?<details className="vw-more"><summary>更多操作</summary>{actions}</details>:null):actions;
+  })()}
  </div>;
 }
 export default function VisualWorkbench({routeProjectId}:{routeProjectId:string}) {
@@ -155,6 +159,27 @@ export default function VisualWorkbench({routeProjectId}:{routeProjectId:string}
     const job=parseSceneJob(await request<unknown>(audioActions.timingPath,audioActions.timingBody),project.id,row,'timing');
     setVoiceJobs(previous=>[job,...previous.filter(j=>j.job_id!==job.job_id)]);
   });
+  const voiceChapter=()=>void act(async()=>{
+    if(!row||!project||!audioActions)return;
+    const revision=project.revision;
+    if(!await confirmEstimate(audioActions.retry?'显式重试当前章节付费配音':'为当前章节付费配音',audioActions.estimatePath??base+'/estimate',audioActions.retry?undefined:{operation:'voice',expected_revision:revision,scenes:[{scene_id:row.id,expected_revision:row.revision}]},()=>alive.current,{
+      confirm:message=>confirm({title:'付费配音确认',message,confirmText:'确认付费配音',variant:'warning'})}))return;
+    const job=parseSceneJob(await request<unknown>(audioActions.voicePath,audioActions.voiceBody),project.id,row,'voice');
+    setVoiceJobs(previous=>[job,...previous.filter(j=>j.job_id!==job.job_id)]);
+  });
+  const startAgent=()=>{if(row&&project)void act(()=>confirmVisualAction(visualAgentAction(row.id,project.revision,llm),confirm,submit));};
+  const acceptAgent=()=>void act(async()=>{const job=agentJob;if(!job?.result?.sha256)return;
+    if(await confirm({title:'确认 Agent 视频',message:'确认已播放并检查画面、口播和字幕同步？确认后整课导出将使用此版本；口播或配音变化后确认失效。',detail:'SHA-256: '+job.result.sha256,confirmText:'确认此版本'}))await submit('/'+job.id+'/accept',{confirmed:true,sha256:job.result.sha256});});
+  const exportCourse=()=>void act(async()=>{if(!project)return;
+    if(await confirm({title:'整课导出',message:`导出全部 ${project.scenes.length} 章。每章使用最新确认的 Agent 版本；在本机渲染，不调用模型或配音。`,confirmText:'确认导出'}))await submit('/export',{expected_revision:project.revision,confirmed:true});});
+  const index=row&&project?project.scenes.findIndex(s=>s.id===row.id):-1;
+  const step:NextStep|undefined=row&&project?nextStep(row,jobs,voiceJobs,{isLast:index===project.scenes.length-1,allConfirmed:missing.length===0,projectBusy:!!activeJob&&activeJob.scene_id!==row.id}):undefined;
+  const runStep=()=>{
+    if(!step||!project)return;
+    if(step.key==='voice')voiceChapter();else if(step.key==='retime')retime();else if(step.key==='generate')startAgent();
+    else if(step.key==='confirm')acceptAgent();else if(step.key==='export')exportCourse();
+    else if(step.key==='next'){const following=project.scenes.slice(index+1).find((_,k)=>statuses[index+1+k].key!=='confirmed')??project.scenes[index+1];if(following)setSelected(following.id);}
+  };
   const voicedNote=(r:SceneRow)=>r.scene.narration.audio_asset_id?'本章已有配音，改动后需要重新配音（付费），已有的视频和确认会失效。':'';
   function chapterEdit(path:string,body:Record<string,unknown>,method:string,title:string,message:string){
     if(!row||!project)return;
@@ -176,9 +201,7 @@ export default function VisualWorkbench({routeProjectId}:{routeProjectId:string}
           if(!await confirm({title:`批量 Agent 生成 ${batch.length} 章（付费）`,message:`为第 ${batch.map(s=>project.scenes.indexOf(s)+1).join('、')} 章各提交一个 Agent 任务，依次执行。模型：${agentModelLabel(llm)}。每章最多 ${AGENT_MAX_TURNS} 轮模型调用，合计最多 ${batch.length*AGENT_MAX_TURNS} 轮；失败不自动重试。每章完成后仍需你看过并确认。`,confirmText:`确认最多 ${batch.length*AGENT_MAX_TURNS} 轮付费调用`,variant:'warning'}))return;
           for(const scene of batch)await submit('/agent',visualAgentBody(scene.id,project.revision));
         })}><Film size={14}/>批量 Agent 生成{batch.length?` ${batch.length} 章`:''}（付费）</button>
-        <button disabled={disabled||active||!project.scenes.length||missing.length>0} title={missing.length?'每章都需要一个已确认的视频':undefined} onClick={()=>void act(async()=>{
-          if(await confirm({title:'整课导出',message:`导出全部 ${project.scenes.length} 章。每章使用最新确认的 Agent 版本；在本机渲染，不调用模型或配音。`,confirmText:'确认导出'}))await submit('/export',{expected_revision:project.revision,confirmed:true});
-        })}><Film size={14}/>导出整课视频</button>
+        <button disabled={disabled||active||!project.scenes.length||missing.length>0} title={missing.length?'每章都需要一个已确认的视频':undefined} onClick={exportCourse}><Film size={14}/>导出整课视频</button>
         {latestExport?.result?.video&&<a href={visualFileUrl(project.id,latestExport.id,latestExport.result.video)} download>下载整课 MP4</a>}
       </div>
       <div className="vw-layout"><aside aria-label="章节列表"><h2>口播章节 · {project.scenes.length}</h2>
@@ -195,26 +218,22 @@ export default function VisualWorkbench({routeProjectId}:{routeProjectId:string}
             onSplit={at=>chapterEdit('/split',{at},'POST','从光标处拆分本章','拆成两章后，两章都需要重新配音（付费）。'+voicedNote(row))}
             onMergeNext={()=>chapterEdit('/merge-next',{},'POST','与下一章合并','两章合成一章后需要重新配音（付费），两章已有的视频和确认都会失效。')}
             onDelete={()=>chapterEdit('/delete',{confirmed:true},'POST','删除本章','本章的口播、配音和视频都会从课程中移除，不可恢复。')}/>
-          <div className="vw-step" aria-label="第 1 步：配音与对齐"><h3>第 1 步 · 配音与对齐</h3>
+          {step&&<div className="vw-next" aria-label="下一步" data-step={step.key}>
+            <div><strong>下一步</strong><p>{step.hint}</p></div>
+            <button className="vw-next-button" disabled={disabled||['wait','done'].includes(step.key)} onClick={runStep}>{step.label}</button>
+          </div>}
+          <details className="vw-step" aria-label="配音与对齐"><summary>配音与对齐 · {measuredReady(row)?`已就绪 · ${row.scene.duration_frames} 帧`:row.state==='needs_timing'?'已有音频，待实测对齐':'待配音'}</summary>
           <p>{measuredReady(row)?`实测音频与字幕已就绪 · ${row.scene.duration_frames} 帧`:row.state==='needs_timing'?'已有音频，待实测对齐':'待配音'}</p>
           {voice&&<p role="status">配音：{states[voice.state]??'待核对'} {voice.state==='failed'?(voice.error?.retryable?'可显式确认付费后重试。':'此任务不可重试，请检查项目状态。'):''}</p>}
-          <div className="vw-toolbar"><button disabled={disabled||audioActions!.voiceBlocked} onClick={()=>void act(async()=>{
-            const revision=project.revision;
-            if(!await confirmEstimate(audioActions!.retry?'显式重试当前章节付费配音':'为当前章节付费配音',audioActions!.estimatePath??base+'/estimate',audioActions!.retry?undefined:{operation:'voice',expected_revision:revision,scenes:[{scene_id:row.id,expected_revision:row.revision}]},()=>alive.current,{
-              confirm:message=>confirm({title:'付费配音确认',message,confirmText:'确认付费配音',variant:'warning'})}))return;
-            const job=parseSceneJob(await request<unknown>(audioActions!.voicePath,audioActions!.voiceBody),project.id,row,'voice');
-            setVoiceJobs(previous=>[job,...previous.filter(j=>j.job_id!==job.job_id)]);
-          })}><Mic size={14}/>{audioActions!.retry?'重试配音（付费）':measuredReady(row)?'配音已就绪':'添加配音（付费）'}</button>
+          <div className="vw-toolbar"><button disabled={disabled||audioActions!.voiceBlocked} onClick={voiceChapter}><Mic size={14}/>{audioActions!.retry?'重试配音（付费）':measuredReady(row)?'配音已就绪':'添加配音（付费）'}</button>
           <button disabled={disabled||audioActions!.timingBlocked} onClick={retime}><RefreshCw size={14}/>{row.state==='needs_timing'?'实测对齐（免费）':'重算时间轴（免费）'}</button></div>
-          </div>
-          <div className="vw-step" aria-label="第 2 步：生成视频"><h3>第 2 步 · 生成视频</h3>
-          <p>{measuredReady(row)?'配音已就绪，可以生成视频。':'配音完成后才能生成可确认、可导出的视频。'}</p>
-          <VisualAgentPanel key={row.id} projectId={project.id} job={agentJob} exported={exportedVersion(sceneJobs)} now={now} updatedAt={updatedAt} disabled={disabled} blockedReason={!measuredReady(row)?(row.state==='needs_timing'?'先完成第 1 步：实测对齐（免费）。':'先完成第 1 步：添加配音。'):active?'项目内有任务进行中，结束后再生成。':undefined}
-            onStart={()=>void act(()=>confirmVisualAction(visualAgentAction(row.id,project.revision,llm),confirm,submit))}
+          </details>
+          <div className="vw-step" aria-label="视频">
+          <VisualAgentPanel key={row.id} hidePrimary projectId={project.id} job={agentJob} exported={exportedVersion(sceneJobs)} now={now} updatedAt={updatedAt} disabled={disabled} blockedReason={!measuredReady(row)?(row.state==='needs_timing'?'先完成第 1 步：实测对齐（免费）。':'先完成第 1 步：添加配音。'):active?'项目内有任务进行中，结束后再生成。':undefined}
+            onStart={startAgent}
             onRevise={text=>{if(agentJob)void act(()=>confirmVisualAction(visualAgentReviseAction(row.id,project.revision,agentJob.id,text,llm),confirm,submit));}}
             onRefresh={()=>void act(refresh)} onCancel={()=>{if(agentJob)cancelVisual(agentJob);}}
-            onAccept={()=>void act(async()=>{const job=agentJob!;
-              if(await confirm({title:'确认 Agent 视频',message:'确认已播放并检查画面、口播和字幕同步？确认后整课导出将使用此版本；口播或配音变化后确认失效。',detail:'SHA-256: '+job.result!.sha256,confirmText:'确认此版本'}))await submit('/'+job.id+'/accept',{confirmed:true,sha256:job.result!.sha256});})}>
+            onAccept={acceptAgent}>
             {agentJob&&project.theme_id&&themes.length>0&&<ThemeNotice projectId={project.id} job={agentJob} restyle={restyleOf(sceneJobs,agentJob.id)} themes={themes} courseTheme={project.theme_id} courseAccent={project.theme_accent}
               now={now} updatedAt={updatedAt} disabled={disabled} blockedReason={active?'项目内有任务进行中，结束后再重渲染。':undefined}
               onRefresh={()=>void act(refresh)} onCancel={()=>{const r=restyleOf(sceneJobs,agentJob.id);if(r)cancelVisual(r);}}

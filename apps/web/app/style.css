@@ -2406,3 +2406,10 @@ aside .theme-picker { grid-template-columns:1fr 1fr; }
 .theme-accent-field > span { display:flex; align-items:center; gap:8px; }
 .theme-accent-field input[type=color] { width:36px; height:28px; padding:0; border:1px solid var(--line); background:none; }
 .theme-accent-chip { display:inline-block; width:10px; height:10px; border-radius:2px; margin:0 4px; vertical-align:middle; }
+/* One next step per chapter */
+.vw-next { display:flex; align-items:center; justify-content:space-between; gap:16px; margin:12px 0; padding:12px 16px; border:1px solid var(--accent); border-radius:var(--radius-md); background:rgba(16,185,129,0.06); }
+.vw-next p { margin:4px 0 0; font-size:13px; color:var(--text-secondary); }
+.vw-next-button { flex:none; padding:10px 18px; font-weight:600; background:var(--accent); color:#0b0f17; border-color:var(--accent); }
+.vw-next[data-step="wait"], .vw-next[data-step="done"] { border-color:var(--line); background:transparent; }
+.vw-next[data-step="wait"] .vw-next-button, .vw-next[data-step="done"] .vw-next-button { background:transparent; color:var(--text-secondary); border-color:var(--line); }
+details.vw-step > summary, details.vw-more > summary { cursor:pointer; padding:6px 0; color:var(--text-secondary); }

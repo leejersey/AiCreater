@@ -184,3 +184,24 @@ export function estimatedSeconds(text:string):number{
 export function codePointOffset(text:string,utf16Index:number):number{
  return Array.from(text.slice(0,utf16Index)).length;
 }
+
+export type NextStep={key:'wait'|'voice'|'retime'|'generate'|'confirm'|'next'|'export'|'done';label:string;hint:string;paid?:boolean};
+/** The one thing to do next on a chapter, from its state and jobs: the workbench shows it as the chapter's main button. */
+export function nextStep(row:SceneRow,jobs:VisualJob[],voiceJobs:Job[],{isLast,allConfirmed,projectBusy}:{isLast:boolean;allConfirmed:boolean;projectBusy:boolean}):NextStep{
+ const own=jobs.filter(j=>j.scene_id===row.id&&j.current!==false);
+ const audio=sceneAudioActions(row,voiceJobs);
+ if(own.some(j=>['queued','running'].includes(j.state))||voiceJobs.some(j=>j.scene_id===row.id&&['queued','running'].includes(j.state)))
+  return{key:'wait',label:'处理中…',hint:'本章有任务正在执行，完成后这里会给出下一步。'};
+ if(projectBusy)return{key:'wait',label:'等待其他章节',hint:'项目内有任务进行中，结束后再继续本章。'};
+ if(row.state==='needs_voice')return audio.voiceBlocked
+  ?{key:'wait',label:'配音不可用',hint:'上次配音失败且不可重试，请检查本章状态。'}
+  :{key:'voice',label:audio.retry?'重试配音（付费）':'配音（付费）',hint:'用火山 TTS 为本章配音，并按真实音频生成字幕时间轴。',paid:true};
+ if(row.state==='needs_timing')return{key:'retime',label:'实测对齐（免费）',hint:'已有音频，按音频计算字幕时间轴。'};
+ if(!measuredReady(row))return{key:'wait',label:'等待配音完成',hint:'配音与字幕就绪后才能生成视频。'};
+ if(exportedVersion(own))return isLast
+  ?(allConfirmed?{key:'export',label:'导出整课视频',hint:'每章都已确认，可以在本机渲染整课（不调用模型）。'}:{key:'done',label:'本章已确认',hint:'还有章节未确认，在左侧选择它们。'})
+  :{key:'next',label:'下一章',hint:'本章已确认，可用于整课导出。'};
+ const latest=latestAgentJob(own);
+ if(latest&&canAcceptAgent(latest))return{key:'confirm',label:'看完后确认此版本',hint:'播放下方视频，检查画面、口播和字幕同步后确认；不满意可在「更多操作」里按意见修改。'};
+ return{key:'generate',label:latest?.state==='failed'?'重新生成视频（付费）':'生成视频（付费）',hint:'由 Agent 设计画面、自动检查并出片。',paid:true};
+}
