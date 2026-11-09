@@ -6,7 +6,7 @@ export type VisualJob = {
   theme_id?:string; theme_accent?:string; restyle_of?:string;
   agent?:{model:string;max_turns:number;revision?:{of:string;feedback:string};llm?:{source:'account'|'env';model:string}};
   state:'queued'|'running'|'succeeded'|'failed'|'cancelled';
-  stage?:string|null; error?:string|null;current?:boolean;
+  stage?:string|null; error?:string|null; error_code?:string; current?:boolean;
   created_at?:string;
   result:{sha256?:string;frames?:string[];video?:string;srt?:string;accepted?:boolean;requests_dispatched?:number|null;
    /** pending: published from this machine only; the object-storage upload failed and the runner retries it. */
@@ -30,7 +30,8 @@ export function parseVisualJobs(value:unknown,projectId:string):VisualJob[] {
       (v.stage!=null&&(typeof v.stage!=='string'||v.stage.length>120))||
       (v.current!==undefined&&typeof v.current!=='boolean')||
       (v.created_at!=null&&(typeof v.created_at!=='string'||v.created_at.length>80||!Number.isFinite(Date.parse(v.created_at))))||
-      (v.error!=null&&(typeof v.error!=='string'||v.error.length>500)))throw invalid();
+      (v.error!=null&&(typeof v.error!=='string'||v.error.length>500))||
+      (v.error_code!==undefined&&(typeof v.error_code!=='string'||!/^[a-z_]{1,40}$/.test(v.error_code))))throw invalid();
     ids.add(v.id);
     if(v.input_summary!==undefined&&!object(v.input_summary))throw invalid();
     const summary=object(v.input_summary)?v.input_summary:{};
@@ -67,7 +68,7 @@ export function parseVisualJobs(value:unknown,projectId:string):VisualJob[] {
         ...(r.video?{video:'video.mp4'}:{}),...(r.srt?{srt:'video.srt'}:{}),
         ...(r.accepted!==undefined?{accepted:r.accepted as boolean}:{}),...(r.backup==='pending'?{backup:'pending' as const}:{}),...(r.requests_dispatched!==undefined?{requests_dispatched:r.requests_dispatched as number|null}:{}),...(agentResult?{agent:agentResult}:{})};
     }else if(v.kind==='agent'&&v.state==='succeeded')throw invalid();
-    return {id:v.id,project_id:projectId,scene_id:(v.scene_id??null) as string|null,kind:v.kind,state:v.state as VisualJob['state'],stage:v.stage as string|null|undefined,error:v.error as string|null|undefined,...(typeof v.created_at==='string'?{created_at:v.created_at}:{}),...(agent?{agent}:{}),...(v.current!==undefined?{current:v.current as boolean}:{}),
+    return {id:v.id,project_id:projectId,scene_id:(v.scene_id??null) as string|null,kind:v.kind,state:v.state as VisualJob['state'],stage:v.stage as string|null|undefined,error:v.error as string|null|undefined,...(typeof v.error_code==='string'?{error_code:v.error_code}:{}),...(typeof v.created_at==='string'?{created_at:v.created_at}:{}),...(agent?{agent}:{}),...(v.current!==undefined?{current:v.current as boolean}:{}),
       ...(typeof summary.theme_id==='string'?{theme_id:summary.theme_id}:{}),...(typeof summary.theme_accent==='string'?{theme_accent:summary.theme_accent}:{}),...(v.kind==='restyle'?{restyle_of:summary.agent_id as string}:{}),result};
   });
 }
@@ -204,4 +205,20 @@ export function nextStep(row:SceneRow,jobs:VisualJob[],voiceJobs:Job[],{isLast,a
  const latest=latestAgentJob(own);
  if(latest&&canAcceptAgent(latest))return{key:'confirm',label:'看完后确认此版本',hint:'播放下方视频，检查画面、口播和字幕同步后确认；不满意可在「更多操作」里按意见修改。'};
  return{key:'generate',label:latest?.state==='failed'?'重新生成视频（付费）':'生成视频（付费）',hint:'由 Agent 设计画面、自动检查并出片。',paid:true};
+}
+
+export type FailureAction={label:string;href?:string;action?:'restart'|'refresh'};
+/** What a person can do about a failed job, by its reason. */
+export function failureAction(job:VisualJob):FailureAction|undefined{
+ if(job.state!=='failed')return undefined;
+ const own=job.agent?.llm?.source==='account';
+ switch(job.error_code){
+  case 'agent_provider_auth':return own?{label:'去个人中心检查模型配置',href:'/account'}:{label:'服务端 DeepSeek 密钥被拒绝：检查 .env 的 DEEPSEEK_API_KEY 或改用个人中心的模型',href:'/account'};
+  case 'agent_provider_destination':return{label:'去个人中心检查 Base URL',href:'/account'};
+  case 'agent_provider_request':return own?{label:'模型可能不支持工具调用：去个人中心换一个模型',href:'/account'}:undefined;
+  case 'agent_llm_changed':return{label:'按当前模型配置重新提交（付费）',action:'restart'};
+  case 'agent_provider_unavailable':return{label:'服务繁忙，稍后重新生成（付费）',action:'restart'};
+  case 'stale':return{label:'章节已变化，刷新后按最新内容继续',action:'refresh'};
+  default:return undefined;
+ }
 }

@@ -84,12 +84,13 @@ class VisualJobs:
         if row['kind'] == 'agent' and isinstance(data.get('revision'), dict):
             summary.update(revision_of=data['revision'].get('job_id'), feedback=data['revision'].get('feedback'))
         created = row.get('created_at')
-        public_error=row.get('error')
-        if isinstance(public_error, dict): public_error = public_error.get('message')
+        public_error=row.get('error');error_code=None
+        if isinstance(public_error, dict): error_code, public_error = public_error.get('reason') or public_error.get('code'), public_error.get('message')
         return {'id': str(row['id']), 'project_id': str(row['project_id']),
                 'scene_id': str(row['scene_id']) if row.get('scene_id') else None,
                 'kind': row['kind'], 'state': row['state'], 'stage': row['stage'],
                 'error': public_error[:1000] if isinstance(public_error,str) else None,
+                **({'error_code': error_code} if isinstance(error_code, str) and re.fullmatch(r'[a-z_]{1,40}', error_code) else {}),
                 'created_at': created.isoformat() if hasattr(created, 'isoformat') else created,
                 'result': result, 'input_summary': summary, 'accepted': accepted, 'current': current}
 
@@ -412,7 +413,9 @@ class VisualJobs:
             result = copy.deepcopy(result)
             result.pop('accepted', None)
             state = 'failed' if failure else 'succeeded'
-            error = {'code': 'stale' if not current else 'failed', 'stage': row['stage'], 'message': failure, 'retryable': False} if failure else None
+            # reason: the failure's code (agent_provider_auth, …) so the page can offer the matching action.
+            reason = 'stale' if not current else (error if isinstance(error, str) and re.fullmatch(r'[a-z_]{1,40}', error) else 'invalid_result' if failure else None)
+            error = {'code': 'stale' if not current else 'failed', 'stage': row['stage'], 'message': failure, 'retryable': False, 'reason': reason} if failure else None
             leases.terminal(conn, row, state, error)
             conn.execute('UPDATE jobs SET stage=%s,result=%s,progress=%s WHERE id=%s',
                          ['stale' if not current else state, Jsonb(result), 100 if state == 'succeeded' else 0, job_id])

@@ -22,6 +22,8 @@ class VisualApiTests(unittest.TestCase):
         stack=ExitStack();self.addCleanup(stack.close)
         self.store=Store(os.environ['TEST_DATABASE_URL'],stack.enter_context(tempfile.TemporaryDirectory()),PROFILE)
         self.client=stack.enter_context(TestClient(create_app(self.store),base_url='http://127.0.0.1:8000',client=('127.0.0.1',51000)))
+        # Many tests register from the same address; a disposable database may reset the registration rate limit.
+        with self.store.connection() as conn:conn.execute('DELETE FROM auth_limits')
         self.assertEqual(self.client.post('/api/auth/register',json={'username':'qa_'+uuid.uuid4().hex[:16],'password':'test-password-2026'}).status_code,201)
         project=self.client.post('/api/projects',json={'title':'Visual QA','source_text':'先读代码。再修改文件。'}).json()
         self.pid=project['id'];self.path='/api/projects/'+self.pid+'/visual'
@@ -149,7 +151,7 @@ class VisualApiTests(unittest.TestCase):
             # Changed after confirming: never runs with the new settings, nothing launched.
             self.client.post('/api/auth/model-settings',json={'base_url':'https://api.example.com/v1','api_key':'','model':'qwen-max'},headers={'Origin':'http://127.0.0.1:3000'})
             done=worker.run_once(self.client.app.state.visual,launcher=lambda *a,**k:self.fail('launched with changed settings'))
-            self.assertEqual(done['state'],'failed');self.assertIn('模型配置在提交后变更',done['error'])
+            self.assertEqual(done['state'],'failed');self.assertIn('模型配置在提交后变更',done['error']);self.assertEqual(done['error_code'],'agent_llm_changed')
             # Unchanged: the child gets the owner's key and not the server's.
             again=self.client.post(self.path+'/agent',json=body).json()
             seen={}

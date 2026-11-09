@@ -4,7 +4,7 @@ import type {SceneRow} from '../lib/editor';
 import {request,parseJobs,parseSceneJob,type Project,type Job} from '../lib/editor';
 import {confirmEstimate} from '../lib/cost-estimates';
 import {currentVoiceJob} from '../lib/course';
-import {parseVisualJobs,visualFileUrl,measuredReady,reviewFrames,visualError,sceneAudioActions,videoTaskStatus,videoProgress,latestAgentJob,canAcceptAgent,exportedVersion,chapterStatus,agentBatchScenes,visualAgentBody,restyleOf,renderedTheme,sameLook,nextStep,type NextStep,AGENT_MAX_TURNS,estimatedSeconds,codePointOffset,AGENT_MAX_SECONDS,type VisualJob} from '../lib/visual-workbench';
+import {parseVisualJobs,visualFileUrl,measuredReady,reviewFrames,visualError,sceneAudioActions,videoTaskStatus,videoProgress,latestAgentJob,canAcceptAgent,exportedVersion,chapterStatus,agentBatchScenes,visualAgentBody,failureAction,restyleOf,renderedTheme,sameLook,nextStep,type NextStep,AGENT_MAX_TURNS,estimatedSeconds,codePointOffset,AGENT_MAX_SECONDS,type VisualJob} from '../lib/visual-workbench';
 import {agentModelLabel,confirmVisualAction,visualAgentAction,visualAgentReviseAction,type AgentModel} from '../lib/visual-workbench-actions';
 import {parseModelSettings} from '../lib/model-settings';
 import {useConfirm} from './ConfirmContext';
@@ -22,14 +22,17 @@ export function VisualHistoryEntry({job,children}:{job:VisualJob;children?:React
  const [open,setOpen]=useState(false);
  return <details className="vw-history-entry" onToggle={e=>setOpen(e.currentTarget.open)}><summary>{kinds[job.kind]} · {videoTaskStatus(job)}{job.current===false?' · 历史版本':''}</summary>{open&&children}</details>;
 }
-export function VisualTaskProgress({job,now,updatedAt,disabled,onCancel,onRefresh}:{job:VisualJob;now:number;updatedAt:number;disabled:boolean;onCancel:()=>void;onRefresh:()=>void}){
+export function VisualTaskProgress({job,now,updatedAt,disabled,onCancel,onRefresh,onRestart}:{job:VisualJob;now:number;updatedAt:number;disabled:boolean;onCancel:()=>void;onRefresh:()=>void;onRestart?:()=>void}){
  const progress=videoProgress(job,now);
+ const fix=failureAction(job);
  return <div className="vw-task-feedback" aria-label="视频任务进度">
   <p role={job.state==='failed'?'alert':'status'}><strong>{progress.label}</strong></p>
   <ol className="vw-progress-steps" aria-label="视频制作阶段">{['排队','生成与检查','渲染视频','视频就绪'].map((label,i)=><li key={label} aria-current={progress.step===i+1?'step':undefined} data-complete={progress.step>i+1}><span>{i+1}</span>{label}</li>)}</ol>
   {progress.active&&<progress aria-label={progress.label}/>}
   <p>{progress.detail}</p>
   <div className="vw-task-meta" aria-live="off">{progress.elapsed&&<span>{progress.elapsed}</span>}{updatedAt>0&&<span>最近更新 {new Date(updatedAt).toLocaleTimeString('zh-CN',{hour12:false})}</span>}{progress.active&&now-updatedAt>15000&&updatedAt>0&&<span className="vw-warning">状态超过15秒未更新，请刷新检查</span>}</div>
+  {fix&&<div className="vw-toolbar vw-fix">{fix.href?<a className="primary-link" href={fix.href}>{fix.label}</a>
+   :<button disabled={disabled||(fix.action==='restart'&&!onRestart)} onClick={fix.action==='restart'?onRestart:onRefresh}>{fix.label}</button>}</div>}
   <div className="vw-toolbar"><button disabled={disabled} onClick={onRefresh}><RefreshCw size={14}/>刷新状态</button>{progress.active&&<button disabled={disabled} onClick={onCancel}><X size={14}/>取消任务</button>}</div>
  </div>;
 }
@@ -88,7 +91,7 @@ export function VisualAgentPanel({projectId,job,exported,now,updatedAt,disabled,
   {job&&job.state==='succeeded'&&<VisualMedia projectId={projectId} job={job} diagnostics/>}
   {children}
   <p>整课导出将使用：{!exported?'暂无已确认的版本':exported.id===job?.id?'上方这个版本':`更早确认的版本${exported.created_at?`（${new Date(exported.created_at).toLocaleString('zh-CN',{hour12:false})}）`:''}`}</p>
-  {job&&job.state!=='succeeded'&&<VisualTaskProgress job={job} now={now} updatedAt={updatedAt} disabled={disabled} onRefresh={onRefresh} onCancel={onCancel}/>}
+  {job&&job.state!=='succeeded'&&<VisualTaskProgress job={job} now={now} updatedAt={updatedAt} disabled={disabled} onRefresh={onRefresh} onCancel={onCancel} onRestart={running||blockedReason?undefined:onStart}/>}
   {job?.state==='failed'&&typeof job.result?.requests_dispatched==='number'&&<p>{job.result.requests_dispatched?`本次已消耗 ${job.result.requests_dispatched} 轮模型调用。`:'本次没有产生模型消耗。'}</p>}
   {(()=>{
    const actions=<>{job&&onRevise&&canAcceptAgent(job)&&<div className="vw-revise"><label>修改意见（说清楚哪里不满意、想要怎样，比如「第 2 段的流程图太小，放大到占画面一半」）

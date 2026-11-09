@@ -22,3 +22,20 @@ test('each chapter state has exactly one next step',()=>{
  assert.equal(nextStep(scene('needs_voice'),[],[],{...opts,projectBusy:true}).key,'wait');
  assert.equal(nextStep(scene('needs_voice'),[],[{job_id:'v',scene_id:'s1',kind:'voice',state:'running',base_revision:3} as any],opts).key,'wait');
 });
+
+test('a failure offers the action that fixes it',async()=>{
+ const {failureAction}=await import('../lib/visual-workbench');
+ const {createElement}=await import('react');
+ const {renderToStaticMarkup}=await import('react-dom/server');
+ const {VisualTaskProgress}=await import('../app/VisualWorkbench');
+ const failed=(error_code:string,llm='account')=>parseVisualJobs({jobs:[{id:'a1',project_id:'p',scene_id:'s1',kind:'agent',state:'failed',error:'失败',error_code,result:null,
+  input_summary:{model:'m',max_turns:25,llm:{source:llm,model:'qwen-plus'}}}]},'p')[0];
+ assert.equal(failureAction(failed('agent_provider_auth'))?.href,'/account');
+ assert.match(failureAction(failed('agent_provider_auth','env'))!.label,/DEEPSEEK_API_KEY/);
+ assert.equal(failureAction(failed('agent_llm_changed'))?.action,'restart');
+ assert.equal(failureAction(failed('stale'))?.action,'refresh');
+ assert.equal(failureAction(failed('agent_budget_turns')),undefined);
+ const html=renderToStaticMarkup(createElement(VisualTaskProgress,{job:failed('agent_provider_destination'),now:0,updatedAt:0,disabled:false,onCancel(){},onRefresh(){}}));
+ assert.match(html,/<a class="primary-link" href="\/account">去个人中心检查 Base URL<\/a>/);
+ assert.throws(()=>parseVisualJobs({jobs:[{id:'x',project_id:'p',scene_id:'s1',kind:'agent',state:'failed',error_code:'Bad Code',result:null,input_summary:{model:'m',max_turns:25}}]},'p'));
+});
