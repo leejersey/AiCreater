@@ -106,6 +106,7 @@ export default function VisualWorkbench({routeProjectId}:{routeProjectId:string}
   const [jobs,setJobs]=useState<VisualJob[]>([]);
   const [voiceJobs,setVoiceJobs]=useState<Job[]>([]);
   const [themes,setThemes]=useState<ThemeSummary[]>([]);
+  const [settingsOpen,setSettingsOpen]=useState(false);
   const [llm,setLlm]=useState<AgentModel|undefined>();
   useEffect(()=>{let live=true;request<unknown>('/api/auth/model-settings').then(v=>{if(live)setLlm(parseModelSettings(v));}).catch(()=>{});return()=>{live=false;};},[]);
   useEffect(()=>{let live=true;request<unknown>('/api/themes').then(v=>{if(live)setThemes(parseThemes(v));}).catch(()=>{});return()=>{live=false;};},[]);
@@ -190,9 +191,14 @@ export default function VisualWorkbench({routeProjectId}:{routeProjectId:string}
   }
   return <main className="visual-workbench">
     <header className="vw-header"><div><a href="/courses">课程</a><h1>{project?.title??'视觉工作台'}</h1><span>{project?`${project.scenes.length} 章 · 已确认 ${confirmedCount}/${project.scenes.length}`:''}</span></div>
-      <nav><button title="刷新项目与任务" aria-label="刷新项目与任务" disabled={busy} onClick={()=>void act(refresh)}><RefreshCw size={16}/></button></nav>
+      <nav>{project&&<button aria-expanded={settingsOpen} onClick={()=>setSettingsOpen(open=>!open)}>课程设置</button>}<button title="刷新项目与任务" aria-label="刷新项目与任务" disabled={busy} onClick={()=>void act(refresh)}><RefreshCw size={16}/></button></nav>
     </header>
     {error&&<p role="alert" className="vw-error">{error}</p>}
+    {project&&settingsOpen&&<section className="vw-settings" aria-label="课程设置">
+        <ThemeSettings key={project.id+':'+(project.theme_id??'')+':'+(project.theme_accent??'')} project={project} themes={themes} disabled={disabled||active} act={act}
+          onSave={async (theme_id,accent)=>{setProject(await request<Project>(base+'/theme',{expected_revision:project.revision,theme_id,...(accent?{accent}:{})},'PATCH'));}}/>
+        <VoiceSettings key={project.id} project={project} dirty={dirty} busy={busy} formEditing={dirty} onDirty={setDirty} act={act} onSave={async speaker=>{setProject(await request<Project>(base+'/voice',{expected_revision:project.revision,speaker},'PATCH'));setDirty(false);}}/>
+    </section>}
     {!project?<p role="status">正在读取项目与任务…</p>:<>
       <div className="vw-toolbar">
         {!project.scenes.length&&<button disabled={disabled||active} onClick={()=>void act(async()=>{setProject(await request<Project>(base+'/visual/prepare',{expected_revision:project.revision}));})}>整理口播章节（免费）</button>}
@@ -207,9 +213,6 @@ export default function VisualWorkbench({routeProjectId}:{routeProjectId:string}
       <div className="vw-layout"><aside aria-label="章节列表"><h2>口播章节 · {project.scenes.length}</h2>
         {!project.scenes.length&&<p>尚未整理章节</p>}
         {project.scenes.map((s,i)=><button key={s.id} aria-pressed={s.id===row?.id} disabled={busy||dirty} onClick={()=>setSelected(s.id)}><span>{i+1}. {s.scene.narration.text.slice(0,36)}</span><small data-status={statuses[i].key}>{statuses[i].label}</small></button>)}
-        <ThemeSettings key={project.id+':'+(project.theme_id??'')+':'+(project.theme_accent??'')} project={project} themes={themes} disabled={disabled||active} act={act}
-          onSave={async (theme_id,accent)=>{setProject(await request<Project>(base+'/theme',{expected_revision:project.revision,theme_id,...(accent?{accent}:{})},'PATCH'));}}/>
-        <VoiceSettings key={project.id} project={project} dirty={dirty} busy={busy} formEditing={dirty} onDirty={setDirty} act={act} onSave={async speaker=>{setProject(await request<Project>(base+'/voice',{expected_revision:project.revision,speaker},'PATCH'));setDirty(false);}}/>
       </aside><div className="vw-content">
         {activeJob&&activeJob.id!==agentJob?.id&&<div><h2>当前项目有任务正在执行</h2><VisualTaskProgress job={activeJob} now={now} updatedAt={updatedAt} disabled={busy} onRefresh={()=>void act(refresh)} onCancel={()=>cancelVisual(activeJob)}/>{activeJob.scene_id&&<button onClick={()=>setSelected(activeJob.scene_id!)}>查看执行中的章节</button>}</div>}
         {row&&<section aria-label="当前章节"><h2>当前章节 · r{row.revision}</h2><ChapterEditor key={row.id+':'+row.revision} row={row} isLast={project.scenes.at(-1)?.id===row.id} isOnly={project.scenes.length===1}

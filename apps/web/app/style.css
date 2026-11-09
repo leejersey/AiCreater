@@ -2413,3 +2413,4 @@ aside .theme-picker { grid-template-columns:1fr 1fr; }
 .vw-next[data-step="wait"], .vw-next[data-step="done"] { border-color:var(--line); background:transparent; }
 .vw-next[data-step="wait"] .vw-next-button, .vw-next[data-step="done"] .vw-next-button { background:transparent; color:var(--text-secondary); border-color:var(--line); }
 details.vw-step > summary, details.vw-more > summary { cursor:pointer; padding:6px 0; color:var(--text-secondary); }
+.vw-settings { display:grid; grid-template-columns:repeat(auto-fit,minmax(320px,1fr)); gap:16px; margin:0 0 16px; padding:16px; border:1px solid var(--line); border-radius:var(--radius-md); }
