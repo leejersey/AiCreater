@@ -1,6 +1,7 @@
 """Ownership and queue boundary checks against an owned disposable database."""
 from contextlib import ExitStack
 import os
+import copy
 import json
 from pathlib import Path
 import tempfile
@@ -367,6 +368,75 @@ class VisualApiTests(unittest.TestCase):
         job,done,_,_=self.run_agent_job(write)
         self.assertEqual(done['state'],'succeeded',done.get('error'))
         self.assertEqual(listed()['thumbnail'],{'job_id':job['id'],'file':'stills/frame-60.png'})
+
+    def revoice(self,audio=b'RIFF-new-recording',duration=72):
+        """A new recording of the same words: another audio asset, other durations, same captions text."""
+        import hashlib
+        (self.store.public/'generated'/'voice2.wav').write_bytes(audio)
+        with self.store.connection() as conn:
+            project=self.store._read(conn,self.pid);row=project['scenes'][0];scene=copy.deepcopy(row['scene'])
+            text=scene['narration']['text']
+            scene.update(duration_frames=duration,captions=[{'text':text,'start_frame':0,'end_frame':duration}])
+            scene['narration']['audio_asset_id']='voice2'
+            config=copy.deepcopy(project['config'])
+            config['assets'].append({'id':'voice2','type':'audio','storage_key':'generated/voice2.wav','checksum':hashlib.sha256(audio).hexdigest(),'duration_ms':duration*1000//30})
+            conn.execute('UPDATE projects SET config=%s,revision=revision+1 WHERE id=%s',[Jsonb(config),self.pid])
+            conn.execute('UPDATE scenes SET scene=%s,revision=revision+1 WHERE id=%s',[Jsonb(scene),row['id']])
+
+    def test_a_retimable_version_survives_a_new_recording_and_is_re_rendered_on_it(self):
+        import hashlib
+        from services.visual import worker
+        source='export default function Scene({timing}:any){return null;}'
+        sha=hashlib.sha256(source.encode()).hexdigest()
+        def write(output,retimable=True):
+            (output/'source.txt').write_text(source);(output/'video.mp4').write_bytes(b'mp4');(output/'video.srt').write_text('1\n')
+            (output/'stills').mkdir();(output/'stills'/'frame-30.png').write_bytes(b'png')
+            (output/'result.json').write_text(json.dumps({'status':'passed','model':'deepseek-flash-thinking','turns':4,'requests_dispatched':4,
+                'usage':{'inputTokens':1,'outputTokens':1,'cachedInputTokens':0},'sha256':sha,'finish_by':'model','retimable':retimable,
+                'frames':['stills/frame-30.png'],'video':'video.mp4','srt':'video.srt'}))
+        job,done,_,_=self.run_agent_job(write)
+        self.assertEqual(done['state'],'succeeded',done.get('error'))
+        accepted=self.client.post(self.path+'/'+job['id']+'/accept',json={'confirmed':True,'sha256':sha})
+        self.assertEqual(accepted.status_code,200,accepted.text)
+        listed=lambda job_id:next(j for j in self.client.get(self.path).json()['jobs'] if j['id']==job_id)
+        self.assertEqual((listed(job['id'])['input_summary']['retimable'],listed(job['id'])['input_summary']['timing_current']),(True,True))
+        self.revoice()
+        after=listed(job['id'])
+        self.assertTrue(after['current']);self.assertTrue(after['accepted'])        # the words did not change
+        self.assertEqual(after['input_summary']['timing_current'],False)          # its own video is on the old recording
+        visual=self.client.app.state.visual
+        with self.store.connection() as conn:conn.execute("UPDATE jobs SET result=result-'retimable' WHERE kind='agent' AND project_id<>%s",[self.pid])
+        restyle=visual.retime_stale()
+        self.assertEqual((restyle['kind'],restyle['input_summary']['agent_id']),('restyle',job['id']))
+        raw=visual.get_raw(self.pid,restyle['id'])
+        self.assertEqual(raw['input']['asset']['id'],'voice2');self.assertEqual(raw['input']['scene']['duration_frames'],72)
+        self.assertIsNone(visual.retime_stale())  # one re-render per recording
+        # The export renders every chapter on its current recording.
+        with self.store.connection() as conn:conn.execute("UPDATE jobs SET state='cancelled' WHERE id=%s",[restyle['id']])
+        project=self.client.get('/api/projects/'+self.pid).json()
+        export=self.client.post(self.path+'/export',json={'expected_revision':project['revision'],'confirmed':True})
+        self.assertEqual(export.status_code,202,export.text)
+        chapter=visual.get_raw(self.pid,export.json()['id'])['input']['chapters'][0]
+        self.assertEqual((chapter['asset']['id'],chapter['scene']['duration_frames']),('voice2',72))
+        self.assertTrue(listed(export.json()['id'])['current'])
+
+    def test_a_version_with_fixed_frames_does_not_survive_a_new_recording(self):
+        import hashlib
+        source='export default function Scene(){return null;}'
+        sha=hashlib.sha256(source.encode()).hexdigest()
+        def write(output):
+            (output/'source.txt').write_text(source);(output/'video.mp4').write_bytes(b'mp4');(output/'video.srt').write_text('1\n')
+            (output/'stills').mkdir();(output/'stills'/'frame-30.png').write_bytes(b'png')
+            (output/'result.json').write_text(json.dumps({'status':'passed','model':'deepseek-flash-thinking','turns':4,'requests_dispatched':4,
+                'usage':{'inputTokens':1,'outputTokens':1,'cachedInputTokens':0},'sha256':sha,'finish_by':'model',
+                'frames':['stills/frame-30.png'],'video':'video.mp4','srt':'video.srt'}))
+        job,done,_,_=self.run_agent_job(write)
+        self.client.post(self.path+'/'+job['id']+'/accept',json={'confirmed':True,'sha256':sha})
+        self.revoice()
+        after=next(j for j in self.client.get(self.path).json()['jobs'] if j['id']==job['id'])
+        self.assertFalse(after['current']);self.assertNotIn('retimable',after['input_summary'])
+        mine=lambda r:r is not None and r['project_id']==self.pid  # other tests' projects share the database
+        self.assertFalse(mine(self.client.app.state.visual.retime_stale()))
 
     def test_accepted_agent_video_exports_through_the_agent_course_renderer(self):
         from services.visual import worker

@@ -106,11 +106,20 @@ class VisualJobs:
             self.store._read(conn, project_id)
             return self._read(conn, project_id, job_id)
 
+    def _with_timing(self, project, row, public):
+        """Adds, for a retimable Agent version, whether its own video was rendered on the current recording."""
+        if row['kind'] == 'agent' and self._retimable(row):
+            public['input_summary']['retimable'] = True
+            if public['current']:
+                try: public['input_summary']['timing_current'] = self._timing_current(project, row['scene_id'], row['input'])
+                except (StoreError, KeyError, TypeError): pass
+        return public
+
     def get(self, project_id, job_id):
         with self.store.connection() as conn:
             project = self.store._read(conn, project_id)
             row = self._read(conn, project_id, job_id)
-            return self._public(row, self._current(conn, project, row))
+            return self._with_timing(project, row, self._public(row, self._current(conn, project, row)))
 
     def list(self, project_id):
         with self.store.connection() as conn:
@@ -118,7 +127,7 @@ class VisualJobs:
             project = self.store._read(conn, project_id)
             rows = conn.execute('SELECT * FROM jobs WHERE project_id=%s AND kind=ANY(%s) ORDER BY created_at DESC,id DESC',
                                 [project['id'], list(KINDS)]).fetchall()
-            return [self._public(r, self._current(conn, project, self._raw(r))) for r in rows]
+            return [self._with_timing(project, self._raw(r), self._public(r, self._current(conn, project, self._raw(r)))) for r in rows]
 
     def _submit(self, conn, project, scene_id, kind, data, base_revision):
         unicode_valid(data)
@@ -211,6 +220,36 @@ class VisualJobs:
 
     UNDO_SECONDS = 600
 
+    def retime_stale(self):
+        """After a chapter is re-voiced: re-render its retimable Agent version on the new recording (free, local).
+        One job per call, for a project with nothing running; called by the runner between jobs."""
+        with self.store.connection() as conn:
+            ids = [str(r['project_id']) for r in conn.execute("""SELECT DISTINCT project_id FROM jobs WHERE kind='agent' AND state='succeeded'
+                AND result->'retimable'='true'::jsonb""").fetchall()]
+        for project_id in ids:
+            with self.store.connection() as conn:
+                project = self.store._read(conn, project_id)
+                if conn.execute("SELECT 1 FROM jobs WHERE project_id=%s AND state IN ('queued','running') LIMIT 1", [project_id]).fetchone(): continue
+                for scene in project['scenes']:
+                    rows = [self._raw(r) for r in conn.execute("""SELECT * FROM jobs WHERE project_id=%s AND scene_id=%s AND kind='agent'
+                        AND state='succeeded' ORDER BY created_at DESC""", [project_id, scene['id']]).fetchall()]
+                    versions = [r for r in rows if self._retimable(r) and self._acceptable(r) and self._current(conn, project, r)]
+                    if not versions: continue
+                    shown = next((r for r in versions if (r.get('result') or {}).get('accepted') is True), versions[0])
+                    try:
+                        if self._timing_current(project, scene['id'], shown['input']): continue
+                        measured = measured_input(project, scene)
+                    except StoreError: continue
+                    done = conn.execute("""SELECT 1 FROM jobs WHERE project_id=%s AND kind='restyle' AND input->>'agent_id'=%s
+                        AND input->>'fingerprint'=%s AND state IN ('queued','running','succeeded') LIMIT 1""",
+                        [project_id, shown['id'], measured['fingerprint']]).fetchone()
+                    if done: continue
+                    revision_now = project['revision']
+                    break
+                else: continue
+            return self.restyle(project_id, shown['id'], revision_now)
+        return None
+
     def restore_chapter(self, project_id, expected_revision, scene_id, at):
         """Undoes a chapter deletion made in the last 10 minutes: the chapter comes back at index `at` with its voice,
         captions and videos as they were."""
@@ -297,7 +336,8 @@ class VisualJobs:
                     ORDER BY created_at DESC,id DESC""", [project['id'], scene['id']]).fetchall()
                 accepted = next((self._raw(r) for r in rows if self._acceptable(r) and self._current(conn, project, self._raw(r))), None)
                 if accepted is None: raise StoreError('not_ready', 'Every current chapter needs an accepted Agent video')
-                data = {k: copy.deepcopy(accepted['input'][k]) for k in ('scene', 'asset', 'fingerprint', 'brief', 'cues')}
+                base = measured_input(project, scene) if self._retimable(accepted) else accepted['input']
+                data = {k: copy.deepcopy(base[k]) for k in ('scene', 'asset', 'fingerprint', 'brief', 'cues')}
                 chapters.append({**data, 'agent_id': str(accepted['id']), 'sha256': accepted['result']['sha256'], 'scene_id': scene['id']})
             return self._submit(conn, project, None, 'export', {'chapters': chapters, 'project_revision': expected_revision,
                                 'theme': themes.course_snapshot(project)}, expected_revision)
@@ -312,12 +352,33 @@ class VisualJobs:
             agent = self._read(conn, project['id'], job_id)
             if not self._acceptable(agent) or not self._current(conn, project, agent):
                 raise StoreError('conflict', '只能为本章当前有效、已通过检查的 Agent 版本重渲染')
-            if (agent['input'].get('theme') or themes.snapshot(themes.DEFAULT_THEME)) == themes.course_snapshot(project):
-                raise StoreError('validation', '这个版本已经是课程当前的主题')
-            data = {k: copy.deepcopy(agent['input'][k]) for k in ('scene', 'asset', 'fingerprint', 'brief', 'cues')}
+            retimable = self._retimable(agent)
+            base = measured_input(project, self.store._scene(project, agent['scene_id'])) if retimable else agent['input']
+            same_look = (agent['input'].get('theme') or themes.snapshot(themes.DEFAULT_THEME)) == themes.course_snapshot(project)
+            if same_look and base['fingerprint'] == agent['input']['fingerprint']:
+                raise StoreError('validation', '这个版本已经是课程当前的主题和配音')
+            data = {k: copy.deepcopy(base[k]) for k in ('scene', 'asset', 'fingerprint', 'brief', 'cues')}
             data.update(agent_id=str(agent['id']), sha256=agent['result']['sha256'], theme=themes.course_snapshot(project))
             scene = self.store._scene(project, agent['scene_id'])
             return self._submit(conn, project, scene['id'], 'restyle', data, scene['revision'])
+
+    # A retimable Agent version (it reads timing.cues and passed on another voice-over timing) belongs to the chapter's
+    # words and sentences, not to one recording: re-voicing keeps it, and renders follow the current voice-over.
+    @staticmethod
+    def _retimable(row):
+        return (row.get('result') or {}).get('retimable') is True
+
+    @staticmethod
+    def _structure(data):
+        brief = {k: v for k, v in (data.get('brief') or {}).items() if k != 'durationInFrames'}
+        return brief, [c.get('text') for c in data.get('cues') or []]
+
+    def _structure_current(self, project, scene_id, data):
+        return self._structure(measured_input(project, self.store._scene(project, scene_id))) == self._structure(data)
+
+    def _timing_current(self, project, scene_id, data):
+        """Rendered on the chapter's current recording (same audio, captions and revision)."""
+        return measured_input(project, self.store._scene(project, scene_id))['fingerprint'] == data.get('fingerprint')
 
     def _snapshot_current(self, project, scene_id, data):
         row = self.store._scene(project, scene_id)
@@ -334,10 +395,12 @@ class VisualJobs:
                         [c['scene_id'] for c in chapters] == [s['id'] for s in project['scenes']] and
                         all('agent_id' in c and self._snapshot_current(project, c['scene_id'], c) and self._agent_matches(conn, project, c) for c in chapters))
             if row['kind'] == 'restyle':
-                # Current while its Agent version is, and the course is still in the theme it was rendered in.
+                # Current while its Agent version is, in the course's theme, and (retimable) on the current recording.
                 agent = self._read(conn, project['id'], data['agent_id'])
                 return (data['theme'] == themes.course_snapshot(project) and agent['kind'] == 'agent' and
                         (agent.get('result') or {}).get('sha256') == data['sha256'] and self._snapshot_current(project, row['scene_id'], data))
+            if row['kind'] == 'agent' and self._retimable(row):
+                return self._structure_current(project, row['scene_id'], data)
             return row['kind'] == 'agent' and self._snapshot_current(project, row['scene_id'], data)
         except (StoreError, KeyError, TypeError, ValueError):
             return False
@@ -345,9 +408,10 @@ class VisualJobs:
     def _agent_matches(self, conn, project, data):
         agent = self._read(conn, project['id'], data['agent_id'])
         result = agent.get('result') or {}
-        return (agent['kind'] == 'agent' and agent['scene_id'] == data['scene_id'] and self._acceptable(agent) and
-                result.get('accepted') is True and result.get('sha256') == data['sha256'] and
+        same = (self._structure(agent['input']) == self._structure(data) if self._retimable(agent) else
                 all(agent['input'][k] == data[k] for k in ('fingerprint', 'scene', 'asset', 'brief', 'cues')))
+        return (agent['kind'] == 'agent' and agent['scene_id'] == data['scene_id'] and self._acceptable(agent) and
+                result.get('accepted') is True and result.get('sha256') == data['sha256'] and same)
 
     def cancel(self, project_id, job_id):
         with self.store.connection() as conn:

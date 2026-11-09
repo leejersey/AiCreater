@@ -58,6 +58,9 @@ def serve(lane):
             try:
                 from services.visual.autopilot import Autopilot
                 for step in Autopilot(store).advance(): print(f'runner {lane}: pipeline {step[0]} {step[1]}', flush=True)
+                # A chapter re-voiced under a retimable picture: re-render it on the new recording (free).
+                from services.visual.store import VisualJobs
+                if (retimed := VisualJobs(store).retime_stale()): print(f'runner {lane}: re-render on new voice-over {retimed["id"]}', flush=True)
             except Exception as error:
                 print(f'runner {lane}: pipeline step failed ({type(error).__name__}); retrying', file=sys.stderr, flush=True)
         try: result = poll(store, lane)
