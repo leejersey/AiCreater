@@ -4,7 +4,9 @@ export type VisualJob = {
   id:string; project_id:string; scene_id:string|null; kind:'agent'|'export'|'restyle';
   /** The theme the job rendered in; restyle_of is the Agent version a restyle re-rendered. */
   theme_id?:string; theme_accent?:string; restyle_of?:string;
-  agent?:{model:string;max_turns:number;revision?:{of:string;feedback:string};llm?:{source:'account'|'env';model:string}};
+  agent?:{model:string;max_turns:number;revision?:{of:string;feedback:string};llm?:{source:'account'|'env';model:string};
+   /** retimable: follows a new recording; timingCurrent false: its own video is on an older recording of the same words. */
+   retimable?:boolean;timingCurrent?:boolean};
   state:'queued'|'running'|'succeeded'|'failed'|'cancelled';
   stage?:string|null; error?:string|null; error_code?:string; current?:boolean;
   created_at?:string;
@@ -46,7 +48,8 @@ export function parseVisualJobs(value:unknown,projectId:string):VisualJob[] {
       const llm=summary.llm as Record<string,unknown>|undefined;
       if(llm!==undefined&&(!object(llm)||!['account','env'].includes(llm.source as string)||typeof llm.model!=='string'||!/^[\x21-\x7e]{1,200}$/.test(llm.model)))throw invalid();
       agent={model:summary.model,max_turns:Number(summary.max_turns),...(summary.revision_of!==undefined?{revision:{of:summary.revision_of as string,feedback:summary.feedback as string}}:{}),
-        ...(llm?{llm:{source:llm.source as 'account'|'env',model:llm.model as string}}:{})};
+        ...(llm?{llm:{source:llm.source as 'account'|'env',model:llm.model as string}}:{}),
+        ...(summary.retimable===true?{retimable:true}:{}),...(typeof summary.timing_current==='boolean'?{timingCurrent:summary.timing_current}:{})};
     }else if(Object.hasOwn(summary,'max_turns'))throw invalid();
     let result:VisualJob['result']=null;
     if(v.result!=null){

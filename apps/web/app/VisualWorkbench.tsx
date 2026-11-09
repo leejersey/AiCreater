@@ -121,15 +121,17 @@ export function ChapterEditor({row,isLast,isOnly,voiced,disabled,blockedReason,o
 export function ThemeNotice({projectId,job,restyle,themes,courseTheme,courseAccent,now,updatedAt,disabled,blockedReason,onRestyle,onRefresh,onCancel}:{projectId:string;job:VisualJob;restyle?:VisualJob;
  themes:ThemeSummary[];courseTheme:string;courseAccent?:string|null;now:number;updatedAt:number;disabled:boolean;blockedReason?:string;onRestyle:()=>void;onRefresh:()=>void;onCancel:()=>void}){
  const fallback=themes.find(t=>t.default)?.id??courseTheme;
- if(job.state!=='succeeded'||sameLook(job,fallback,courseTheme,courseAccent))return null;
+ const lookChanged=!sameLook(job,fallback,courseTheme,courseAccent),voiceChanged=job.agent?.timingCurrent===false;
+ if(job.state!=='succeeded'||(!lookChanged&&!voiceChanged))return null;
  const look=(id:string,accent?:string|null)=>themeName(themes,id)+(accent?` · 强调色 ${accent}`:'');
  const [was,now_]=[look(renderedTheme(job,fallback),job.theme_accent),look(courseTheme,courseAccent)];
  const running=!!restyle&&['queued','running'].includes(restyle.state);
  return <div className="vw-theme-note" aria-label="主题提示">
-  <p>这个版本按「{was}」主题渲染，课程现在是「{now_}」。确认不受影响，整课导出会按「{now_}」渲染。</p>
-  {restyle?.state==='succeeded'&&restyle.result?.video?<><p>按「{now_}」重渲染的预览：</p><VisualMedia projectId={projectId} job={restyle}/></>
+  {lookChanged&&<p>这个版本按「{was}」主题渲染，课程现在是「{now_}」。确认不受影响，整课导出会按「{now_}」渲染。</p>}
+  {voiceChanged&&<p>本章已重新配音：这个画面会跟随新配音（不用重新生成），确认仍然有效；下方是按新配音重新渲染的视频。</p>}
+  {restyle?.state==='succeeded'&&restyle.result?.video?<><p>按「{now_}」{voiceChanged?'和新配音':''}重渲染的视频：</p><VisualMedia projectId={projectId} job={restyle}/></>
    :running?<VisualTaskProgress job={restyle!} now={now} updatedAt={updatedAt} disabled={disabled} onRefresh={onRefresh} onCancel={onCancel}/>
-   :<><div className="vw-toolbar"><button disabled={disabled||!!blockedReason} onClick={onRestyle}><RefreshCw size={14}/>按「{now_}」重渲染预览（免费）</button></div>
+   :<><div className="vw-toolbar"><button disabled={disabled||!!blockedReason} onClick={onRestyle}><RefreshCw size={14}/>{voiceChanged&&!lookChanged?'按新配音重渲染（免费）':`按「${now_}」重渲染预览（免费）`}</button></div>
     {restyle?.state==='failed'&&<p role="alert">{restyle.error||'重渲染失败，未自动重试。'}</p>}</>}
  </div>;
 }
@@ -228,7 +230,7 @@ export default function VisualWorkbench({routeProjectId}:{routeProjectId:string}
   const audioActions=row?sceneAudioActions(row,voiceJobs):null;
   const retime=()=>void act(async()=>{
     if(!row||!project||!audioActions)return;
-    if(!await confirm({title:'免费重算本章时间轴',message:'按已有音频计算字幕时间，保留原音频，不调用模型或配音服务；已有 Agent 视频与确认会失效。',confirmText:'确认免费重算',variant:'info'}))return;
+    if(!await confirm({title:'免费重算本章时间轴',message:'按已有音频计算字幕时间，保留原音频，不调用模型或配音服务。能跟随配音的画面会自动按新时间轴重新渲染、确认保留；旧版画面（时间写死）的视频与确认会失效。',confirmText:'确认免费重算',variant:'info'}))return;
     const job=parseSceneJob(await request<unknown>(audioActions.timingPath,audioActions.timingBody),project.id,row,'timing');
     setVoiceJobs(previous=>[job,...previous.filter(j=>j.job_id!==job.job_id)]);
   });
@@ -238,6 +240,15 @@ export default function VisualWorkbench({routeProjectId}:{routeProjectId:string}
     if(!await confirmEstimate(audioActions.retry?'显式重试当前章节付费配音':'为当前章节付费配音',audioActions.estimatePath??base+'/estimate',audioActions.retry?undefined:{operation:'voice',expected_revision:revision,scenes:[{scene_id:row.id,expected_revision:row.revision}]},()=>alive.current,{
       confirm:message=>confirm({title:'付费配音确认',message,confirmText:'确认付费配音',variant:'warning'})}))return;
     const job=parseSceneJob(await request<unknown>(audioActions.voicePath,audioActions.voiceBody),project.id,row,'voice');
+    setVoiceJobs(previous=>[job,...previous.filter(j=>j.job_id!==job.job_id)]);
+  });
+  const revoiceChapter=()=>void act(async()=>{
+    if(!row||!project)return;
+    const shown=agentJob&&canAcceptAgent(agentJob)?agentJob:undefined;
+    const detail=!shown?'本章还没有视频。':shown.agent?.retimable?'本章画面会跟随新配音，不需要重新生成：配音完成后自动按新配音重新渲染（免费），确认仍然有效。':'本章画面是旧版本（时间写死在画面里），重新配音后需要重新生成画面（付费）。';
+    if(!await confirmEstimate('为本章重新配音（付费）',base+'/estimate',{operation:'voice',expected_revision:project.revision,scenes:[{scene_id:row.id,expected_revision:row.revision}]},()=>alive.current,{
+      confirm:message=>confirm({title:'重新配音确认',message,detail,confirmText:'确认重新配音',variant:'warning'})}))return;
+    const job=parseSceneJob(await request<unknown>(`/api/scenes/${encodeURIComponent(row.id)}/voice`,{expected_revision:row.revision}),project.id,row,'voice');
     setVoiceJobs(previous=>[job,...previous.filter(j=>j.job_id!==job.job_id)]);
   });
   const startAgent=()=>{if(row&&project)void act(()=>confirmVisualAction(visualAgentAction(row.id,project.revision,llm),confirm,submit));};
@@ -329,6 +340,7 @@ export default function VisualWorkbench({routeProjectId}:{routeProjectId:string}
           <p>{measuredReady(row)?`实测音频与字幕已就绪 · ${row.scene.duration_frames} 帧`:row.state==='needs_timing'?'已有音频，待实测对齐':'待配音'}</p>
           {voice&&<p role="status">配音：{states[voice.state]??'待核对'} {voice.state==='failed'?(voice.error?.retryable?'可显式确认付费后重试。':'此任务不可重试，请检查项目状态。'):''}</p>}
           <div className="vw-toolbar"><button disabled={disabled||audioActions!.voiceBlocked} onClick={voiceChapter}><Mic size={14}/>{audioActions!.retry?'重试配音（付费）':measuredReady(row)?'配音已就绪':'添加配音（付费）'}</button>
+          {measuredReady(row)&&<button disabled={disabled||active} onClick={revoiceChapter}><Mic size={14}/>重新配音（付费）</button>}
           <button disabled={disabled||audioActions!.timingBlocked} onClick={retime}><RefreshCw size={14}/>{row.state==='needs_timing'?'实测对齐（免费）':'重算时间轴（免费）'}</button></div>
           </details>
           <div className="vw-step" aria-label="视频">

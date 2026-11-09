@@ -83,3 +83,19 @@ test('costs read in yuan where prices are known and in tokens otherwise',async()
  assert.match(String(visualAgentAction('s',1,{configured:false,model:'m',cap:{tokens:300000,cny:2.4}}).confirmation.message),/输出最多 30 万 token（输出部分最多约 ¥2.4，输入按实际用量另计）/);
  assert.match(String(visualAgentAction('s',1,{configured:true,model:'qwen',cap:{tokens:300000,cny:2.4}}).confirmation.message),/输出最多 30 万 token，按你的服务商计费/);
 });
+
+test('a picture that follows the voice-over says so after re-voicing, and offers its re-render',async()=>{
+ const {createElement}=await import('react');
+ const {renderToStaticMarkup}=await import('react-dom/server');
+ const {ThemeNotice}=await import('../app/VisualWorkbench');
+ const {parseThemes}=await import('../lib/themes');
+ const themes=parseThemes([{id:'blueprint',name:'b',name_zh:'蓝图',description_zh:'d',mood:[],best_for:[],dark:true,default:true,preview:{background:'#000000',surface:'#111111',foreground:'#ffffff',accent:'#00ffff'}}]);
+ const [job]=parseVisualJobs({jobs:[{id:'a1',project_id:'p',scene_id:'s1',kind:'agent',current:true,input_summary:{model:'m',max_turns:25,theme_id:'blueprint',retimable:true,timing_current:false},...passed}]},'p');
+ assert.equal(job.agent?.retimable,true);assert.equal(job.agent?.timingCurrent,false);
+ const html=renderToStaticMarkup(createElement(ThemeNotice,{projectId:'p',job,themes,courseTheme:'blueprint',now:0,updatedAt:0,disabled:false,onRestyle(){},onRefresh(){},onCancel(){}} as never));
+ assert.match(html,/本章已重新配音：这个画面会跟随新配音（不用重新生成），确认仍然有效/);
+ assert.match(html,/按新配音重渲染（免费）/);
+ assert.doesNotMatch(html,/主题渲染，课程现在是/);
+ const [same]=parseVisualJobs({jobs:[{id:'a2',project_id:'p',scene_id:'s1',kind:'agent',current:true,input_summary:{model:'m',max_turns:25,theme_id:'blueprint',retimable:true,timing_current:true},...passed}]},'p');
+ assert.equal(renderToStaticMarkup(createElement(ThemeNotice,{projectId:'p',job:same,themes,courseTheme:'blueprint',now:0,updatedAt:0,disabled:false,onRestyle(){},onRefresh(){},onCancel(){}} as never)),'');
+});
