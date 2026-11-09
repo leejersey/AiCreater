@@ -72,3 +72,14 @@ test('the course pipeline confirmation lists what may be voiced and generated, a
  assert.match(m,/失败的章节不重试/);
  assert.match(String(autopilotConfirmation({...plan,chapters:[plan.chapters[0]],voice:null}).message),/无需配音/);
 });
+
+test('costs read in yuan where prices are known and in tokens otherwise',async()=>{
+ const {costSummary}=await import('../app/VisualWorkbench');
+ const {visualAgentAction}=await import('../lib/visual-workbench-actions');
+ const base={voice:{characters:1000,cny:0.3},agent:{server:{input:80000,cached_input:60000,output:20000,cny:null},own_model:{input:0,output:0}},
+  prices:{deepseek_configured:false},next_agent:{max_output_tokens:300000,max_output_cny:null}};
+ assert.equal(costSummary(base as any),'已用：配音 ¥0.30 · Agent 输入 8.0 万（缓存 6.0 万）/ 输出 2.0 万 token');
+ assert.match(costSummary({...base,agent:{...base.agent,server:{...base.agent.server,cny:0.23}}} as any),/（约 ¥0.23）$/);
+ assert.match(String(visualAgentAction('s',1,{configured:false,model:'m',cap:{tokens:300000,cny:2.4}}).confirmation.message),/输出最多 30 万 token（输出部分最多约 ¥2.4，输入按实际用量另计）/);
+ assert.match(String(visualAgentAction('s',1,{configured:true,model:'qwen',cap:{tokens:300000,cny:2.4}}).confirmation.message),/输出最多 30 万 token，按你的服务商计费/);
+});

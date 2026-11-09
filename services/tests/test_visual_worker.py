@@ -86,5 +86,23 @@ class VisualWorkerTests(unittest.TestCase):
         row['result'].pop('_stored')
         self.assertNotIn('backup',VisualJobs._public(row)['result'])
 
+    def test_course_costs_price_voice_and_only_priced_deepseek_tokens(self):
+        from unittest.mock import MagicMock
+        from services.visual import costs
+        store=MagicMock();conn=store.connection.return_value.__enter__.return_value
+        conn.execute.return_value.fetchall.side_effect=[
+            [{'input':{'scene':{'narration':{'text':'一'*1000}}}}],
+            [{'input':{},'result':{'usage':{'inputTokens':80000,'cachedInputTokens':60000,'outputTokens':20000}}},
+             {'input':{'llm':{'source':'account'}},'result':{'usage':{'inputTokens':5,'cachedInputTokens':0,'outputTokens':7}}}]]*2
+        plain=costs.course_costs(store,'p',env={})
+        self.assertEqual(plain['voice'],{'characters':1000,'cny':0.3})
+        self.assertEqual(plain['agent']['server'],{'input':80000,'cached_input':60000,'output':20000,'cny':None})  # no invented price
+        self.assertEqual(plain['agent']['own_model']['output'],7)
+        self.assertIsNone(plain['next_agent']['max_output_cny']);self.assertEqual(plain['next_agent']['max_output_tokens'],300000)
+        priced=costs.course_costs(store,'p',env={'DEEPSEEK_PRICE_INPUT':'2','DEEPSEEK_PRICE_CACHED_INPUT':'0.5','DEEPSEEK_PRICE_OUTPUT':'8'})
+        self.assertEqual(priced['agent']['server']['cny'],0.23)  # 20k*2 + 60k*0.5 + 20k*8 per million
+        self.assertEqual(priced['next_agent']['max_output_cny'],2.4)
+        self.assertIsNone(costs.deepseek_prices({'DEEPSEEK_PRICE_INPUT':'x','DEEPSEEK_PRICE_CACHED_INPUT':'1','DEEPSEEK_PRICE_OUTPUT':'1'}))
+
 
 if __name__=='__main__':unittest.main()

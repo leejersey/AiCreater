@@ -82,6 +82,12 @@ def merge_next_chapter(project_id:str,scene_id:str,body:Revision,request:Request
     return request.app.state.visual.merge_next_chapter(project_id,body.expected_revision,scene_id)
 
 
+@router.get('/costs')
+def costs(project_id:str,request:Request):
+    from services.visual.costs import course_costs
+    return JSONResponse(course_costs(request.app.state.store,project_id),headers={'Cache-Control':'no-store'})
+
+
 @router.get('/autopilot')
 def autopilot_plan(project_id:str,request:Request):
     from services.visual.autopilot import Autopilot

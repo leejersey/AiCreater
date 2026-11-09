@@ -30,6 +30,17 @@ export function LiveFrames({job,updatedAt}:{job:VisualJob;updatedAt:number}){
  if(!frames.length)return null;
  return <div className="vw-live" aria-label="最新渲染的画面">{frames.map(f=><img key={f} alt="最新渲染的关键帧" src={`${base}/${f}`}/>)}<small>Agent 最新一轮渲染的画面（开头 · 中段 · 结尾），会随检查与修改更新。</small></div>;
 }
+export type CourseCosts={voice:{characters:number;cny:number};agent:{server:{input:number;cached_input:number;output:number;cny:number|null};own_model:{input:number;output:number}};
+ prices:{deepseek_configured:boolean};next_agent:{max_output_tokens:number;max_output_cny:number|null}};
+const wan=(n:number)=>n>=10000?`${(n/10000).toFixed(1)} 万`:String(n);
+/** What the course has used so far: voice in yuan; Agent tokens, in yuan only when DeepSeek prices are configured. */
+export function costSummary(c:CourseCosts):string{
+ const parts=[`配音 ¥${c.voice.cny.toFixed(2)}`];
+ const s=c.agent.server;
+ if(s.input||s.output)parts.push(`Agent 输入 ${wan(s.input)}（缓存 ${wan(s.cached_input)}）/ 输出 ${wan(s.output)} token${s.cny!=null?`（约 ¥${s.cny.toFixed(2)}）`:''}`);
+ if(c.agent.own_model.input||c.agent.own_model.output)parts.push(`你的模型 输入 ${wan(c.agent.own_model.input)} / 输出 ${wan(c.agent.own_model.output)} token`);
+ return '已用：'+parts.join(' · ');
+}
 export type ReviewItem={index:number;row:SceneRow;job:VisualJob};
 /** Every chapter waiting for confirmation, one after another: watch, then confirm, write feedback or skip.
  * Keys: J next, K previous, Enter confirm, Esc close (not while typing feedback). */
@@ -161,7 +172,9 @@ export default function VisualWorkbench({routeProjectId}:{routeProjectId:string}
   const [settingsOpen,setSettingsOpen]=useState(false),[reviewing,setReviewing]=useState(false);
   const [undo,setUndo]=useState<{sceneId:string;at:number;label:string;until:number}|null>(null);
   useEffect(()=>{if(!undo)return;const timer=setTimeout(()=>setUndo(null),Math.max(0,undo.until-Date.now()));return()=>clearTimeout(timer);},[undo]);
-  const [llm,setLlm]=useState<AgentModel|undefined>();
+  const [llmSettings,setLlm]=useState<AgentModel|undefined>();
+  const [costs,setCosts]=useState<CourseCosts|null>(null);
+  const llm:AgentModel|undefined=llmSettings&&{...llmSettings,...(costs?{cap:{tokens:costs.next_agent.max_output_tokens,cny:costs.next_agent.max_output_cny}}:{})};
   useEffect(()=>{let live=true;request<unknown>('/api/auth/model-settings').then(v=>{if(live)setLlm(parseModelSettings(v));}).catch(()=>{});return()=>{live=false;};},[]);
   useEffect(()=>{let live=true;request<unknown>('/api/themes').then(v=>{if(live)setThemes(parseThemes(v));}).catch(()=>{});return()=>{live=false;};},[]);
   const [selected,setSelected]=useState('');
@@ -175,7 +188,8 @@ export default function VisualWorkbench({routeProjectId}:{routeProjectId:string}
     const p=await request<Project>(base);
     const visual=parseVisualJobs(await request<unknown>(base+'/visual'),routeProjectId);
     const voice=parseJobs(await request<unknown>(base+'/jobs'),routeProjectId);
-    if(alive.current){setProject(p);setJobs(visual);setVoiceJobs(voice);setUpdatedAt(Date.now());}
+    const spent=await request<CourseCosts>(base+'/visual/costs').catch(()=>null);
+    if(alive.current){setProject(p);setJobs(visual);setVoiceJobs(voice);setCosts(spent);setUpdatedAt(Date.now());}
   },[base,routeProjectId]);
   useEffect(()=>{
     alive.current=true;let stopped=false;let timer:ReturnType<typeof setTimeout>;
@@ -263,7 +277,7 @@ export default function VisualWorkbench({routeProjectId}:{routeProjectId:string}
     const restored=await request<Project>(`${base}/visual/chapters/${encodeURIComponent(sceneId)}/restore`,{expected_revision:project.revision,at});
     setProject(restored);setSelected(sceneId);});
   return <main className="visual-workbench">
-    <header className="vw-header"><div><a href="/courses">课程</a><h1>{project?.title??'视觉工作台'}</h1><span>{project?`${project.scenes.length} 章 · 已确认 ${confirmedCount}/${project.scenes.length}`:''}</span></div>
+    <header className="vw-header"><div><a href="/courses">课程</a><h1>{project?.title??'视觉工作台'}</h1><span>{project?`${project.scenes.length} 章 · 已确认 ${confirmedCount}/${project.scenes.length}`:''}</span>{costs&&<small className="vw-costs" title={costs.prices.deepseek_configured?'DeepSeek 按 .env 配置的价格换算':'在 .env 配置 DEEPSEEK_PRICE_* 可把 DeepSeek token 换算成元'}>{costSummary(costs)}</small>}</div>
       <nav>{reviewItems.length>0&&<button className="vw-next-button" onClick={()=>setReviewing(true)}>连续审片（{reviewItems.length}）</button>}{project&&<button aria-expanded={settingsOpen} onClick={()=>setSettingsOpen(open=>!open)}>课程设置</button>}<button title="刷新项目与任务" aria-label="刷新项目与任务" disabled={busy} onClick={()=>void act(refresh)}><RefreshCw size={16}/></button></nav>
     </header>
     {error&&<p role="alert" className="vw-error">{error}</p>}

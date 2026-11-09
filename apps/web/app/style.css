@@ -2428,3 +2428,4 @@ details.vw-step > summary, details.vw-more > summary { cursor:pointer; padding:6
 .vw-pilot { margin:0 0 12px; padding:10px 14px; border:1px solid var(--line); border-radius:var(--radius-md); display:flex; align-items:center; gap:10px; flex-wrap:wrap; font-size:13px; }
 .vw-pilot-running { border-color:var(--accent); background:rgba(16,185,129,0.06); }
 .confirm-message { white-space:pre-line; }
+.vw-costs { display:block; color:var(--text-secondary); font-size:12px; margin-top:2px; }
