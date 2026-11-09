@@ -2429,3 +2429,10 @@ details.vw-step > summary, details.vw-more > summary { cursor:pointer; padding:6
 .vw-pilot-running { border-color:var(--accent); background:rgba(16,185,129,0.06); }
 .confirm-message { white-space:pre-line; }
 .vw-costs { display:block; color:var(--text-secondary); font-size:12px; margin-top:2px; }
+/* Course card thumbnail: a still of the latest passed video, or the course theme */
+.course-thumb { position:relative; aspect-ratio:16/9; margin:-4px -4px 10px; border-radius:var(--radius-md); overflow:hidden; background:rgba(255,255,255,0.04); }
+.course-thumb img { width:100%; height:100%; object-fit:cover; display:block; }
+.course-thumb span { position:absolute; inset:18% 14%; display:grid; grid-template-columns:2fr 1fr; gap:10px; }
+.course-thumb span i { border-radius:6px; }
+.course-thumb span i:last-child { border-radius:999px; aspect-ratio:1; align-self:center; }
+.course-thumb small { position:absolute; right:8px; bottom:6px; font-size:11px; padding:1px 6px; border-radius:999px; background:rgba(0,0,0,0.55); color:#fff; }

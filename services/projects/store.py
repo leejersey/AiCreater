@@ -160,12 +160,24 @@ class Store:
                 (SELECT count(*) FROM scenes s WHERE s.project_id=p.id AND s.deleted_at IS NULL AND EXISTS(
                     SELECT 1 FROM jobs v WHERE v.scene_id=s.id AND v.kind='agent' AND v.state='succeeded'
                     AND v.result->'accepted'='true'::jsonb AND v.input->'scene'=s.scene)) AS confirmed_count,
-                a.kind AS active_job_kind, a.state AS active_job_state, a.kind IS NOT NULL AS active_jobs
+                a.kind AS active_job_kind, a.state AS active_job_state, a.kind IS NOT NULL AS active_jobs,
+                t.id AS thumbnail_job, t.result->'frames' AS thumbnail_frames, p.config->>'theme_id' AS theme_id
                 FROM projects p LEFT JOIN LATERAL (
                     SELECT kind,state FROM jobs WHERE project_id=p.id AND state IN ('queued','running')
-                    ORDER BY created_at DESC NULLS LAST, id DESC LIMIT 1) a ON true''' + (' WHERE p.owner_id=%s' if owner_id else '') +
+                    ORDER BY created_at DESC NULLS LAST, id DESC LIMIT 1) a ON true
+                LEFT JOIN LATERAL (
+                    SELECT id,result FROM jobs WHERE project_id=p.id AND kind='agent' AND state='succeeded'
+                    AND jsonb_typeof(result->'frames')='array' AND jsonb_array_length(result->'frames')>0
+                    ORDER BY ended_at DESC NULLS LAST, id DESC LIMIT 1) t ON true''' + (' WHERE p.owner_id=%s' if owner_id else '') +
                 ' ORDER BY p.updated_at DESC NULLS LAST,p.id DESC LIMIT 100', [identifier(owner_id)] if owner_id else []).fetchall()
-            return [{**row, 'id': str(row['id']),'updated_at':row['updated_at'].isoformat() if row['updated_at'] else None} for row in rows]
+            def summary(row):
+                # A course card shows a still from its latest passed Agent video (the middle review frame), or its theme.
+                frames = row.pop('thumbnail_frames') or []; job = row.pop('thumbnail_job')
+                still = frames[len(frames) // 2] if frames else None
+                return {**row, 'id': str(row['id']), 'updated_at': row['updated_at'].isoformat() if row['updated_at'] else None,
+                        'theme_id': themes.effective({'theme_id': row['theme_id']}),
+                        'thumbnail': {'job_id': str(job), 'file': still} if job and isinstance(still, str) else None}
+            return [summary(row) for row in rows]
 
     def asset_file(self, project_id, asset_id):
         project = self.get_project(project_id)

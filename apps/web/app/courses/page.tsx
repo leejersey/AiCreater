@@ -6,6 +6,8 @@ import {clearProjectDrafts} from '../../lib/drafts';
 import {DraftShelf} from '../LocalDraft';
 import {useRouter} from 'next/navigation';
 import {useConfirm} from '../ConfirmContext';
+import {visualFileUrl} from '../../lib/visual-workbench';
+import {parseThemes,type ThemeSummary} from '../../lib/themes';
 import {Plus, Search, RefreshCw, BookOpen, Clock, AlertCircle, Mic, CheckCircle, Spinner, ChevronRight, Trash2} from '../Icons';
 
 /** Where a course is on the way to an exported video, for the list filters. */
@@ -15,6 +17,8 @@ function projectStage(p:ProjectSummary):'needs_voice'|'to_confirm'|'done'{
 }
 
 export default function Courses(){
+  const [themes,setThemes]=useState<ThemeSummary[]>([]);
+  useEffect(()=>{let live=true;request<unknown>('/api/themes').then(v=>{if(live)setThemes(parseThemes(v));}).catch(()=>{});return()=>{live=false;};},[]);
   const [projects,setProjects]=useState<ProjectSummary[]>([]),[query,setQuery]=useState(''),[loading,setLoading]=useState(true),[error,setError]=useState(''),[deletingId,setDeletingId]=useState<string|null>(null);
   const [statusFilter,setStatusFilter]=useState<'all'|'running'|'needs_voice'|'to_confirm'|'done'>('all');
   const router=useRouter();const confirmDialog=useConfirm();
@@ -109,7 +113,13 @@ export default function Courses(){
     {error&&<p role="alert"><AlertCircle size={16} /> {error} 可点击刷新重试，已有列表保留。</p>}
     {!loading&&!error&&!projects.length&&<section className="empty"><h2><BookOpen size={24} /> 还没有视频</h2><p>点击“新建视频”，生成或填写讲稿；进入工作台后配音，再由 Agent 生成每章画面。</p><Link href="/courses/new"><Plus size={16} />创建第一堂课</Link></section>}
     {!loading&&projects.length>0&&!visible.length&&<p className="muted" style={{textAlign:'center',padding:'32px'}}>没有符合当前条件的视频项目。</p>}
-    <div className="course-grid">{visible.map(p=>{const job=activeJobLabel(p);return <article key={p.id} style={{display:'flex',flexDirection:'column'}}><h2>{p.title}</h2>
+    <div className="course-grid">{visible.map(p=>{const job=activeJobLabel(p);const theme=themes.find(t=>t.id===p.theme_id);return <article key={p.id} style={{display:'flex',flexDirection:'column'}}>
+      <div className="course-thumb" style={theme?{background:theme.preview.background}:undefined}>
+       {p.thumbnail?<img alt="" loading="lazy" src={visualFileUrl(p.id,p.thumbnail.job_id,p.thumbnail.file)}/>
+        :theme&&<span aria-hidden="true"><i style={{background:theme.preview.surface}}/><i style={{background:theme.preview.accent}}/></span>}
+       {theme&&<small>{theme.name_zh}</small>}
+      </div>
+      <h2>{p.title}</h2>
       <div className="scene-meta">
         {job?<span className="status-pill running"><Spinner size={12} className="icon-spin" />{job}</span>:
          p.scene_count===0?<span className="status-pill"><AlertCircle size={12} />待整理章节</span>:

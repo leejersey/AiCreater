@@ -343,6 +343,22 @@ class VisualApiTests(unittest.TestCase):
         job,done,_,_=self.run_agent_job(write,check)
         self.assertEqual(done['state'],'succeeded',done.get('error'))
 
+    def test_a_course_card_shows_a_still_of_its_latest_passed_video(self):
+        import hashlib
+        listed=lambda:next(p for p in self.client.get('/api/projects').json() if p['id']==self.pid)
+        self.assertEqual((listed()['thumbnail'],listed()['theme_id']),(None,'blueprint'))
+        source='export default function Scene(){return null;}'
+        def write(output):
+            (output/'source.txt').write_text(source);(output/'video.mp4').write_bytes(b'mp4');(output/'video.srt').write_text('1\n')
+            (output/'stills').mkdir()
+            for n in (30,60,90):(output/'stills'/f'frame-{n}.png').write_bytes(b'png')
+            (output/'result.json').write_text(json.dumps({'status':'passed','model':'deepseek-flash-thinking','turns':4,'requests_dispatched':4,
+                'usage':{'inputTokens':1,'outputTokens':1,'cachedInputTokens':0},'sha256':hashlib.sha256(source.encode()).hexdigest(),'finish_by':'model',
+                'frames':['stills/frame-30.png','stills/frame-60.png','stills/frame-90.png'],'video':'video.mp4','srt':'video.srt'}))
+        job,done,_,_=self.run_agent_job(write)
+        self.assertEqual(done['state'],'succeeded',done.get('error'))
+        self.assertEqual(listed()['thumbnail'],{'job_id':job['id'],'file':'stills/frame-60.png'})
+
     def test_accepted_agent_video_exports_through_the_agent_course_renderer(self):
         from services.visual import worker
         source='export default function Scene(){return null;}'
