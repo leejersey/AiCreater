@@ -48,6 +48,11 @@ class ChapterDelete(Revision):
     confirmed:bool
 
 
+class AutopilotStart(Revision):
+    confirmed:bool
+    max_turns:int
+
+
 class ChapterRestore(Revision):
     at:int=Field(ge=0,le=19)
 
@@ -75,6 +80,24 @@ def split_chapter(project_id:str,scene_id:str,body:ChapterSplit,request:Request)
 @router.post('/chapters/{scene_id}/merge-next')
 def merge_next_chapter(project_id:str,scene_id:str,body:Revision,request:Request):
     return request.app.state.visual.merge_next_chapter(project_id,body.expected_revision,scene_id)
+
+
+@router.get('/autopilot')
+def autopilot_plan(project_id:str,request:Request):
+    from services.visual.autopilot import Autopilot
+    return JSONResponse(Autopilot(request.app.state.store).plan(project_id),headers={'Cache-Control':'no-store'})
+
+
+@router.post('/autopilot')
+def autopilot_start(project_id:str,body:AutopilotStart,request:Request):
+    from services.visual.autopilot import Autopilot
+    return Autopilot(request.app.state.store).start(project_id,body.expected_revision,body.confirmed,body.max_turns)
+
+
+@router.post('/autopilot/stop')
+def autopilot_stop(project_id:str,body:Body,request:Request):
+    from services.visual.autopilot import Autopilot
+    return Autopilot(request.app.state.store).stop(project_id)
 
 
 @router.post('/chapters/{scene_id}/restore')

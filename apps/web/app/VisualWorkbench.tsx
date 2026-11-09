@@ -5,7 +5,7 @@ import {request,parseJobs,parseSceneJob,type Project,type Job} from '../lib/edit
 import {confirmEstimate} from '../lib/cost-estimates';
 import {currentVoiceJob} from '../lib/course';
 import {parseVisualJobs,visualFileUrl,measuredReady,reviewFrames,visualError,sceneAudioActions,videoTaskStatus,videoProgress,latestAgentJob,canAcceptAgent,exportedVersion,chapterStatus,agentBatchScenes,visualAgentBody,failureAction,momentNote,restyleOf,renderedTheme,sameLook,nextStep,type NextStep,AGENT_MAX_TURNS,estimatedSeconds,codePointOffset,AGENT_MAX_SECONDS,type VisualJob} from '../lib/visual-workbench';
-import {agentModelLabel,confirmVisualAction,visualAgentAction,visualAgentReviseAction,type AgentModel} from '../lib/visual-workbench-actions';
+import {agentModelLabel,autopilotConfirmation,confirmVisualAction,type AutopilotPlan,visualAgentAction,visualAgentReviseAction,type AgentModel} from '../lib/visual-workbench-actions';
 import {parseModelSettings} from '../lib/model-settings';
 import {useConfirm} from './ConfirmContext';
 import {VoiceSettings} from './VoiceSettings';
@@ -236,6 +236,14 @@ export default function VisualWorkbench({routeProjectId}:{routeProjectId:string}
   });
   const acceptInReview=async(job:VisualJob)=>{await act(async()=>{await submit('/'+job.id+'/accept',{confirmed:true,sha256:job.result!.sha256});});};
   const reviseInReview=(item:ReviewItem,text:string)=>{if(project)void act(()=>confirmVisualAction(visualAgentReviseAction(item.row.id,project.revision,item.job.id,text,llm),confirm,submit));};
+  const startAutopilot=()=>void act(async()=>{if(!project)return;
+    const plan=await request<AutopilotPlan>(base+'/visual/autopilot');
+    if(!plan.chapters.length)throw new Error('没有需要配音或生成的章节');
+    if(!await confirm(autopilotConfirmation(plan)))return;
+    setProject(await request<Project>(base+'/visual/autopilot',{expected_revision:plan.revision,confirmed:true,max_turns:AGENT_MAX_TURNS}));});
+  const stopAutopilot=()=>void act(async()=>{setProject(await request<Project>(base+'/visual/autopilot/stop',{}));});
+  const pilot=project?.autopilot;
+  const pilotLeft=pilot?.state==='running'?pilot.scene_ids.filter(id=>{const i=project!.scenes.findIndex(s=>s.id===id);return i>=0&&!['confirmed','review'].includes(statuses[i]?.key);}).length:0;
   const runStep=()=>{
     if(!step||!project)return;
     if(step.key==='voice')voiceChapter();else if(step.key==='retime')retime();else if(step.key==='generate')startAgent();
@@ -260,6 +268,11 @@ export default function VisualWorkbench({routeProjectId}:{routeProjectId:string}
     </header>
     {error&&<p role="alert" className="vw-error">{error}</p>}
     {reviewing&&project&&<ReviewMode projectId={project.id} items={reviewItems} disabled={busy} onAccept={acceptInReview} onRevise={reviseInReview} onClose={()=>setReviewing(false)}/>}
+    {pilot&&<div className={`vw-pilot vw-pilot-${pilot.state}`} role="status">
+      {pilot.state==='running'?<>整课自动生成中 · 还有 {pilotLeft} 章在配音或生成，完成的章节会出现在「连续审片」<button disabled={busy} onClick={stopAutopilot}>停止</button></>
+       :pilot.state==='done'?<>整课自动生成已推进完所有章节{reviewItems.length?<>，{reviewItems.length} 章待确认 <button onClick={()=>setReviewing(true)}>连续审片</button></>:'。'}</>
+       :pilot.reason==='llm_changed'?<>整课自动生成已停止：提交后修改了模型配置，请重新开始。</>:<>整课自动生成已停止。</>}
+    </div>}
     {undo&&<div className="vw-undo" role="status">已删除{undo.label}<button disabled={busy} onClick={restoreChapter}>撤销</button></div>}
     {project&&settingsOpen&&<section className="vw-settings" aria-label="课程设置">
         <ThemeSettings key={project.id+':'+(project.theme_id??'')+':'+(project.theme_accent??'')} project={project} themes={themes} disabled={disabled||active} act={act}
@@ -269,6 +282,7 @@ export default function VisualWorkbench({routeProjectId}:{routeProjectId:string}
     {!project?<p role="status">正在读取项目与任务…</p>:<>
       <div className="vw-toolbar">
         {!project.scenes.length&&<button disabled={disabled||active} onClick={()=>void act(async()=>{setProject(await request<Project>(base+'/visual/prepare',{expected_revision:project.revision}));})}>整理口播章节（免费）</button>}
+        {!!project.scenes.length&&pilot?.state!=='running'&&<button className="vw-next-button" disabled={disabled||active} onClick={startAutopilot}><Film size={14}/>整课自动生成（付费）</button>}
         {!!project.scenes.length&&<span className="vw-course-progress">已确认 {confirmedCount}/{project.scenes.length}{missing.length?` · 未确认：第 ${missing.join('、')} 章`:''}</span>}
         <button disabled={disabled||active||!batch.length} title={batch.length?undefined:'没有可批量生成的章节（需已配音、未确认、未在生成）'} onClick={()=>void act(async()=>{
           if(!await confirm({title:`批量 Agent 生成 ${batch.length} 章（付费）`,message:`为第 ${batch.map(s=>project.scenes.indexOf(s)+1).join('、')} 章各提交一个 Agent 任务，依次执行。模型：${agentModelLabel(llm)}。每章最多 ${AGENT_MAX_TURNS} 轮模型调用，合计最多 ${batch.length*AGENT_MAX_TURNS} 轮；失败不自动重试。每章完成后仍需你看过并确认。`,confirmText:`确认最多 ${batch.length*AGENT_MAX_TURNS} 轮付费调用`,variant:'warning'}))return;

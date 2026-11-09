@@ -144,6 +144,7 @@ class Store:
         return {**row, 'id': str(row['id']), 'scenes': scenes,
                 'voice': copy.deepcopy(row['voice'] or self.profile['voice']), 'voice_configured': row['voice'] is not None,
                 'teaching_style': effective_teaching_style(row['config']), 'theme_id': themes.effective(row['config']), 'theme_accent': themes.accent_of(row['config']),
+                'autopilot': copy.deepcopy((row['config'] or {}).get('autopilot')),
                 'source_text': ''.join(s['scene']['narration']['text'] for s in scenes) if scenes else row['source_text']}
 
     def profile_for(self, project):

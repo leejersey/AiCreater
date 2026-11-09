@@ -53,6 +53,13 @@ def serve(lane):
     print(f'runner {lane}: ready', flush=True)
     retried = 0.0
     while not stopping:
+        if lane == 'workflow':
+            # Course pipelines the person confirmed: submit their next step when nothing of theirs is running.
+            try:
+                from services.visual.autopilot import Autopilot
+                for step in Autopilot(store).advance(): print(f'runner {lane}: pipeline {step[0]} {step[1]}', flush=True)
+            except Exception as error:
+                print(f'runner {lane}: pipeline step failed ({type(error).__name__}); retrying', file=sys.stderr, flush=True)
         try: result = poll(store, lane)
         except KeyboardInterrupt: break
         except Exception as error:  # a broken poll (database restart, …) must not end the runner

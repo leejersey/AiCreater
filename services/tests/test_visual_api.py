@@ -89,6 +89,47 @@ class VisualApiTests(unittest.TestCase):
             self.client.app.state.visual.finish(job['id'],claim['attempt_id'],{})
             self.assertEqual(self.client.get(live).json(),{'frames':[]})  # ended: no live view
 
+    def test_the_course_pipeline_moves_chapters_one_step_at_a_time_and_never_retries(self):
+        from cryptography.fernet import Fernet
+        from services import chapters
+        from services.visual.autopilot import Autopilot
+        project,row,_=self.ready_scene()
+        with self.store.connection() as conn:
+            project=self.store._insert_scene(conn,self.store._read(conn,self.pid),chapters.chapter('第二句话。',None),1,'needs_voice')
+        second=project['scenes'][1]['id']
+        plan=self.client.get(self.path+'/autopilot').json()
+        self.assertEqual([c['steps'] for c in plan['chapters']],[['agent'],['voice','agent']])
+        self.assertEqual((plan['agent']['chapters'],plan['agent']['max_turns_total']),(2,50))
+        self.assertEqual(plan['voice']['quantity']['characters'],len('第二句话。'))
+        self.assertEqual(plan['llm'],{'source':'env','model':'deepseek-flash'})
+        body={'expected_revision':project['revision'],'confirmed':True,'max_turns':20}
+        self.assertEqual(self.client.post(self.path+'/autopilot',json={**body,'confirmed':False}).status_code,422)
+        started=self.client.post(self.path+'/autopilot',json=body).json()
+        self.assertEqual((started['autopilot']['state'],started['autopilot']['scene_ids']),('running',[row['id'],second]))
+        self.assertEqual(started['revision'],project['revision'])  # not a content change
+        pilot=Autopilot(self.store)
+        kind,agent_id=pilot.advance()[0]
+        self.assertEqual(kind,'agent')
+        self.assertEqual(self.client.app.state.visual.get_raw(self.pid,agent_id)['input']['max_turns'],20)
+        self.assertEqual(pilot.advance(),[])  # one step at a time
+        self.client.app.state.visual.cancel(self.pid,agent_id)  # this chapter's try ended without a version
+        kind,voice_id=pilot.advance()[0]
+        self.assertEqual(kind,'voice')
+        with self.store.connection() as conn:conn.execute("UPDATE jobs SET state='failed',ended_at=now() WHERE id=%s",[voice_id])
+        self.assertEqual(pilot.advance(),[('done',self.pid)])  # failed steps are not retried
+        self.assertEqual(self.client.get('/api/projects/'+self.pid).json()['autopilot']['state'],'done')
+        # A change of model settings after confirming stops a pipeline before its next Agent step.
+        with self.store.connection() as conn:conn.execute("UPDATE jobs SET created_at=now()-interval '1 hour' WHERE project_id=%s",[self.pid])
+        project=self.client.get('/api/projects/'+self.pid).json()
+        self.client.post(self.path+'/autopilot',json={**body,'expected_revision':project['revision']})
+        with patch.dict(os.environ,{'ACCOUNT_CREDENTIALS_KEY':Fernet.generate_key().decode()}):
+            self.client.post('/api/auth/model-settings',json={'base_url':'https://api.example.com/v1','api_key':'k','model':'m'},headers={'Origin':'http://127.0.0.1:3000'})
+            self.assertEqual(pilot.advance(),[('stopped','llm_changed')])
+        self.assertEqual(self.client.get('/api/projects/'+self.pid).json()['autopilot']['reason'],'llm_changed')
+        restarted=self.client.post(self.path+'/autopilot',json={**body,'expected_revision':project['revision']}).json()
+        stopped=self.client.post(self.path+'/autopilot/stop',json={}).json()
+        self.assertEqual((restarted['autopilot']['state'],stopped['autopilot']['state'],stopped['autopilot']['reason']),('running','stopped','user'))
+
     def test_pending_audio_blocks_paid_visual_dispatch(self):
         project=self.client.get('/api/projects/'+self.pid).json()
         body={'scene_id':project['scenes'][0]['id'],'expected_revision':project['revision'],'confirmed':True,'max_turns':25}

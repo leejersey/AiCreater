@@ -59,3 +59,16 @@ test('review mode plays the chapter waiting for confirmation with its actions an
  assert.match(html,/src="\/api\/projects\/p\/visual\/a1\/files\/video.mp4"/);
  assert.match(renderToStaticMarkup(createElement(ReviewMode,{projectId:'p',items:[],disabled:false,onAccept:async()=>{},onRevise(){},onClose(){}})),/没有待确认的章节/);
 });
+
+test('the course pipeline confirmation lists what may be voiced and generated, and the cost',async()=>{
+ const {autopilotConfirmation}=await import('../lib/visual-workbench-actions');
+ const plan={revision:4,chapters:[{scene_id:'a',index:0,steps:['agent']},{scene_id:'b',index:1,steps:['voice','agent']}],
+  voice:{status:'estimated',maximum_cny:0.01,quantity:{characters:20}},agent:{chapters:2,max_turns_each:25,max_turns_total:50},llm:{source:'env',model:'deepseek-flash'}} as any;
+ const c=autopilotConfirmation(plan);
+ assert.equal(c.title,'整课自动生成 2 章（付费）');
+ const m=String(c.message);
+ assert.match(m,/配音 1 章（第 2 章）：约 ¥0.01（火山 TTS 公开价，20 字）/);
+ assert.match(m,/生成视频 2 章：每章最多 25 轮模型调用，合计最多 50 轮（服务端 DeepSeek，开启思考）/);
+ assert.match(m,/失败的章节不重试/);
+ assert.match(String(autopilotConfirmation({...plan,chapters:[plan.chapters[0]],voice:null}).message),/无需配音/);
+});
