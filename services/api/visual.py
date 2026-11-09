@@ -112,6 +112,40 @@ def cancel(project_id:str,visual_id:str,body:Body,request:Request):
     return request.app.state.visual.cancel(project_id,visual_id)
 
 
+LIVE_DIR=re.compile(r'[0-9a-f]{12}');LIVE_FRAME=re.compile(r'frame-\d{4}\.png')
+
+
+def _live_stills(project_id,visual_id,request):
+    """The stills directory of the newest render of a running Agent job, or None."""
+    from services.visual.worker import job_directory
+    job=request.app.state.visual.get_raw(project_id,visual_id)
+    if job['kind']!='agent' or job['state']!='running':return None
+    root=job_directory(job['id'])/'workspace'/'stills'
+    if not root.is_dir() or root.is_symlink():return None
+    renders=[d for d in root.iterdir() if LIVE_DIR.fullmatch(d.name) and d.is_dir() and not d.is_symlink()]
+    return max(renders,key=lambda d:d.stat().st_mtime) if renders else None
+
+
+@router.get('/{visual_id}/live')
+def live(project_id:str,visual_id:str,request:Request):
+    """While an Agent job runs: its newest rendered frames (start, middle, end), for the progress view."""
+    newest=_live_stills(project_id,visual_id,request)
+    frames=sorted(f.name for f in newest.iterdir() if LIVE_FRAME.fullmatch(f.name)) if newest else []
+    pick=sorted({frames[0],frames[len(frames)//2],frames[-1]}) if frames else []
+    return JSONResponse({'frames':[f'{newest.name}/{f}' for f in pick]},headers={'Cache-Control':'no-store'})
+
+
+@router.get('/{visual_id}/live/{render}/{frame}')
+def live_frame(project_id:str,visual_id:str,render:str,frame:str,request:Request):
+    if not LIVE_DIR.fullmatch(render) or not LIVE_FRAME.fullmatch(frame):raise StoreError('not_found','Frame not found')
+    newest=_live_stills(project_id,visual_id,request)
+    if newest is None:raise StoreError('not_found','Frame not found')
+    path=newest.parent/render/frame
+    if path.is_symlink() or not path.is_file() or not path.resolve().is_relative_to(newest.parent.resolve()) or path.stat().st_size>16*1024**2:
+        raise StoreError('not_found','Frame not found')
+    return FileResponse(path,media_type='image/png',headers={'Cache-Control':'no-store','X-Content-Type-Options':'nosniff'})
+
+
 @router.get('/{visual_id}/files/{name:path}')
 def file(project_id:str,visual_id:str,name:str,request:Request):
     from services.visual.worker import local_file

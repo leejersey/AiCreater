@@ -22,6 +22,14 @@ export function VisualHistoryEntry({job,children}:{job:VisualJob;children?:React
  const [open,setOpen]=useState(false);
  return <details className="vw-history-entry" onToggle={e=>setOpen(e.currentTarget.open)}><summary>{kinds[job.kind]} · {videoTaskStatus(job)}{job.current===false?' · 历史版本':''}</summary>{open&&children}</details>;
 }
+/** While an Agent job runs: the newest frames it rendered, refreshed with each status update. */
+export function LiveFrames({job,updatedAt}:{job:VisualJob;updatedAt:number}){
+ const [frames,setFrames]=useState<string[]>([]);
+ const base=`/api/projects/${encodeURIComponent(job.project_id)}/visual/${encodeURIComponent(job.id)}/live`;
+ useEffect(()=>{let live=true;request<{frames?:unknown}>(base).then(v=>{if(live&&Array.isArray(v.frames))setFrames(v.frames.filter((f):f is string=>typeof f==='string'&&/^[0-9a-f]{12}\/frame-\d{4}\.png$/.test(f)));}).catch(()=>{});return()=>{live=false;};},[base,updatedAt]);
+ if(!frames.length)return null;
+ return <div className="vw-live" aria-label="最新渲染的画面">{frames.map(f=><img key={f} alt="最新渲染的关键帧" src={`${base}/${f}`}/>)}<small>Agent 最新一轮渲染的画面（开头 · 中段 · 结尾），会随检查与修改更新。</small></div>;
+}
 export function VisualTaskProgress({job,now,updatedAt,disabled,onCancel,onRefresh,onRestart}:{job:VisualJob;now:number;updatedAt:number;disabled:boolean;onCancel:()=>void;onRefresh:()=>void;onRestart?:()=>void}){
  const progress=videoProgress(job,now);
  const fix=failureAction(job);
@@ -29,6 +37,7 @@ export function VisualTaskProgress({job,now,updatedAt,disabled,onCancel,onRefres
   <p role={job.state==='failed'?'alert':'status'}><strong>{progress.label}</strong></p>
   <ol className="vw-progress-steps" aria-label="视频制作阶段">{['排队','生成与检查','渲染视频','视频就绪'].map((label,i)=><li key={label} aria-current={progress.step===i+1?'step':undefined} data-complete={progress.step>i+1}><span>{i+1}</span>{label}</li>)}</ol>
   {progress.active&&<progress aria-label={progress.label}/>}
+  {job.kind==='agent'&&job.state==='running'&&<LiveFrames job={job} updatedAt={updatedAt}/>}
   <p>{progress.detail}</p>
   <div className="vw-task-meta" aria-live="off">{progress.elapsed&&<span>{progress.elapsed}</span>}{updatedAt>0&&<span>最近更新 {new Date(updatedAt).toLocaleTimeString('zh-CN',{hour12:false})}</span>}{progress.active&&now-updatedAt>15000&&updatedAt>0&&<span className="vw-warning">状态超过15秒未更新，请刷新检查</span>}</div>
   {fix&&<div className="vw-toolbar vw-fix">{fix.href?<a className="primary-link" href={fix.href}>{fix.label}</a>

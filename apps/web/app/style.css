@@ -2415,3 +2415,6 @@ aside .theme-picker { grid-template-columns:1fr 1fr; }
 details.vw-step > summary, details.vw-more > summary { cursor:pointer; padding:6px 0; color:var(--text-secondary); }
 .vw-settings { display:grid; grid-template-columns:repeat(auto-fit,minmax(320px,1fr)); gap:16px; margin:0 0 16px; padding:16px; border:1px solid var(--line); border-radius:var(--radius-md); }
 .vw-undo { position:fixed; left:50%; bottom:24px; transform:translateX(-50%); z-index:50; display:flex; align-items:center; gap:12px; padding:10px 16px; border:1px solid var(--line-strong); border-radius:var(--radius-md); background:#111827; box-shadow:0 8px 24px rgba(0,0,0,0.4); }
+.vw-live { display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); gap:8px; margin:10px 0; }
+.vw-live img { width:100%; aspect-ratio:16/9; object-fit:contain; background:#000; border-radius:4px; }
+.vw-live small { grid-column:1/-1; color:var(--text-secondary); }

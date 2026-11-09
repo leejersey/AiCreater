@@ -65,6 +65,30 @@ class VisualApiTests(unittest.TestCase):
         with self.store.connection() as conn:conn.execute("UPDATE scenes SET deleted_at=now()-interval '11 minutes' WHERE id=%s",[first])
         self.assertEqual(self.client.post(url,json={'expected_revision':again['revision'],'at':0}).status_code,409)
 
+    def test_a_running_agent_shows_its_newest_frames(self):
+        from services.visual import worker
+        project,row,_=self.ready_scene()
+        job=self.client.post(self.path+'/agent',json={'scene_id':row['id'],'expected_revision':project['revision'],'confirmed':True,'max_turns':25}).json()
+        live=self.path+'/'+job['id']+'/live'
+        self.assertEqual(self.client.get(live).json(),{'frames':[]})  # queued: nothing yet
+        claim=self.client.app.state.visual.claim('workflow')
+        root=self.store.public.resolve()/'visual'
+        with patch.object(worker,'WORK_ROOT',root):
+            stills=worker.job_directory(job['id'])/'workspace'/'stills'
+            old=stills/'aaaaaaaaaaaa';old.mkdir(parents=True)
+            for n in (30,60):(old/f'frame-{n:04d}.png').write_bytes(b'old')
+            import os as _os,time as _time;_os.utime(old,(_time.time()-60,_time.time()-60))
+            new=stills/'bbbbbbbbbbbb';new.mkdir()
+            for n in (30,60,90,120,150):(new/f'frame-{n:04d}.png').write_bytes(b'png%d'%n)
+            frames=self.client.get(live).json()['frames']
+            self.assertEqual(frames,['bbbbbbbbbbbb/frame-0030.png','bbbbbbbbbbbb/frame-0090.png','bbbbbbbbbbbb/frame-0150.png'])
+            self.assertEqual(self.client.get(live+'/bbbbbbbbbbbb/frame-0090.png').content,b'png90')
+            for bad in ['/aaaaaaaaaaaa/frame-0030.png'.replace('aaaaaaaaaaaa','..'),'/bbbbbbbbbbbb/..%2Fsecret.png','/bbbbbbbbbbbb/source.txt']:
+                self.assertEqual(self.client.get(live+bad).status_code,404,bad)
+            self.client.app.state.visual.cancel(self.pid,job['id'])
+            self.client.app.state.visual.finish(job['id'],claim['attempt_id'],{})
+            self.assertEqual(self.client.get(live).json(),{'frames':[]})  # ended: no live view
+
     def test_pending_audio_blocks_paid_visual_dispatch(self):
         project=self.client.get('/api/projects/'+self.pid).json()
         body={'scene_id':project['scenes'][0]['id'],'expected_revision':project['revision'],'confirmed':True,'max_turns':25}
