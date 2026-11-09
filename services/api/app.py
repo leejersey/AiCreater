@@ -7,7 +7,7 @@ import httpx
 from fastapi import FastAPI, Request, Depends
 from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import JSONResponse, FileResponse
+from fastapi.responses import StreamingResponse, JSONResponse, FileResponse
 from pydantic import BaseModel, ConfigDict, Field
 
 from services.api.local import LocalRequestsMiddleware, ORIGINS
@@ -80,6 +80,9 @@ def _provider_error_status(code):
     if code in ('missing_setting', 'invalid_auth', 'invalid_setting'):
         return 503
     return 502
+
+
+EVENT_TICKS = 600  # one per second: an event stream lasts 10 minutes, then the browser reconnects
 
 
 def create_app(store=None, *, authentication=True):
@@ -171,6 +174,35 @@ def create_app(store=None, *, authentication=True):
         file = request.app.state.store.asset_file(project_id, asset_id)
         mime = {'.png':'image/png', '.jpg':'image/jpeg', '.jpeg':'image/jpeg', '.mp3':'audio/mpeg', '.m4a':'audio/mp4'}.get(file.suffix.lower(), 'audio/wav')
         return FileResponse(file, media_type=mime, headers={'X-Content-Type-Options':'nosniff'})
+
+    @app.get('/api/projects/{project_id}/events')
+    async def project_events(project_id: str, request: Request):
+        """Server-sent events: `change` whenever the course or one of its jobs changes, so the page refreshes at once
+        instead of polling. Ends after 10 minutes; EventSource reconnects by itself."""
+        import asyncio, hashlib
+        store = request.app.state.store
+        store.get_project(project_id)  # 404 before streaming
+        def signature():
+            with store.connection() as conn:
+                row = conn.execute('''SELECT p.revision, p.config->'autopilot' AS pilot,
+                    (SELECT string_agg(j.id::text||j.state||j.stage||coalesce(j.heartbeat_at::text,'')||coalesce(j.ended_at::text,''), ',' ORDER BY j.id)
+                     FROM jobs j WHERE j.project_id=p.id AND (j.state IN ('queued','running') OR j.ended_at > now() - interval '15 minutes')) AS jobs
+                    FROM projects p WHERE p.id=%s''', [project_id]).fetchone()
+            return hashlib.sha256(repr(tuple(row.values()) if row else ()).encode()).hexdigest()[:16]
+        async def stream():
+            last, quiet = None, 0
+            for _ in range(EVENT_TICKS):
+                if await request.is_disconnected(): return
+                current = await asyncio.to_thread(signature)
+                if current != last:
+                    last, quiet = current, 0
+                    yield f'event: change\ndata: {current}\n\n'
+                else:
+                    quiet += 1
+                    if quiet % 15 == 0: yield ': keep-alive\n\n'
+                await asyncio.sleep(1)
+        return StreamingResponse(stream(), media_type='text/event-stream',
+                                 headers={'Cache-Control': 'no-store', 'X-Accel-Buffering': 'no'})
 
     @app.get('/api/projects/{project_id}/jobs')
     def project_jobs(project_id: str, request: Request):

@@ -193,10 +193,14 @@ export default function VisualWorkbench({routeProjectId}:{routeProjectId:string}
   },[base,routeProjectId]);
   useEffect(()=>{
     alive.current=true;let stopped=false;let timer:ReturnType<typeof setTimeout>;
+    // Server-sent events refresh the page as soon as the course or a job changes; polling stays as a slow fallback
+    // (fast again whenever the event stream is down).
+    let pushed=false;const events=typeof EventSource==='undefined'?null:new EventSource(base+'/events');
+    if(events){events.addEventListener('change',()=>{pushed=true;void refresh().catch(()=>{});});events.onerror=()=>{pushed=false;};}
     const poll=async()=>{try{await refresh();if(!stopped)setError('');}catch(e){if(!stopped)setError(visualError(e));}
-      if(!stopped)timer=setTimeout(()=>void poll(),3000);};
-    void poll();return()=>{stopped=true;alive.current=false;clearTimeout(timer);};
-  },[refresh]);
+      if(!stopped)timer=setTimeout(()=>void poll(),pushed?15000:3000);};
+    void poll();return()=>{stopped=true;alive.current=false;clearTimeout(timer);events?.close();};
+  },[refresh,base]);
   async function act(fn:()=>Promise<unknown>){
     if(lock.current)return;lock.current=true;setBusy(true);setError('');
     try{await fn();await refresh();}catch(e){if(alive.current)setError(visualError(e));}

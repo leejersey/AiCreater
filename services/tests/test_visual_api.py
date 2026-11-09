@@ -130,6 +130,15 @@ class VisualApiTests(unittest.TestCase):
         stopped=self.client.post(self.path+'/autopilot/stop',json={}).json()
         self.assertEqual((restarted['autopilot']['state'],stopped['autopilot']['state'],stopped['autopilot']['reason']),('running','stopped','user'))
 
+    def test_the_course_streams_a_change_event_for_the_page(self):
+        import services.api.app as api
+        with patch.object(api,'EVENT_TICKS',1),self.client.stream('GET','/api/projects/'+self.pid+'/events') as response:
+            self.assertEqual(response.headers['content-type'].split(';')[0],'text/event-stream')
+            first=next(response.iter_lines())
+            self.assertEqual(first,'event: change')
+        self.client.cookies.clear()
+        self.assertEqual(self.client.get('/api/projects/'+self.pid+'/events').status_code,401)
+
     def test_pending_audio_blocks_paid_visual_dispatch(self):
         project=self.client.get('/api/projects/'+self.pid).json()
         body={'scene_id':project['scenes'][0]['id'],'expected_revision':project['revision'],'confirmed':True,'max_turns':25}
