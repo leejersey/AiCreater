@@ -22,6 +22,7 @@ from services.projects.store import Store, StoreError
 from services.projects.storage import ObjectStore
 from services.accounts.model_settings import resolve_llm
 from services.workflow.manuscript import generate_manuscript
+from services.workflow import ideation
 from services.workflow.providers import ProviderError
 from services.projects.store import ROOT
 
@@ -37,6 +38,29 @@ class GenerateManuscript(Body):
     outline: str = Field(default='', max_length=1000)
     manuscript_format: Literal['plain', 'markdown'] = 'plain'
     teaching_style: Literal['popular', 'technical'] = 'popular'
+    plan: dict | None = None  # {angle, outline} from ideation; checked by services.workflow.ideation
+
+
+class IdeaContext(Body):
+    topic: str = Field(min_length=1, max_length=80)
+    notes: str = Field(default='', max_length=300)
+    audience: str = Field(default='', max_length=80)
+    duration_hint: str = Field(default='', max_length=40)
+    teaching_style: Literal['popular', 'technical'] = 'popular'
+
+
+class IdeaAngles(IdeaContext):
+    count: int = Field(default=4, ge=3, le=6)
+    exclude: list[str] = Field(default_factory=list, max_length=30)
+    custom: str = Field(default='', max_length=200)
+    merge: list[dict] | None = Field(default=None, min_length=2, max_length=2)
+    scope: Literal['single'] = 'single'  # a series plugs in here later
+
+
+class IdeaOutline(IdeaContext):
+    angle: dict
+    previous: dict | None = None
+    feedback: str = Field(default='', max_length=300)
 
 
 class CreateProject(Body):
@@ -46,6 +70,7 @@ class CreateProject(Body):
     mode: Literal['script'] = 'script'
     teaching_style: Literal['popular', 'technical'] = 'popular'
     theme_id: str | None = Field(default=None, max_length=40)
+    origin: dict | None = None  # how the video was conceived (ideation); checked by services.workflow.ideation
 
 
 class Revision(Body):
@@ -147,16 +172,56 @@ def create_app(store=None, *, authentication=True):
                 text = generate_manuscript(body.title, llm, client, audience=body.audience,
                     duration_hint=body.duration_hint, outline=body.outline,
                     user_id=getattr(request.state, 'user', {}).get('id'),
-                    teaching_style=body.teaching_style, manuscript_format=body.manuscript_format)
+                    teaching_style=body.teaching_style, manuscript_format=body.manuscript_format, plan=body.plan)
         except ProviderError as exc:
             return JSONResponse({'code': exc.code, 'message': str(exc)},
                                 status_code=_provider_error_status(exc.code))
         return {'text': text}
 
+    @app.post('/api/ideas/angles')
+    def idea_angles(body: IdeaAngles, request: Request):
+        user_id = getattr(request.state, 'user', {}).get('id')
+        try:
+            merge = [ideation.check_angle(a) for a in body.merge] if body.merge else None
+            exclude = [ideation._text(t, 40, 'exclude') for t in body.exclude]
+        except ValueError as problem:
+            return JSONResponse({'code': 'validation', 'message': str(problem)}, status_code=422)
+        if body.custom.strip() and merge:
+            return JSONResponse({'code': 'validation', 'message': 'custom 与 merge 只能选一个'}, status_code=422)
+        try:
+            llm = resolve_llm(request.app.state.store, user_id)
+            with httpx.Client(timeout=120, trust_env=False) as client:
+                angles = ideation.generate_angles(llm, client, topic=body.topic.strip(), notes=body.notes.strip(),
+                    audience=body.audience.strip(), duration_hint=body.duration_hint.strip(), teaching_style=body.teaching_style,
+                    count=body.count, exclude=exclude, custom=body.custom.strip(), merge=merge, user_id=user_id)
+        except ProviderError as exc:
+            return JSONResponse({'code': exc.code, 'message': str(exc)}, status_code=_provider_error_status(exc.code))
+        return {'angles': angles}
+
+    @app.post('/api/ideas/outline')
+    def idea_outline(body: IdeaOutline, request: Request):
+        user_id = getattr(request.state, 'user', {}).get('id')
+        try:
+            angle = ideation.check_angle(body.angle)
+            previous = ideation.check_outline(body.previous) if body.previous is not None else None
+        except ValueError as problem:
+            return JSONResponse({'code': 'validation', 'message': str(problem)}, status_code=422)
+        if (previous is None) != (not body.feedback.strip()):
+            return JSONResponse({'code': 'validation', 'message': '修改意见需要和上一版大纲一起提交'}, status_code=422)
+        try:
+            llm = resolve_llm(request.app.state.store, user_id)
+            with httpx.Client(timeout=120, trust_env=False) as client:
+                outline = ideation.generate_outline(llm, client, topic=body.topic.strip(), angle=angle, notes=body.notes.strip(),
+                    audience=body.audience.strip(), duration_hint=body.duration_hint.strip(), teaching_style=body.teaching_style,
+                    previous=previous, feedback=body.feedback.strip(), user_id=user_id)
+        except ProviderError as exc:
+            return JSONResponse({'code': exc.code, 'message': str(exc)}, status_code=_provider_error_status(exc.code))
+        return {'outline': outline}
+
     @app.post('/api/projects', status_code=201)
     def create(body: CreateProject, request: Request):
         project = request.app.state.store.create_project(body.title, body.source_text,
-            getattr(request.state, 'user', {}).get('id'), teaching_style=body.teaching_style, theme_id=body.theme_id,
+            getattr(request.state, 'user', {}).get('id'), teaching_style=body.teaching_style, theme_id=body.theme_id, origin=body.origin,
             **({'manuscript_format': 'markdown'} if body.manuscript_format == 'markdown' else {}))
         # Chapters right away (free, local): the workbench opens ready to voice.
         return request.app.state.visual.prepare(project['id'], project['revision'])

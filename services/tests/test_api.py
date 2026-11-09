@@ -37,6 +37,38 @@ class ApiTests(ProjectFixture, unittest.TestCase):
         self.assertEqual(generated.json()['text'],markdown)
         self.assertEqual(generate.call_args.kwargs['manuscript_format'],'markdown')
 
+    def test_ideation_routes_check_input_and_a_project_keeps_its_origin(self):
+        from unittest.mock import patch
+        from services.tests.test_ideation import FOUR, outline
+        base = {'topic':'RAG','notes':'讲给客服同事'}
+        with patch('services.api.app.resolve_llm',return_value=None), \
+             patch('services.api.app.ideation.generate_angles',return_value=FOUR) as angles, \
+             patch('services.api.app.ideation.generate_outline',return_value=outline()) as made:
+            response = self.client.post('/api/ideas/angles',json={**base,'exclude':['什么是 RAG']})
+            self.assertEqual((response.status_code,len(response.json()['angles'])),(200,4))
+            self.assertEqual((angles.call_args.kwargs['notes'],angles.call_args.kwargs['exclude']),('讲给客服同事',['什么是 RAG']))
+            for bad in [{'scope':'series'},{'count':7},{'merge':[FOUR[0]]},{'merge':[FOUR[0],{**FOUR[1],'structure':'poem'}]},
+                        {'custom':'x','merge':FOUR[:2]},{'topic':''},{'notes':'x'*301},{'surprise':1}]:
+                self.assertEqual(self.client.post('/api/ideas/angles',json={**base,**bad}).status_code,422,bad)
+            self.assertEqual(self.client.post('/api/ideas/angles',json={**base,'merge':FOUR[:2]}).status_code,200)
+            self.assertEqual(self.client.post('/api/ideas/outline',json={**base,'angle':FOUR[0]}).status_code,200)
+            revised = self.client.post('/api/ideas/outline',json={**base,'angle':FOUR[0],'previous':outline(),'feedback':'加个例子'})
+            self.assertEqual((revised.status_code,made.call_args.kwargs['feedback']),(200,'加个例子'))
+            for bad in [{'feedback':'加个例子'},{'previous':outline()},{'previous':outline(500),'feedback':'x'},{'angle':{**FOUR[0],'chapters':[]}}]:
+                self.assertEqual(self.client.post('/api/ideas/outline',json={**base,'angle':FOUR[0],**bad}).status_code,422,bad)
+        with patch('services.api.app.resolve_llm',return_value=None), patch('services.api.app.generate_manuscript',return_value='口播。') as generate:
+            plan = {'angle':FOUR[0],'outline':outline()}
+            self.assertEqual(self.client.post('/api/manuscripts/generate',json={'title':'RAG','plan':plan}).status_code,200)
+            self.assertEqual(generate.call_args.kwargs['plan'],plan)
+        origin = {'topic':'RAG','notes':'讲给客服同事','angle':FOUR[0],'outline':outline()}
+        created = self.client.post('/api/projects',json={'title':'为什么会胡说','source_text':'大模型会编造答案。','origin':origin})
+        self.assertEqual(created.status_code,201,created.text)
+        kept = created.json()['config']['origin']
+        self.assertEqual((kept['topic'],kept['angle']['structure'],kept['scope'],kept['series_id']),('RAG','problem','single',None))
+        for bad in [{**origin,'scope':'series'},{**origin,'series_id':'s'},{**origin,'outline':{'sections':[]}}]:
+            self.assertEqual(self.client.post('/api/projects',json={'title':'t','source_text':'口播。','origin':bad}).status_code,422)
+        self.assertNotIn('origin',self.client.post('/api/projects',json={'title':'t','source_text':'口播。'}).json()['config'])
+
     def test_project_voice_patch_is_free_revision_checked_and_strict(self):
         path='/api/projects/'+self.project['id']+'/voice';before=self.store.get_project(self.project['id'])
         response=self.client.patch(path,json={'expected_revision':1,'speaker':'public_voice'})

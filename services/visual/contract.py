@@ -67,8 +67,12 @@ def measured_input(project,row):
         materials=[material[i:i+2000] for i in range(0,len(material),2000)][:20]
     title=(matched or {}).get('title') or project['title']
     goal=(matched or {}).get('visual_intent') or '用具体对象的状态变化、路线与遮挡讲清本章机制；不要生成文字卡片切换。'
+    origin=project['config'].get('origin')
+    if origin:  # conceived through ideation: the picture follows the course's direction
+        from services.workflow.ideation import direction_line
+        goal=f'{goal}\n{direction_line(origin)}'
     brief={'schemaVersion':'custom-scene-brief:1','id':'scene-'+row['id'],
-           'title':title[:80],'narration':text,'visualGoal':goal,
+           'title':title[:80],'narration':text,'visualGoal':goal[:4000],
            'facts':[text[i:i+2000] for i in range(0,len(text),2000)],'materials':materials,
            'width':1920,'height':1080,'fps':30,'durationInFrames':duration}
     return {'brief':brief,'cues':cues,'scene':scene,'asset':asset,'fingerprint':fingerprint(row,asset)}
