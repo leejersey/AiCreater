@@ -1,5 +1,6 @@
 // Worker entry for a visual job of kind "agent": tsx scripts/scene-agent-job.ts <input.json> <new output dir>
-// Input: {brief, cues, scene, audio_file, model, max_turns, theme?, revision?:{feedback, source_file, sha256}}. theme is the
+// Input: {brief, cues, scene, audio_file, model, max_turns, theme?, revision?:{feedback, source_file, sha256}}. A scene that
+// imports the kit is published with the kit copy it was checked with (kit.txt). theme is the
 // course's frozen theme (absent on jobs from before themes: the default). With revision, the run
 // starts from that earlier accepted-or-passed source and the person's feedback instead of an empty scene. Runs the scene-agent loop in <out>/workspace and,
 // if the scene passes the gates, renders the voiced chapter video. Calls a paid model API; the worker only
@@ -9,6 +10,7 @@ import path from 'node:path';
 import {parseBrief} from '../packages/custom-scenes/src/contract';
 import {parseCues} from '../packages/custom-scenes/src/cues';
 import {repositoryRoot} from '../packages/custom-scenes/src/files';
+import {usesKit} from '../packages/custom-scenes/src/kit';
 import {runLoop} from '../packages/scene-agent/src/loop';
 import {createProvider,loadModels} from '../packages/scene-agent/src/provider/registry';
 import {OpenAICompatibleProvider} from '../packages/scene-agent/src/provider/openai-compatible';
@@ -62,7 +64,7 @@ async function main(){
   if(typeof input.revision.feedback!=='string'||!input.revision.feedback.trim())throw Error('revision feedback is empty');
  }
  const workspace=await createWorkspace(path.join(out,'workspace'),{brief,cues,skillDir:path.join(repositoryRoot,'packages/scene-agent/skill'),initialSource,theme});
- const renderer=new RemotionStillRenderer(workspace.brief,workspace.theme,workspace.cues);
+ const renderer=new RemotionStillRenderer(workspace.brief,workspace.theme,workspace.cues,workspace.kit);
  let run;
  try{run=await runLoop({provider,workspace,renderer,budget:{...entry.budget,maxTurns:input.max_turns},...(input.revision?{revision:{feedback:input.revision.feedback}}:{})});}
  finally{await renderer.close();}
@@ -71,6 +73,9 @@ async function main(){
   const source=await readFile(path.join(workspace.root,'scene/Scene.tsx'),'utf8');
   if(sourceSha256(source)!==run.finish.gates.sourceSha256)throw Error('gated source changed before publishing');
   await writeFile(path.join(out,'source.txt'),source);
+  // The kit copy the scene was checked with, so re-renders (export, restyle, re-voice) use exactly it.
+  const kit=usesKit(source)?workspace.kit:undefined;
+  if(kit!==undefined){await writeFile(path.join(out,'kit.txt'),kit);result.kit='kit.txt';}
   // Publish the stills the gates judged, under the public frame naming.
   const frames:string[]=[];
   await mkdir(path.join(out,'stills'));
@@ -85,7 +90,7 @@ async function main(){
   }
   // retimable: reads timing.cues and passed on another voice-over timing, so a new recording re-renders it without a model.
   const retimable=run.finish.gates.checks.some(c=>c.gate==='retime'&&c.passed);
-  Object.assign(result,{sha256:run.finish.gates.sourceSha256,finish_by:run.finish.by,frames,retimable},await renderAgentVideo({source,brief,cues,scene:input.scene,audioFile:input.audio_file},out,theme));
+  Object.assign(result,{sha256:run.finish.gates.sourceSha256,finish_by:run.finish.by,frames,retimable},await renderAgentVideo({source,brief,cues,scene:input.scene,audioFile:input.audio_file,kit},out,theme));
  }
  await writeFile(path.join(out,'result.json'),JSON.stringify(result,null,2));
  console.log(JSON.stringify({status:run.status,reason:run.reason,turns:run.turns}));

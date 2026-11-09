@@ -1,22 +1,29 @@
 // Worker entry for a course export: tsx scripts/scene-agent-course-job.ts <input.json> <new output dir>
-// Input: {theme?, chapters:[{kind:'agent',source_file,sha256,brief,cues,scene,audio_file}]}; theme absent = the default
+// Input: {theme?, chapters:[{kind:'agent',source_file,sha256,brief,cues,scene,audio_file,kit_file?,kit_sha256?}]}; theme absent = the default;
+// kit_file is the scene kit copy frozen with the Agent version (absent for scenes that do not import it)
 // Every chapter is rendered from its accepted scene source, measured audio and captions. Local only: no model or TTS calls.
 import {mkdir,readFile,writeFile} from 'node:fs/promises';
 import path from 'node:path';
 import {parseBrief} from '../packages/custom-scenes/src/contract';
 import {parseCues} from '../packages/custom-scenes/src/cues';
+import {usesKit} from '../packages/custom-scenes/src/kit';
 import {renderCourseVideo,type AgentVideoInput} from '../packages/scene-agent/src/render/video';
 import {sourceSha256} from '../packages/scene-agent/src/render/stills';
 import {jobTheme} from '../packages/scene-themes/src/index';
 
-type Chapter={kind:'agent';source_file:string;sha256:string;brief:unknown;cues:unknown;scene:AgentVideoInput['scene'];audio_file:string};
+type Chapter={kind:'agent';source_file:string;sha256:string;brief:unknown;cues:unknown;scene:AgentVideoInput['scene'];audio_file:string;kit_file?:string;kit_sha256?:string};
 
 async function load(chapter:Chapter,index:number):Promise<AgentVideoInput>{
  if(chapter.kind!=='agent')throw Error(`chapter ${index+1}: unknown kind`);
  const source=await readFile(chapter.source_file,'utf8');
  if(sourceSha256(source)!==chapter.sha256)throw Error(`chapter ${index+1}: agent source changed since it was accepted`);
+ let kit:string|undefined;
+ if(chapter.kit_file!==undefined){
+  kit=await readFile(chapter.kit_file,'utf8');
+  if(sourceSha256(kit)!==chapter.kit_sha256)throw Error(`chapter ${index+1}: kit changed since it was published`);
+ }else if(usesKit(source))throw Error(`chapter ${index+1}: the scene imports the kit but no frozen kit was given`);
  const brief=parseBrief(chapter.brief);
- return{source,brief,cues:parseCues(chapter.cues,brief),scene:chapter.scene,audioFile:chapter.audio_file};
+ return{source,brief,cues:parseCues(chapter.cues,brief),scene:chapter.scene,audioFile:chapter.audio_file,kit};
 }
 
 async function main(){

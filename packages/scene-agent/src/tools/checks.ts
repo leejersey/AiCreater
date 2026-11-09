@@ -26,7 +26,7 @@ export const typecheck:Tool={
   const source=await currentSource(context);
   try{checkSource(source);}
   catch(error){return failure(`contract: ${(error as Error).message}. See read_skill topic "scene-contract".`);}
-  try{await typecheckSource(source);}
+  try{await typecheckSource(source,context.workspace.kit);}
   catch(error){
    if(!(error instanceof SourceTypecheckError))throw error;
    return failure(['typecheck failed (first 5 errors):',...error.diagnostics.map(d=>`- line ${d.line??'?'} TS${d.code}: ${d.message}`)].join('\n'));

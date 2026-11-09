@@ -35,7 +35,7 @@ export function checkSource(source:string):void{
   if(diagnostics.some(d=>d.category===ts.DiagnosticCategory.Error))throw Error('custom_scene_source: invalid TSX');
   let hasDefault=false;
   const banned=new Set(['fetch','XMLHttpRequest','WebSocket','Worker','SharedWorker','eval','Function','require','process','globalThis','window','document','navigator','localStorage','sessionStorage','setTimeout','setInterval','requestAnimationFrame','Date','random','constructor','__proto__','prototype','useEffect','useLayoutEffect','dangerouslySetInnerHTML','Audio','Video','Img','OffthreadVideo','IFrame','staticFile','getInputProps']);
-  const imports=new Set(['react','remotion']);
+  const imports=new Set(['react','remotion','./kit']);
   function visit(node:ts.Node){
     if(ts.isImportDeclaration(node)){
       if(!ts.isStringLiteral(node.moduleSpecifier)||!imports.has(node.moduleSpecifier.text)||!node.importClause)throw Error('custom_scene_source: disallowed import');

@@ -353,6 +353,38 @@ class VisualApiTests(unittest.TestCase):
         job,done,_,_=self.run_agent_job(write,check)
         self.assertEqual(done['state'],'succeeded',done.get('error'))
 
+    def test_a_version_made_with_the_kit_is_re_rendered_with_its_frozen_kit(self):
+        from services.visual import worker
+        import hashlib
+        source="import React from 'react';import {Box} from './kit';export default function Scene(){return null;}"
+        kit='export function Box(){return null;}\n'
+        def write(output):
+            (output/'source.txt').write_text(source);(output/'kit.txt').write_text(kit)
+            (output/'video.mp4').write_bytes(b'mp4');(output/'video.srt').write_text('1\n')
+            (output/'stills').mkdir();(output/'stills'/'frame-30.png').write_bytes(b'png')
+            (output/'result.json').write_text(json.dumps({'status':'passed','model':'deepseek-flash-thinking','turns':4,'requests_dispatched':4,
+                'usage':{'inputTokens':1,'outputTokens':1,'cachedInputTokens':0},'sha256':hashlib.sha256(source.encode()).hexdigest(),'finish_by':'model',
+                'frames':['stills/frame-30.png'],'video':'video.mp4','srt':'video.srt','kit':'kit.txt'}))
+        def check(job):
+            self.assertEqual(self.client.get(self.path+'/'+job['id']+'/files/kit.txt').text,kit)
+            project=self.client.get('/api/projects/'+self.pid).json()
+            project=self.client.patch('/api/projects/'+self.pid+'/theme',json={'expected_revision':project['revision'],'theme_id':'paper-press'}).json()
+            restyle=self.client.post(self.path+'/'+job['id']+'/restyle',json={'expected_revision':project['revision']})
+            self.assertEqual(restyle.status_code,202,restyle.text)
+            seen={}
+            def launcher(command,**options):
+                seen.update(input=json.loads(Path(command[-2]).read_text()))
+                output=Path(command[-1]);output.mkdir()
+                (output/'video.mp4').write_bytes(b'paper');(output/'video.srt').write_text('1\n')
+                (output/'result.json').write_text(json.dumps({'video':'video.mp4','srt':'video.srt','durationInFrames':60}))
+                process=Mock();process.poll.return_value=0;process.returncode=0;return process
+            done=worker.run_once(self.client.app.state.visual,lane='render',launcher=launcher)
+            self.assertEqual(done['state'],'succeeded',done.get('error'))
+            chapter=seen['input']['chapters'][0]
+            self.assertEqual((Path(chapter['kit_file']).read_text(),chapter['kit_sha256']),(kit,hashlib.sha256(kit.encode()).hexdigest()))
+        job,done,_,_=self.run_agent_job(write,check)
+        self.assertEqual(done['state'],'succeeded',done.get('error'))
+
     def test_a_course_card_shows_a_still_of_its_latest_passed_video(self):
         import hashlib
         listed=lambda:next(p for p in self.client.get('/api/projects').json() if p['id']==self.pid)

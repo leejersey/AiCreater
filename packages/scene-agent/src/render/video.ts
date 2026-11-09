@@ -4,6 +4,7 @@ import '../../../../scripts/loopback.cjs';
 import {bundle} from '@remotion/bundler';
 import {openBrowser,renderMedia,renderStill,selectComposition,makeCancelSignal} from '@remotion/renderer';
 import {copyFile,mkdir,mkdtemp,rm,writeFile} from 'node:fs/promises';
+import {currentKit} from '../../../custom-scenes/src/kit';
 import {existsSync} from 'node:fs';
 import path from 'node:path';
 import {checkSource,type SceneBrief} from '../../../custom-scenes/src/contract';
@@ -16,7 +17,8 @@ import {sourceSha256} from './stills';
 import {sceneTiming} from '../../../custom-scenes/src/timing';
 import {fontImports,hostTheme,jobTheme,type SceneTheme} from '../../../scene-themes/src/index';
 
-export type AgentVideoInput={source:string;brief:SceneBrief;cues:Cue[];scene:WorkbenchScene;audioFile:string};
+/** kit: the scene kit copy the scene was checked with (frozen per Agent job); absent = the repository's current one. */
+export type AgentVideoInput={source:string;brief:SceneBrief;cues:Cue[];scene:WorkbenchScene;audioFile:string;kit?:string};
 const AUDIO=/\.(mp3|wav|m4a|aac|ogg|flac)$/i;
 
 /** One chapter: the measured scene must match the brief, and its captions must cover the cues exactly. */
@@ -56,7 +58,7 @@ const chrome=()=>process.env.REMOTION_BROWSER_EXECUTABLE??(existsSync('/Applicat
 
 /** Bundles the course host with each chapter's scene and audio in `theme`; the caller removes `temp`. */
 async function bundleCourse(inputs:AgentVideoInput[],theme:SceneTheme){
- for(const input of inputs){checkSource(input.source);await typecheckSource(input.source);}
+ for(const input of inputs){checkSource(input.source);await typecheckSource(input.source,input.kit);}
  const manifest=courseManifest(inputs);
  const temp=await mkdtemp(path.join(repositoryRoot,'.scene-agent-render-'));
  try{
@@ -64,12 +66,15 @@ async function bundleCourse(inputs:AgentVideoInput[],theme:SceneTheme){
   for(const [i,input] of inputs.entries()){
    await mkdir(path.join(publicDir,`chapter-${i}`),{recursive:true});
    await copyFile(input.audioFile,path.join(publicDir,manifest.chapters[i].audio));
-   await writeFile(path.join(temp,`Scene${i}.tsx`),input.source);
+   // Each chapter in its own folder, beside its own kit copy (chapters may have been made with different kits).
+   await mkdir(path.join(temp,`chapter-${i}`));
+   await writeFile(path.join(temp,`chapter-${i}`,'Scene.tsx'),input.source);
+   await writeFile(path.join(temp,`chapter-${i}`,'kit.tsx'),input.kit??await currentKit());
   }
   const host=path.join(repositoryRoot,'packages/custom-scenes/src/workbench-video').split(path.sep).join('/');
   const names=inputs.map((_,i)=>`Scene${i}`);
   const entryPoint=path.join(temp,'index.tsx');
-  await writeFile(entryPoint,`import React from 'react';import {Composition,registerRoot} from 'remotion';${fontImports(theme)}import {WorkbenchVideo} from ${JSON.stringify(host)};${names.map(n=>`import ${n} from './${n}';`).join('')}const manifest=${JSON.stringify(manifest)};function Video(){return <WorkbenchVideo manifest={manifest} scenes={[${names.join(',')}]} fontText={${JSON.stringify(inputs.map(i=>i.source+i.brief.narration).join(''))}} theme={${JSON.stringify(hostTheme(theme))}}/>}registerRoot(()=> <Composition id="AgentVideo" component={Video} width={1920} height={1080} fps={30} durationInFrames={${manifest.durationInFrames}}/>);`);
+  await writeFile(entryPoint,`import React from 'react';import {Composition,registerRoot} from 'remotion';${fontImports(theme)}import {WorkbenchVideo} from ${JSON.stringify(host)};${names.map((n,i)=>`import ${n} from './chapter-${i}/Scene';`).join('')}const manifest=${JSON.stringify(manifest)};function Video(){return <WorkbenchVideo manifest={manifest} scenes={[${names.join(',')}]} fontText={${JSON.stringify(inputs.map(i=>i.source+i.brief.narration).join(''))}} theme={${JSON.stringify(hostTheme(theme))}}/>}registerRoot(()=> <Composition id="AgentVideo" component={Video} width={1920} height={1080} fps={30} durationInFrames={${manifest.durationInFrames}}/>);`);
   const serveUrl=await bundle({entryPoint,publicDir,outDir:path.join(temp,'bundle')});
   return{manifest,temp,serveUrl};
  }catch(error){await rm(temp,{recursive:true,force:true});throw error;}

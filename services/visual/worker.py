@@ -13,7 +13,7 @@ from services.projects.store import ROOT, StoreError, identifier
 from services.projects.leases import LEASE_SECONDS
 
 WORK_ROOT=ROOT/'output/visual-workbench'
-PUBLIC_FILE=re.compile(r'(?:source\.txt|video\.mp4|video\.srt|stills/frame-\d+\.png)')
+PUBLIC_FILE=re.compile(r'(?:source\.txt|kit\.txt|video\.mp4|video\.srt|stills/frame-\d+\.png)')
 
 
 def agent_progress(directory):
@@ -151,6 +151,15 @@ def _hash(path):
     return digest.hexdigest()
 
 
+def _kit(jobs,agent):
+    """The scene kit copy an Agent version was checked with, for re-rendering it; nothing for scenes without the kit."""
+    checksum=(agent.get('result') or {}).get('_files',{}).get('kit.txt')
+    if checksum is None:return {}
+    kit=local_file(jobs.store.objects,agent,'kit.txt')
+    if _hash(kit)!=checksum:raise ValueError('Agent kit differs from the published job')
+    return {'kit_file':str(kit),'kit_sha256':checksum}
+
+
 def _agent_chapter(jobs,project_id,snapshot):
     agent=jobs.get_raw(project_id,snapshot['agent_id'])
     result=agent.get('result') or {}
@@ -161,7 +170,7 @@ def _agent_chapter(jobs,project_id,snapshot):
     audio=jobs.store.asset_file(project_id,snapshot['asset']['id'])
     if _hash(audio)!=snapshot['asset']['checksum']:raise StoreError('assets','配音已改变')
     return {'kind':'agent','source_file':str(source),'sha256':snapshot['sha256'],'brief':snapshot['brief'],'cues':snapshot['cues'],
-            'scene':snapshot['scene'],'audio_file':str(audio)}
+            'scene':snapshot['scene'],'audio_file':str(audio),**_kit(jobs,agent)}
 
 
 def command_input(jobs,job):
@@ -186,7 +195,7 @@ def command_input(jobs,job):
         audio=jobs.store.asset_file(job['project_id'],data['asset']['id'])
         if _hash(audio)!=data['asset']['checksum']:raise StoreError('assets','配音已改变')
         return {'chapters':[{'kind':'agent','source_file':str(source),'sha256':data['sha256'],'brief':data['brief'],'cues':data['cues'],
-                             'scene':data['scene'],'audio_file':str(audio)}],'theme':data['theme']}
+                             'scene':data['scene'],'audio_file':str(audio),**_kit(jobs,agent)}],'theme':data['theme']}
     if any('agent_id' not in chapter for chapter in data['chapters']):raise StoreError('conflict','导出章节必须都是已确认的 Agent 视频')
     return {'chapters':[_agent_chapter(jobs,job['project_id'],chapter) for chapter in data['chapters']],**({'theme':data['theme']} if data.get('theme') else {})}
 
@@ -210,7 +219,7 @@ def publishable_result(job,directory):
         if result.get('status')!='passed':raise AgentStopped(result.get('reason'))
         frames=result.get('frames')
         if not isinstance(frames,list) or not frames or len(frames)>50:raise ValueError('Missing review frames')
-        files=['source.txt','video.mp4','video.srt',*frames]
+        files=['source.txt','video.mp4','video.srt',*frames,*(['kit.txt'] if result.get('kit')=='kit.txt' else [])]
     else:
         if result.get('video')!='video.mp4' or result.get('srt')!='video.srt':raise ValueError('Export produced no video')
         files=['video.mp4','video.srt']

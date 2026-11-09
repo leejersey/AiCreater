@@ -177,8 +177,8 @@ def live_frame(project_id:str,visual_id:str,render:str,frame:str,request:Request
 
 @router.get('/{visual_id}/files/{name:path}')
 def file(project_id:str,visual_id:str,name:str,request:Request):
-    from services.visual.worker import local_file
-    if not re.fullmatch(r'(?:source\.txt|video\.mp4|video\.srt|stills/frame-\d+\.png)',name):
+    from services.visual.worker import PUBLIC_FILE,local_file
+    if not PUBLIC_FILE.fullmatch(name):
         raise StoreError('not_found','Visual file not found')
     job=request.app.state.visual.get_raw(project_id,visual_id)
     if job['kind'] not in ('agent','export','restyle'):raise StoreError('not_found','Visual file not found')

@@ -18,7 +18,7 @@ from services.visual.contract import measured_input, partition_narration
 KINDS = ('agent', 'export', 'restyle')
 RESULT_FIELDS = frozenset({'sha256', 'requests_dispatched', 'frames', 'video', 'srt', 'durationInFrames',
     'status', 'reason', 'turns', 'usage', 'model', 'finish_by'})
-FILE_NAME = re.compile(r'(?:source\.txt|video\.mp4|video\.srt|stills/frame-\d+\.png)')
+FILE_NAME = re.compile(r'(?:source\.txt|kit\.txt|video\.mp4|video\.srt|stills/frame-\d+\.png)')
 HASH = re.compile(r'[a-f0-9]{64}')
 FAILURE = '视频生成未完成，程序已保存诊断和已有产物；未自动重试。'
 AGENT_STOPPED = 'Agent 未在轮数上限内完成通过检查的画面；运行记录已保留，未自动重试。'
@@ -455,7 +455,8 @@ class VisualJobs:
                     isinstance(usage,dict) and all(type(usage.get(k)) is int and usage[k]>=0 for k in ('inputTokens','outputTokens','cachedInputTokens')) and
                     result.get('model')==row['input']['model'] and result.get('video')=='video.mp4' and result.get('srt')=='video.srt' and
                     isinstance(result.get('frames'),list) and 0<len(result['frames'])<=50 and
-                    set(files)=={'source.txt','video.mp4','video.srt',*result['frames']})
+                    result.get('kit') in (None,'kit.txt') and
+                    set(files)=={'source.txt','video.mp4','video.srt',*result['frames'],*(['kit.txt'] if result.get('kit') else [])})
         return result.get('video') == 'video.mp4' and result.get('srt') == 'video.srt'
 
     def finish(self, job_id, token, result, error=None):

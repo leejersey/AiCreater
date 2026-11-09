@@ -10,6 +10,7 @@ import path from 'node:path';
 import {checkSource,type SceneBrief} from '../../../custom-scenes/src/contract';
 import {fontImports,fontOverrideCss,jobTheme,sceneThemeProps,themeFonts,type SceneTheme} from '../../../scene-themes/src/index';
 import {repositoryRoot} from '../../../custom-scenes/src/files';
+import {currentKit} from '../../../custom-scenes/src/kit';
 import type {GeometryAudit} from '../../../custom-scenes/src/geometry-audit';
 import {decodePng,emptySpace,inkCoverage,type EmptySpace} from './ink';
 import type {LabelBox} from './labels';
@@ -65,7 +66,8 @@ export function conciseError(error:unknown):string{
 export class RemotionStillRenderer implements StillRenderer{
  private browser?:Awaited<ReturnType<typeof openBrowser>>;
  private bundled?:{sha:string;serveUrl:string;temp:string};
- constructor(private readonly brief:SceneBrief,private readonly theme:SceneTheme=jobTheme(undefined),private readonly cues:Cue[]=[]){}
+ /** `kit`: the scene kit copy to bundle beside the scene (default: the repository's current one). */
+ constructor(private readonly brief:SceneBrief,private readonly theme:SceneTheme=jobTheme(undefined),private readonly cues:Cue[]=[],private readonly kit?:string){}
 
  async render(source:string,frames:number[],outDir:string,timing:SceneTiming=sceneTiming(this.brief.durationInFrames,this.cues)):Promise<StillsResult>{
   const inputProps={timing};
@@ -102,6 +104,7 @@ export class RemotionStillRenderer implements StillRenderer{
   const temp=await mkdtemp(path.join(repositoryRoot,'.scene-agent-render-'));
   try{
    await writeFile(path.join(temp,'Scene.tsx'),source);
+   await writeFile(path.join(temp,'kit.tsx'),this.kit??await currentKit());
    await copyFile(path.join(repositoryRoot,'packages/custom-scenes/src/geometry-audit.ts'),path.join(temp,'geometry-audit.ts'));
    await copyFile(path.join(repositoryRoot,'packages/scene-agent/src/render/panels.ts'),path.join(temp,'panels.ts'));
    await copyFile(path.join(repositoryRoot,'packages/scene-agent/src/render/labels.ts'),path.join(temp,'labels.ts'));

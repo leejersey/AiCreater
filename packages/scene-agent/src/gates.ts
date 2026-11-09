@@ -18,7 +18,7 @@ export async function runGates(context:ToolContext):Promise<GateResult>{
  const sha=sourceSha256(source!);
  try{checkSource(source!);add('contract',true,'allowed imports and APIs only');}
  catch(error){add('contract',false,(error as Error).message);return{passed:false,sourceSha256:sha,checks};}
- try{await typecheckSource(source!);add('typecheck',true,'0 errors');}
+ try{await typecheckSource(source!,context.workspace.kit);add('typecheck',true,'0 errors');}
  catch(error){
   add('typecheck',false,error instanceof SourceTypecheckError?error.diagnostics.map(d=>`line ${d.line??'?'}: ${d.message}`).join('; '):(error as Error).message);
   return{passed:false,sourceSha256:sha,checks};

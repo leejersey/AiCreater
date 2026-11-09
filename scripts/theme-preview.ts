@@ -1,6 +1,6 @@
 // Renders finished-video frames of a course in one or more themes, from accepted scene sources. Local only, no model calls.
 //   tsx scripts/theme-preview.ts <course-input.json> <out dir> [--themes=a,b] [--per-chapter=2]
-// <course-input.json> has the course export job's input shape: {chapters:[{kind:'agent',source_file,sha256,brief,cues,scene,audio_file}]}.
+// <course-input.json> has the course export job's input shape: {chapters:[{kind:'agent',source_file,sha256,brief,cues,scene,audio_file,kit_file?,kit_sha256?}]}.
 import {readFile,writeFile} from 'node:fs/promises';
 import path from 'node:path';
 import {parseBrief} from '../packages/custom-scenes/src/contract';
@@ -17,8 +17,10 @@ async function main(){
  const chapters:AgentVideoInput[]=await Promise.all(input.chapters.map(async(c:any,i:number)=>{
   const source=await readFile(c.source_file,'utf8');
   if(sourceSha256(source)!==c.sha256)throw Error(`chapter ${i+1}: source changed`);
+  const kit=c.kit_file===undefined?undefined:await readFile(c.kit_file,'utf8');
+  if(kit!==undefined&&sourceSha256(kit)!==c.kit_sha256)throw Error(`chapter ${i+1}: kit changed`);
   const brief=parseBrief(c.brief);
-  return{source,brief,cues:parseCues(c.cues,brief),scene:c.scene,audioFile:c.audio_file};
+  return{source,brief,cues:parseCues(c.cues,brief),scene:c.scene,audioFile:c.audio_file,kit};
  }));
  // Frames inside each chapter, away from the edges: where its picture is built up and a caption is showing.
  const per=Number(flags['per-chapter']??2),manifest=courseManifest(chapters);

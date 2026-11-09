@@ -54,7 +54,8 @@ Markdown 使用固定格式：每段 `## [s1] 标题`（ID 唯一），依次包
 - **每次修改自动检查**：类型检查、关键帧渲染、几何审计（文字重叠、越出字幕安全区）、卡片互相遮挡、像素级空白帧检测，结果带文字内容与坐标交还模型。
 - **画面跟随配音**：画面按 `timing.cues`（第几句）安排动画而不是写死帧号；收尾时还要在另一套时间轴（每句 ±30%）上重新通过检查。这样的画面在重新配音、换音色、重算时间轴后不用重新生成，系统自动按新配音免费重渲染，确认保留。
 - **客观关卡**：编译、可渲染、无 high 级问题（含空白帧）；模型自评只作记录。达标后未收尾时，框架回退到最后一个达标版本并标记为 `harness`。
-- **skill**（`packages/scene-agent/skill/`）：场景约定、工艺规则、按内容类型（问题、机制、对比、列举、总结）的画面套路；只用分镜稿中的事实。
+- **skill**（`packages/scene-agent/skill/`）：场景约定、动效设计、工艺规则、按内容类型（问题、机制、对比、列举、总结）的画面套路、从通过的画面提炼的示例；只用分镜稿中的事实。
+- **画面组件库**（`packages/scene-kit/kit.tsx`）：画面可 `import … from './kit'` 的预制部件（方框、自绘箭头、文档、叉/勾、增长柱、计数、聚光、镜头推进与时间工具），带几何审查标记与主题色。每个 Agent 版本冻结它当时用的副本（`kit.txt`），导出、换主题、重新配音后的重渲染都用这份。
 - **模型适配层**：OpenAI 兼容（DeepSeek / Qwen / Kimi / GLM / GPT）与 Claude 官方 SDK，`packages/scene-agent/models.json` 切换。默认 `deepseek-flash-thinking`（思考 effort low）。
 - **实测**：RAG 课程 8/8 章通过，每章 4–8 轮、由模型自行收尾；整课合计输出约 14.8 万 token。逐次记录见 [`packages/scene-agent/eval/runs.md`](packages/scene-agent/eval/runs.md)。
 

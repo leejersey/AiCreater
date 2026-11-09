@@ -66,7 +66,7 @@ Each course has one theme, and the same scene must render in any of them. Every 
 
 ## Allowed and banned
 
-- Imports: only `react` and `remotion`. No other modules, no dynamic `import()`.
+- Imports: only `react`, `remotion` and the scene kit (`import {Box, Arrow, win} from './kit';`, see `read_skill kit`). No other modules, no dynamic `import()`.
 - Not allowed: `useEffect`, `useLayoutEffect`, `Date`, `Math.random`/`random`, timers, `fetch`, `window`, `document`, `globalThis`, `process`, `new …`, `eval`/`Function`.
 - No media or embedding: `<img>`, `<image>`, `<video>`, `<audio>`, `<iframe>`, `<foreignObject>`, `<style>`, `<script>`, `staticFile`.
 - No external URLs or `data:` URIs in strings. `url(#gradientId)` references to your own `<defs>` are fine.
