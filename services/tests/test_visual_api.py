@@ -47,6 +47,22 @@ class VisualApiTests(unittest.TestCase):
         self.assertEqual(self.client.get(self.path).status_code,404)
         self.assertEqual(self.client.post(self.path+'/prepare',json={'expected_revision':1}).status_code,404)
 
+    def test_a_deleted_chapter_can_be_restored_in_place_for_ten_minutes(self):
+        project=self.client.get('/api/projects/'+self.pid).json()
+        project=self.client.post(self.path+'/chapters/'+project['scenes'][0]['id']+'/split',json={'expected_revision':project['revision'],'at':5}).json()
+        first,second=[s['id'] for s in project['scenes']]
+        deleted=self.client.post(self.path+'/chapters/'+first+'/delete',json={'expected_revision':project['revision'],'confirmed':True}).json()
+        self.assertEqual([s['id'] for s in deleted['scenes']],[second])
+        url=self.path+'/chapters/'+first+'/restore'
+        self.assertEqual(self.client.post(url,json={'expected_revision':project['revision'],'at':0}).status_code,409)  # stale revision
+        restored=self.client.post(url,json={'expected_revision':deleted['revision'],'at':0})
+        self.assertEqual(restored.status_code,200,restored.text)
+        self.assertEqual([s['id'] for s in restored.json()['scenes']],[first,second])
+        self.assertEqual(self.client.post(url,json={'expected_revision':restored.json()['revision'],'at':0}).status_code,409)  # not deleted any more
+        again=self.client.post(self.path+'/chapters/'+first+'/delete',json={'expected_revision':restored.json()['revision'],'confirmed':True}).json()
+        with self.store.connection() as conn:conn.execute("UPDATE scenes SET deleted_at=now()-interval '11 minutes' WHERE id=%s",[first])
+        self.assertEqual(self.client.post(url,json={'expected_revision':again['revision'],'at':0}).status_code,409)
+
     def test_pending_audio_blocks_paid_visual_dispatch(self):
         project=self.client.get('/api/projects/'+self.pid).json()
         body={'scene_id':project['scenes'][0]['id'],'expected_revision':project['revision'],'confirmed':True,'max_turns':25}

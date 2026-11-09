@@ -107,6 +107,8 @@ export default function VisualWorkbench({routeProjectId}:{routeProjectId:string}
   const [voiceJobs,setVoiceJobs]=useState<Job[]>([]);
   const [themes,setThemes]=useState<ThemeSummary[]>([]);
   const [settingsOpen,setSettingsOpen]=useState(false);
+  const [undo,setUndo]=useState<{sceneId:string;at:number;label:string;until:number}|null>(null);
+  useEffect(()=>{if(!undo)return;const timer=setTimeout(()=>setUndo(null),Math.max(0,undo.until-Date.now()));return()=>clearTimeout(timer);},[undo]);
   const [llm,setLlm]=useState<AgentModel|undefined>();
   useEffect(()=>{let live=true;request<unknown>('/api/auth/model-settings').then(v=>{if(live)setLlm(parseModelSettings(v));}).catch(()=>{});return()=>{live=false;};},[]);
   useEffect(()=>{let live=true;request<unknown>('/api/themes').then(v=>{if(live)setThemes(parseThemes(v));}).catch(()=>{});return()=>{live=false;};},[]);
@@ -182,18 +184,23 @@ export default function VisualWorkbench({routeProjectId}:{routeProjectId:string}
     else if(step.key==='next'){const following=project.scenes.slice(index+1).find((_,k)=>statuses[index+1+k].key!=='confirmed')??project.scenes[index+1];if(following)setSelected(following.id);}
   };
   const voicedNote=(r:SceneRow)=>r.scene.narration.audio_asset_id?'本章已有配音，改动后需要重新配音（付费），已有的视频和确认会失效。':'';
-  function chapterEdit(path:string,body:Record<string,unknown>,method:string,title:string,message:string){
+  function chapterEdit(path:string,body:Record<string,unknown>,method:string,title:string,message:string,done?:()=>void){
     if(!row||!project)return;
     void act(async()=>{
       if(message&&!await confirm({title,message,confirmText:title,variant:'warning'}))return;
       setProject(await request<Project>(`${base}/visual/chapters/${encodeURIComponent(row.id)}${path}`,{expected_revision:project.revision,...body},method));
+      done?.();
     });
   }
+  const restoreChapter=()=>void act(async()=>{if(!undo||!project)return;const {sceneId,at}=undo;setUndo(null);
+    const restored=await request<Project>(`${base}/visual/chapters/${encodeURIComponent(sceneId)}/restore`,{expected_revision:project.revision,at});
+    setProject(restored);setSelected(sceneId);});
   return <main className="visual-workbench">
     <header className="vw-header"><div><a href="/courses">课程</a><h1>{project?.title??'视觉工作台'}</h1><span>{project?`${project.scenes.length} 章 · 已确认 ${confirmedCount}/${project.scenes.length}`:''}</span></div>
       <nav>{project&&<button aria-expanded={settingsOpen} onClick={()=>setSettingsOpen(open=>!open)}>课程设置</button>}<button title="刷新项目与任务" aria-label="刷新项目与任务" disabled={busy} onClick={()=>void act(refresh)}><RefreshCw size={16}/></button></nav>
     </header>
     {error&&<p role="alert" className="vw-error">{error}</p>}
+    {undo&&<div className="vw-undo" role="status">已删除{undo.label}<button disabled={busy} onClick={restoreChapter}>撤销</button></div>}
     {project&&settingsOpen&&<section className="vw-settings" aria-label="课程设置">
         <ThemeSettings key={project.id+':'+(project.theme_id??'')+':'+(project.theme_accent??'')} project={project} themes={themes} disabled={disabled||active} act={act}
           onSave={async (theme_id,accent)=>{setProject(await request<Project>(base+'/theme',{expected_revision:project.revision,theme_id,...(accent?{accent}:{})},'PATCH'));}}/>
@@ -220,7 +227,8 @@ export default function VisualWorkbench({routeProjectId}:{routeProjectId:string}
             onSave={text=>chapterEdit('',{narration:text},'PATCH','保存本章口播',voicedNote(row))}
             onSplit={at=>chapterEdit('/split',{at},'POST','从光标处拆分本章','拆成两章后，两章都需要重新配音（付费）。'+voicedNote(row))}
             onMergeNext={()=>chapterEdit('/merge-next',{},'POST','与下一章合并','两章合成一章后需要重新配音（付费），两章已有的视频和确认都会失效。')}
-            onDelete={()=>chapterEdit('/delete',{confirmed:true},'POST','删除本章','本章的口播、配音和视频都会从课程中移除，不可恢复。')}/>
+            onDelete={()=>{const at=index,label=`第 ${index+1} 章`,sceneId=row.id;
+              chapterEdit('/delete',{confirmed:true},'POST','删除本章','本章的口播、配音和视频都会从课程中移除；删除后 10 秒内可以撤销。',()=>setUndo({sceneId,at,label,until:Date.now()+10000}));}}/>
           {step&&<div className="vw-next" aria-label="下一步" data-step={step.key}>
             <div><strong>下一步</strong><p>{step.hint}</p></div>
             <button className="vw-next-button" disabled={disabled||['wait','done'].includes(step.key)} onClick={runStep}>{step.label}</button>

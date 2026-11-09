@@ -2414,3 +2414,4 @@ aside .theme-picker { grid-template-columns:1fr 1fr; }
 .vw-next[data-step="wait"] .vw-next-button, .vw-next[data-step="done"] .vw-next-button { background:transparent; color:var(--text-secondary); border-color:var(--line); }
 details.vw-step > summary, details.vw-more > summary { cursor:pointer; padding:6px 0; color:var(--text-secondary); }
 .vw-settings { display:grid; grid-template-columns:repeat(auto-fit,minmax(320px,1fr)); gap:16px; margin:0 0 16px; padding:16px; border:1px solid var(--line); border-radius:var(--radius-md); }
+.vw-undo { position:fixed; left:50%; bottom:24px; transform:translateX(-50%); z-index:50; display:flex; align-items:center; gap:12px; padding:10px 16px; border:1px solid var(--line-strong); border-radius:var(--radius-md); background:#111827; box-shadow:0 8px 24px rgba(0,0,0,0.4); }

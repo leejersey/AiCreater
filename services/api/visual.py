@@ -48,6 +48,10 @@ class ChapterDelete(Revision):
     confirmed:bool
 
 
+class ChapterRestore(Revision):
+    at:int=Field(ge=0,le=19)
+
+
 @router.get('')
 def listing(project_id:str,request:Request):
     return JSONResponse({'jobs':request.app.state.visual.list(project_id)},headers={'Cache-Control':'no-store'})
@@ -71,6 +75,11 @@ def split_chapter(project_id:str,scene_id:str,body:ChapterSplit,request:Request)
 @router.post('/chapters/{scene_id}/merge-next')
 def merge_next_chapter(project_id:str,scene_id:str,body:Revision,request:Request):
     return request.app.state.visual.merge_next_chapter(project_id,body.expected_revision,scene_id)
+
+
+@router.post('/chapters/{scene_id}/restore')
+def restore_chapter(project_id:str,scene_id:str,body:ChapterRestore,request:Request):
+    return request.app.state.visual.restore_chapter(project_id,body.expected_revision,scene_id,body.at)
 
 
 @router.post('/chapters/{scene_id}/delete')

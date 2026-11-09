@@ -208,6 +208,26 @@ class VisualJobs:
             conn.execute('UPDATE projects SET revision=revision+1 WHERE id=%s', [project['id']])
             return self.store._read(conn, project['id'])
 
+    UNDO_SECONDS = 600
+
+    def restore_chapter(self, project_id, expected_revision, scene_id, at):
+        """Undoes a chapter deletion made in the last 10 minutes: the chapter comes back at index `at` with its voice,
+        captions and videos as they were."""
+        if type(at) is not int or at < 0: raise StoreError('validation', 'Expected the chapter position to restore')
+        with self.store.connection() as conn:
+            project = self.store._structure_project(conn, project_id, expected_revision)
+            if conn.execute("SELECT 1 FROM jobs WHERE project_id=%s AND state IN ('queued','running') LIMIT 1", [project['id']]).fetchone():
+                raise StoreError('not_ready', '项目内有任务进行中，结束后再修改章节')
+            row = conn.execute(f"""SELECT id FROM scenes WHERE id=%s AND project_id=%s AND deleted_at IS NOT NULL
+                AND deleted_at > now() - interval '{self.UNDO_SECONDS} seconds'""", [identifier(scene_id), project['id']]).fetchone()
+            if row is None: raise StoreError('conflict', '只能撤销 10 分钟内删除的章节')
+            if len(project['scenes']) >= 20: raise StoreError('validation', 'At most 20 narration chapters are supported')
+            at = min(at, len(project['scenes']))
+            conn.execute('UPDATE scenes SET position=position+1 WHERE project_id=%s AND deleted_at IS NULL AND position>=%s', [project['id'], at])
+            conn.execute('UPDATE scenes SET deleted_at=NULL,position=%s WHERE id=%s', [at, row['id']])
+            conn.execute('UPDATE projects SET revision=revision+1 WHERE id=%s', [project['id']])
+            return self.store._read(conn, project['id'])
+
     def agent(self, project_id, scene_id, expected_revision, confirmed, max_turns, revise=None, feedback=None):
         # One job: the scene-agent loop (paid model turns, capped) and, if it passes, the voiced chapter video.
         # With `revise`, the loop starts from that passed Agent version of this chapter plus the person's feedback.
