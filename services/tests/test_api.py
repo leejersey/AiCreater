@@ -123,9 +123,10 @@ class ApiTests(ProjectFixture, unittest.TestCase):
         self.assertEqual(response.status_code, 201)
         data = response.json()
         self.assertEqual(data['source_text'], '讲解函数参数。')
-        self.assertEqual(data['scenes'], [])
+        self.assertEqual([s['scene']['narration']['text'] for s in data['scenes']], ['讲解函数参数。'])  # prepared, not voiced
+        self.assertEqual({s['state'] for s in data['scenes']}, {'needs_voice'})
         self.assertEqual(self.client.get('/api/projects/' + data['id']).json(), data)
-        response = self.client.post('/api/projects/' + data['id'] + '/visual/export', json={'expected_revision': 1, 'confirmed': True})
+        response = self.client.post('/api/projects/' + data['id'] + '/visual/export', json={'expected_revision': data['revision'], 'confirmed': True})
         self.assertEqual(response.status_code, 409)
         self.assertEqual(response.json()['code'], 'not_ready')
 

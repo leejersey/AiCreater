@@ -152,9 +152,11 @@ def create_app(store=None, *, authentication=True):
 
     @app.post('/api/projects', status_code=201)
     def create(body: CreateProject, request: Request):
-        return request.app.state.store.create_project(body.title, body.source_text,
+        project = request.app.state.store.create_project(body.title, body.source_text,
             getattr(request.state, 'user', {}).get('id'), teaching_style=body.teaching_style, theme_id=body.theme_id,
             **({'manuscript_format': 'markdown'} if body.manuscript_format == 'markdown' else {}))
+        # Chapters right away (free, local): the workbench opens ready to voice.
+        return request.app.state.visual.prepare(project['id'], project['revision'])
 
     @app.get('/api/projects/{project_id}')
     def get_project(project_id: str, request: Request):

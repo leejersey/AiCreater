@@ -32,7 +32,10 @@ class VisualApiTests(unittest.TestCase):
         self.assertEqual(self.client.get(self.path).json(),{'jobs':[]})
         for body in [{'expected_revision':True},{'expected_revision':1,'paid':True}]:
             self.assertEqual(self.client.post(self.path+'/prepare',json=body).status_code,422)
-        response=self.client.post(self.path+'/prepare',json={'expected_revision':1})
+        # Creating the course already prepared its chapters; preparing again changes nothing.
+        current=self.client.get('/api/projects/'+self.pid).json()
+        self.assertTrue(current['scenes'])
+        response=self.client.post(self.path+'/prepare',json={'expected_revision':current['revision']})
         self.assertEqual(response.status_code,200,response.text)
         self.assertTrue(response.json()['scenes'])
         self.assertEqual(self.client.get(self.path).json(),{'jobs':[]})
@@ -45,7 +48,7 @@ class VisualApiTests(unittest.TestCase):
         self.assertEqual(self.client.post(self.path+'/prepare',json={'expected_revision':1}).status_code,404)
 
     def test_pending_audio_blocks_paid_visual_dispatch(self):
-        project=self.client.post(self.path+'/prepare',json={'expected_revision':1}).json()
+        project=self.client.get('/api/projects/'+self.pid).json()
         body={'scene_id':project['scenes'][0]['id'],'expected_revision':project['revision'],'confirmed':True,'max_turns':25}
         self.assertEqual(self.client.post(self.path+'/agent',json=body).status_code,409)
         self.assertEqual(self.client.get(self.path).json(),{'jobs':[]})
@@ -53,7 +56,7 @@ class VisualApiTests(unittest.TestCase):
     def ready_scene(self,project=None):
         """A prepared scene with real measured audio on disk, as voicing and alignment would leave it."""
         import hashlib
-        project=project or self.client.post(self.path+'/prepare',json={'expected_revision':1}).json()
+        project=project or self.client.get('/api/projects/'+self.pid).json()
         row=project['scenes'][0];scene=row['scene'];text=scene['narration']['text']
         scene.update(duration_frames=60,captions=[{'text':text,'start_frame':0,'end_frame':60}])
         scene['narration'].update(audio_asset_id='voice',audio_start_frame=0)
@@ -97,7 +100,7 @@ class VisualApiTests(unittest.TestCase):
         self.client.post(self.path+'/'+job['id']+'/cancel',json={})
 
     def test_agent_request_requires_confirmed_turn_limit_and_measured_audio(self):
-        project=self.client.post(self.path+'/prepare',json={'expected_revision':1}).json()
+        project=self.client.get('/api/projects/'+self.pid).json()
         body={'scene_id':project['scenes'][0]['id'],'expected_revision':project['revision'],'confirmed':True,'max_turns':25}
         self.assertEqual(self.client.post(self.path+'/agent',json=body).status_code,409)  # no voice yet
         project,row,_=self.ready_scene(project)

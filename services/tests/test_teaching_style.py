@@ -67,10 +67,11 @@ class TeachingStyleApiOfflineTests(unittest.TestCase):
         from unittest.mock import MagicMock, patch
         app = create_app(authentication=False)
         app.state.store = MagicMock()
-        app.state.jobs = MagicMock()
+        app.state.jobs = MagicMock(); app.state.visual = MagicMock()
         client = TestClient(app, base_url='http://127.0.0.1:8000', client=('127.0.0.1', 50000))
 
-        app.state.store.create_project.return_value = {'id': 'p', 'teaching_style': 'technical'}
+        app.state.store.create_project.return_value = {'id': 'p', 'revision': 1, 'teaching_style': 'technical'}
+        app.state.visual.prepare.return_value = {'id': 'p', 'teaching_style': 'technical', 'scenes': []}
         ok = client.post('/api/projects', json={
             'title': 'RAG', 'source_text': '口播。', 'mode': 'script', 'teaching_style': 'technical'})
         self.assertEqual(ok.status_code, 201)

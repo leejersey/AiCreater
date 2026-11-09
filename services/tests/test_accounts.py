@@ -111,11 +111,9 @@ class AccountTests(unittest.TestCase):
     def test_course_summary_reports_free_draft_scene_state_and_modification_time(self):
         self.register()
         project=self.client.post('/api/projects',json={'title':'概念课','source_text':'蒸发是液体表面汽化。','mode':'script'}).json()
+        # Creating a course prepares its chapters right away (free, local).
         row=next(p for p in self.client.get('/api/projects').json() if p['id']==project['id'])
-        self.assertEqual(row['scene_count'],0);self.assertFalse(row['active_jobs']);self.assertIsNotNone(row['updated_at']);created_at=row['updated_at']
-        project=self.client.post('/api/projects/'+project['id']+'/visual/prepare',json={'expected_revision':project['revision']}).json()
-        row=next(p for p in self.client.get('/api/projects').json() if p['id']==project['id'])
-        self.assertEqual(row['scene_count'],1);self.assertEqual(row['needs_voice'],1);self.assertGreater(row['updated_at'],created_at)
+        self.assertEqual(row['scene_count'],1);self.assertEqual(row['needs_voice'],1);self.assertFalse(row['active_jobs']);self.assertIsNotNone(row['updated_at'])
 
     def test_every_registered_resource_route_requires_authentication(self):
         from fastapi.routing import APIRoute
