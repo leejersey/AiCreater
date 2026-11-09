@@ -2418,3 +2418,10 @@ details.vw-step > summary, details.vw-more > summary { cursor:pointer; padding:6
 .vw-live { display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); gap:8px; margin:10px 0; }
 .vw-live img { width:100%; aspect-ratio:16/9; object-fit:contain; background:#000; border-radius:4px; }
 .vw-live small { grid-column:1/-1; color:var(--text-secondary); }
+/* Continuous review */
+.vw-review { position:fixed; inset:0; z-index:60; display:flex; align-items:center; justify-content:center; background:rgba(3,6,12,0.82); }
+.vw-review-body { width:min(1100px,94vw); max-height:94vh; overflow:auto; padding:18px; border:1px solid var(--line-strong); border-radius:var(--radius-md); background:#0d131f; }
+.vw-review-body header { display:flex; align-items:center; justify-content:space-between; }
+.vw-review-body video { display:block; width:100%; aspect-ratio:16/9; background:#000; margin:10px 0; }
+.vw-review-body textarea { width:100%; margin-top:6px; }
+.vw-review-text { color:var(--text-secondary); font-size:13px; margin:4px 0; }

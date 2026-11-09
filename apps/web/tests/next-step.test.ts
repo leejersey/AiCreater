@@ -48,3 +48,14 @@ test('a feedback note names the moment and the sentence narrated then',async()=>
  assert.equal(momentNote(75,captions),'【01:15，口播「再修改文件。」处】'); // after the last caption: the last one
  assert.equal(momentNote(1,undefined),'【00:01 处】');
 });
+
+test('review mode plays the chapter waiting for confirmation with its actions and keys',async()=>{
+ const {createElement}=await import('react');
+ const {renderToStaticMarkup}=await import('react-dom/server');
+ const {ReviewMode}=await import('../app/VisualWorkbench');
+ const [job]=agent(passed);
+ const html=renderToStaticMarkup(createElement(ReviewMode,{projectId:'p',items:[{index:2,row:scene('ready',true),job}],disabled:false,onAccept:async()=>{},onRevise(){},onClose(){}}));
+ for(const text of ['连续审片 · 第 3 章（1/1）','确认此版本（Enter）','在当前画面提意见','按意见修改（付费）','跳过（J）','上一章（K）','autoPlay'.toLowerCase()])assert.ok(html.toLowerCase().includes(text.toLowerCase()),text);
+ assert.match(html,/src="\/api\/projects\/p\/visual\/a1\/files\/video.mp4"/);
+ assert.match(renderToStaticMarkup(createElement(ReviewMode,{projectId:'p',items:[],disabled:false,onAccept:async()=>{},onRevise(){},onClose(){}})),/没有待确认的章节/);
+});

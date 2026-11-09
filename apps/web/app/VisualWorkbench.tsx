@@ -30,6 +30,41 @@ export function LiveFrames({job,updatedAt}:{job:VisualJob;updatedAt:number}){
  if(!frames.length)return null;
  return <div className="vw-live" aria-label="最新渲染的画面">{frames.map(f=><img key={f} alt="最新渲染的关键帧" src={`${base}/${f}`}/>)}<small>Agent 最新一轮渲染的画面（开头 · 中段 · 结尾），会随检查与修改更新。</small></div>;
 }
+export type ReviewItem={index:number;row:SceneRow;job:VisualJob};
+/** Every chapter waiting for confirmation, one after another: watch, then confirm, write feedback or skip.
+ * Keys: J next, K previous, Enter confirm, Esc close (not while typing feedback). */
+export function ReviewMode({projectId,items,disabled,onAccept,onRevise,onClose}:{projectId:string;items:ReviewItem[];disabled:boolean;
+ onAccept:(job:VisualJob)=>Promise<void>;onRevise:(item:ReviewItem,feedback:string)=>void;onClose:()=>void}){
+ const [at,setAt]=useState(0),[feedback,setFeedback]=useState('');
+ const video=useRef<HTMLVideoElement>(null);
+ const item=items[Math.min(at,items.length-1)];
+ useEffect(()=>{setFeedback('');},[item?.job.id]);
+ useEffect(()=>{
+  const key=(e:KeyboardEvent)=>{
+   if((e.target as HTMLElement)?.tagName==='TEXTAREA')return;
+   if(e.key==='Escape')onClose();
+   else if(e.key==='j'||e.key==='J')setAt(i=>Math.min(i+1,items.length-1));
+   else if(e.key==='k'||e.key==='K')setAt(i=>Math.max(i-1,0));
+   else if(e.key==='Enter'&&item&&!disabled){e.preventDefault();void onAccept(item.job);}
+  };
+  window.addEventListener('keydown',key);return()=>window.removeEventListener('keydown',key);
+ },[items.length,item,disabled,onAccept,onClose]);
+ if(!item)return <div className="vw-review" role="dialog" aria-label="连续审片"><div className="vw-review-body"><h2>没有待确认的章节</h2><button onClick={onClose}>关闭</button></div></div>;
+ return <div className="vw-review" role="dialog" aria-label="连续审片"><div className="vw-review-body">
+  <header><h2>连续审片 · 第 {item.index+1} 章（{Math.min(at,items.length-1)+1}/{items.length}）</h2><button onClick={onClose} aria-label="关闭审片"><X size={16}/></button></header>
+  <p className="vw-review-text">{item.row.scene.narration.text}</p>
+  <video key={item.job.id} ref={video} controls autoPlay preload="auto" src={visualFileUrl(projectId,item.job.id,item.job.result!.video!)}/>
+  <label>修改意见（可选；在画面有问题时暂停，再点「在当前画面提意见」）
+   <textarea rows={2} maxLength={2000} value={feedback} disabled={disabled} onChange={e=>setFeedback(e.target.value)}/></label>
+  <div className="vw-toolbar">
+   <button className="vw-next-button" disabled={disabled} onClick={()=>void onAccept(item.job)}><Check size={14}/>确认此版本（Enter）</button>
+   <button disabled={disabled} onClick={()=>{const v=video.current;if(!v)return;v.pause();setFeedback(f=>(f.trim()?f.trimEnd()+'\n':'')+momentNote(v.currentTime,item.row.scene.captions));}}>在当前画面提意见</button>
+   <button disabled={disabled||!feedback.trim()} onClick={()=>onRevise(item,feedback)}>按意见修改（付费）</button>
+   <button disabled={at>=items.length-1} onClick={()=>setAt(i=>i+1)}>跳过（J）</button>
+   <button disabled={at===0} onClick={()=>setAt(i=>i-1)}>上一章（K）</button>
+  </div>
+ </div></div>;
+}
 export function VisualTaskProgress({job,now,updatedAt,disabled,onCancel,onRefresh,onRestart}:{job:VisualJob;now:number;updatedAt:number;disabled:boolean;onCancel:()=>void;onRefresh:()=>void;onRestart?:()=>void}){
  const progress=videoProgress(job,now);
  const fix=failureAction(job);
@@ -123,7 +158,7 @@ export default function VisualWorkbench({routeProjectId}:{routeProjectId:string}
   const [jobs,setJobs]=useState<VisualJob[]>([]);
   const [voiceJobs,setVoiceJobs]=useState<Job[]>([]);
   const [themes,setThemes]=useState<ThemeSummary[]>([]);
-  const [settingsOpen,setSettingsOpen]=useState(false);
+  const [settingsOpen,setSettingsOpen]=useState(false),[reviewing,setReviewing]=useState(false);
   const [undo,setUndo]=useState<{sceneId:string;at:number;label:string;until:number}|null>(null);
   useEffect(()=>{if(!undo)return;const timer=setTimeout(()=>setUndo(null),Math.max(0,undo.until-Date.now()));return()=>clearTimeout(timer);},[undo]);
   const [llm,setLlm]=useState<AgentModel|undefined>();
@@ -194,6 +229,13 @@ export default function VisualWorkbench({routeProjectId}:{routeProjectId:string}
     if(await confirm({title:'整课导出',message:`导出全部 ${project.scenes.length} 章。每章使用最新确认的 Agent 版本；在本机渲染，不调用模型或配音。`,confirmText:'确认导出'}))await submit('/export',{expected_revision:project.revision,confirmed:true});});
   const index=row&&project?project.scenes.findIndex(s=>s.id===row.id):-1;
   const step:NextStep|undefined=row&&project?nextStep(row,jobs,voiceJobs,{isLast:index===project.scenes.length-1,allConfirmed:missing.length===0,projectBusy:!!activeJob&&activeJob.scene_id!==row.id}):undefined;
+  const reviewItems:ReviewItem[]=(project?.scenes??[]).flatMap((scene,i)=>{
+    if(statuses[i]?.key!=='review')return [];
+    const job=latestAgentJob(jobs.filter(j=>j.scene_id===scene.id));
+    return job&&canAcceptAgent(job)&&job.result?.video?[{index:i,row:scene,job}]:[];
+  });
+  const acceptInReview=async(job:VisualJob)=>{await act(async()=>{await submit('/'+job.id+'/accept',{confirmed:true,sha256:job.result!.sha256});});};
+  const reviseInReview=(item:ReviewItem,text:string)=>{if(project)void act(()=>confirmVisualAction(visualAgentReviseAction(item.row.id,project.revision,item.job.id,text,llm),confirm,submit));};
   const runStep=()=>{
     if(!step||!project)return;
     if(step.key==='voice')voiceChapter();else if(step.key==='retime')retime();else if(step.key==='generate')startAgent();
@@ -214,9 +256,10 @@ export default function VisualWorkbench({routeProjectId}:{routeProjectId:string}
     setProject(restored);setSelected(sceneId);});
   return <main className="visual-workbench">
     <header className="vw-header"><div><a href="/courses">课程</a><h1>{project?.title??'视觉工作台'}</h1><span>{project?`${project.scenes.length} 章 · 已确认 ${confirmedCount}/${project.scenes.length}`:''}</span></div>
-      <nav>{project&&<button aria-expanded={settingsOpen} onClick={()=>setSettingsOpen(open=>!open)}>课程设置</button>}<button title="刷新项目与任务" aria-label="刷新项目与任务" disabled={busy} onClick={()=>void act(refresh)}><RefreshCw size={16}/></button></nav>
+      <nav>{reviewItems.length>0&&<button className="vw-next-button" onClick={()=>setReviewing(true)}>连续审片（{reviewItems.length}）</button>}{project&&<button aria-expanded={settingsOpen} onClick={()=>setSettingsOpen(open=>!open)}>课程设置</button>}<button title="刷新项目与任务" aria-label="刷新项目与任务" disabled={busy} onClick={()=>void act(refresh)}><RefreshCw size={16}/></button></nav>
     </header>
     {error&&<p role="alert" className="vw-error">{error}</p>}
+    {reviewing&&project&&<ReviewMode projectId={project.id} items={reviewItems} disabled={busy} onAccept={acceptInReview} onRevise={reviseInReview} onClose={()=>setReviewing(false)}/>}
     {undo&&<div className="vw-undo" role="status">已删除{undo.label}<button disabled={busy} onClick={restoreChapter}>撤销</button></div>}
     {project&&settingsOpen&&<section className="vw-settings" aria-label="课程设置">
         <ThemeSettings key={project.id+':'+(project.theme_id??'')+':'+(project.theme_accent??'')} project={project} themes={themes} disabled={disabled||active} act={act}
