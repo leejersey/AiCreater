@@ -300,7 +300,7 @@ export default function VisualWorkbench({routeProjectId}:{routeProjectId:string}
     {!project?<p role="status">正在读取项目与任务…</p>:<>
       <div className="vw-toolbar">
         {!project.scenes.length&&<button disabled={disabled||active} onClick={()=>void act(async()=>{setProject(await request<Project>(base+'/visual/prepare',{expected_revision:project.revision}));})}>整理口播章节（免费）</button>}
-        {!!project.scenes.length&&pilot?.state!=='running'&&<button className="vw-next-button" disabled={disabled||active} onClick={startAutopilot}><Film size={14}/>整课自动生成（付费）</button>}
+        {pilot?.state!=='running'&&statuses.some(st=>['needs_voice','needs_timing','todo'].includes(st.key))&&<button className="vw-next-button" disabled={disabled||active} onClick={startAutopilot}><Film size={14}/>整课自动生成（付费）</button>}
         {!!project.scenes.length&&<span className="vw-course-progress">已确认 {confirmedCount}/{project.scenes.length}{missing.length?` · 未确认：第 ${missing.join('、')} 章`:''}</span>}
         <button disabled={disabled||active||!batch.length} title={batch.length?undefined:'没有可批量生成的章节（需已配音、未确认、未在生成）'} onClick={()=>void act(async()=>{
           if(!await confirm({title:`批量 Agent 生成 ${batch.length} 章（付费）`,message:`为第 ${batch.map(s=>project.scenes.indexOf(s)+1).join('、')} 章各提交一个 Agent 任务，依次执行。模型：${agentModelLabel(llm)}。每章最多 ${AGENT_MAX_TURNS} 轮模型调用，合计最多 ${batch.length*AGENT_MAX_TURNS} 轮；失败不自动重试。每章完成后仍需你看过并确认。`,confirmText:`确认最多 ${batch.length*AGENT_MAX_TURNS} 轮付费调用`,variant:'warning'}))return;
