@@ -59,7 +59,7 @@ Markdown 使用固定格式：每段 `## [s1] 标题`（ID 唯一），依次包
 - **skill**（`packages/scene-agent/skill/`）：`scene-contract` 场景约定、`motion` 动效设计、`kit` 组件库用法、`craft` 工艺规则、`patterns` 按内容类型（问题、机制、对比、列举、总结）的画面套路、`examples` 从通过的画面提炼的示例、`visual-review` 看图模型的自查清单；只用分镜稿中的事实。
 - **画面组件库**（`packages/scene-kit/kit.tsx`）：画面可 `import … from './kit'` 的预制部件（方框、自绘箭头、文档、叉/勾、增长柱、计数、聚光、镜头推进与时间工具），带几何审查标记与主题色。部件只接收 0–1 的进度，时间仍由画面按 `timing.cues` 决定。每次运行把组件库冻结到工作区 `scene/kit.tsx`，通过的版本连同副本一起发布（`kit.txt`），导出、换主题、重新配音后的重渲染都用这份。
 - **模型适配层**：OpenAI 兼容（DeepSeek / Qwen / Kimi / GLM / GPT）与 Claude 官方 SDK，`packages/scene-agent/models.json` 切换。默认 `deepseek-flash-thinking`（思考 effort low）。
-- **实测**：RAG 课程 8/8 章通过、由模型自行收尾。2026-11-09 加入 motion / examples / kit 后复测：仍 8/8，画面在 8 章中 5 章更好、其余持平（用满字幕以上的画面、逐句出现与变暗、把问题画成过程）；每章 7–17 轮（之前 4–8），整课输出约 18.4 万 token（之前 14.8 万）。逐次记录见 [`packages/scene-agent/eval/runs.md`](packages/scene-agent/eval/runs.md)。
+- **实测**：RAG 课程 8/8 章通过、由模型自行收尾。2026-11-09 加入 motion / examples / kit 后复测：仍 8/8，画面在 8 章中 5 章更好、其余持平（用满字幕以上的画面、逐句出现与变暗、把问题画成过程）；写初稿前的 skill 改为一次读完后，轮数最多的 4 章由 52 轮降到 18 轮（每章 4–5 轮），输入 token 降 62%，画面不变差。逐次记录见 [`packages/scene-agent/eval/runs.md`](packages/scene-agent/eval/runs.md)。
 
 ### 🖥️ 工作台（`/courses/:id`）
 
