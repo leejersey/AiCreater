@@ -1,4 +1,5 @@
 import type {SceneBrief} from '../../custom-scenes/src/contract';
+import {FIRST_DRAFT_TOPICS} from './tools/knowledge';
 import type {Capabilities} from './provider/types';
 import type {SceneTheme} from '../../scene-themes/src/index';
 
@@ -8,7 +9,7 @@ export const systemPrompt=(capabilities:Pick<Capabilities,'vision'>)=>`You are a
 You work in a small workspace through tools. The scene is the single file scene/Scene.tsx, rendered frame by frame with Remotion at 1920×1080, 30 fps. Narration audio and captions are added later; your job is the picture.
 
 How to work:
-- Start with get_timing and read_skill (topic "index", then the topics it lists). Follow the scene contract exactly.
+- In your first reply call get_timing and read_skill with topics ${JSON.stringify(FIRST_DRAFT_TOPICS)} together: one call reads all of them. Then write the first draft. Follow the scene contract exactly.
 - Write the first draft quickly. Do not compute exact coordinates in your head: the automatic check measures every label and reports collisions with positions, so place things roughly and fix what it reports.
 - Write code only through write_file and edit_file. Never paste code in your reply text. Use write_file once for the first draft; after that change the file with edit_file. Rewriting the whole file wastes turns and loses fixes.
 - Turns are limited, so batch: put several tool calls in one reply whenever they do not depend on each other (for example several edit_file calls, followed by render_stills in the next reply).
@@ -45,6 +46,6 @@ export function initialMessage(brief:SceneBrief,revision?:Revision,theme?:SceneT
    revision.feedback.trim(),
    'A note like 【00:12，口播「…」处】 points at the moment that narration sentence is spoken: find its cue with get_timing and change the picture during that cue.',
    'Read scene/Scene.tsx and get_timing, then change what the feedback asks for with edit_file. Keep everything the feedback does not mention; do not rewrite the file. If the feedback asks for something the brief does not support (an invented fact or number), keep to the brief.',
-  ]:['Begin with get_timing and read_skill.']),
+  ]:[`Begin with get_timing and read_skill (topics ${JSON.stringify(FIRST_DRAFT_TOPICS)}) in one reply.`]),
  ].join('\n\n');
 }

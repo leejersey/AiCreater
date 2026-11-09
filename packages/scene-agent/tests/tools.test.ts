@@ -5,6 +5,7 @@ import {tmpdir} from 'node:os';
 import path from 'node:path';
 import {fileURLToPath} from 'node:url';
 import {buildTools,executeTool} from '../src/tools/index';
+import {FIRST_DRAFT_TOPICS} from '../src/tools/knowledge';
 import {finishTool} from '../src/tools/finish';
 import {defaultFrames,summarizeAudit} from '../src/tools/checks';
 import type {ToolContext,ToolOutput} from '../src/tools/types';
@@ -87,6 +88,13 @@ test('list_files shows only the workspace surface; skill and timing tools',async
  assert.doesNotMatch(listing,/stills/);
  assert.match(out(await call('read_skill',{topic:'scene-contract'})),/# Scene contract/);
  assert.match(out(await call('read_skill',{topic:'nope'})),/Available: craft, examples, index, kit, motion, patterns, scene-contract, visual-review/);
+ // Everything the first draft needs in one call, each guide marked; unknown names are named back.
+ const all=out(await call('read_skill',{topics:FIRST_DRAFT_TOPICS}));
+ for(const t of FIRST_DRAFT_TOPICS)assert.match(all,new RegExp(`<<< skill: ${t} >>>`));
+ assert.match(all,/# Scene contract/);assert.match(all,/# Scene kit/);assert.match(all,/# Motion design/);
+ assert.match(out(await call('read_skill',{topics:['motion','nope','nah']})),/unknown topic "nope", "nah"/);
+ assert.match(out(await call('read_skill',{})),/give topic or topics/);
+ assert.match(await readFile(path.join(skillDir,'index.md'),'utf8'),new RegExp(JSON.stringify(FIRST_DRAFT_TOPICS).replace(/[[\]]/g,'\\$&').replace(/,/g,', ')));
  const timing=out(await call('get_timing'));
  assert.match(timing,/120 frames at 30 fps \(4\.00s\)/);
  assert.match(timing,/- timing\.cues\[1\] \(b\) 60–120 \(2\.0s\): 第二句。/);

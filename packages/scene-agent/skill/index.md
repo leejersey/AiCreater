@@ -8,4 +8,4 @@
 - `examples` — worked code from scenes that passed: a problem, a limit, an uncertainty and a fix as objects that change; fitting moments inside a cue; one thing becoming another; a search walking a route; near and far without numbers; a list built one item per cue. Read this before the first draft.
 - `visual-review` — only if you have `view_frames`: what to look for in the rendered frames, and when to look.
 
-Workflow: `get_timing` → `read_skill scene-contract`, `read_skill motion`, `read_skill kit`, `read_skill craft`, `read_skill patterns` and `read_skill examples` → `write_file` (first draft) → `render_stills` (typechecks, renders and audits) → fix with `edit_file` → `render_stills` → … → `finish`.
+Workflow: `get_timing` and one `read_skill` with `topics: ["scene-contract", "motion", "kit", "craft", "patterns", "examples"]` in the same reply → `write_file` (first draft) → `render_stills` (typechecks, renders and audits) → fix with `edit_file` → `render_stills` → … → `finish`.
