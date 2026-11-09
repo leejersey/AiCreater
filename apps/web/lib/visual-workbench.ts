@@ -222,3 +222,11 @@ export function failureAction(job:VisualJob):FailureAction|undefined{
   default:return undefined;
  }
 }
+
+/** A feedback note anchored to a moment of the chapter video: its time and the narration sentence on screen then. */
+export function momentNote(seconds:number,captions:{text:string;start_frame:number;end_frame:number}[]|undefined,fps=30):string{
+ const s=Math.max(0,Math.floor(seconds)),frame=Math.round(seconds*fps);
+ const time=`${String(Math.floor(s/60)).padStart(2,'0')}:${String(s%60).padStart(2,'0')}`;
+ const cue=(captions??[]).find(c=>frame>=c.start_frame&&frame<c.end_frame)??(captions??[]).filter(c=>c.start_frame<=frame).at(-1);
+ return cue?`【${time}，口播「${cue.text.trim()}」处】`:`【${time} 处】`;
+}

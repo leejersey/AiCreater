@@ -43,6 +43,7 @@ export function initialMessage(brief:SceneBrief,revision?:Revision,theme?:SceneT
   ...(revision?[
    'This is a revision. scene/Scene.tsx already holds the previous version, which passed the checks and was reviewed by a person. Their feedback:',
    revision.feedback.trim(),
+   'A note like 【00:12，口播「…」处】 points at the moment that narration sentence is spoken: find its cue with get_timing and change the picture during that cue.',
    'Read scene/Scene.tsx and get_timing, then change what the feedback asks for with edit_file. Keep everything the feedback does not mention; do not rewrite the file. If the feedback asks for something the brief does not support (an invented fact or number), keep to the brief.',
   ]:['Begin with get_timing and read_skill.']),
  ].join('\n\n');

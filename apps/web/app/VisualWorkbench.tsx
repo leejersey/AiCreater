@@ -4,7 +4,7 @@ import type {SceneRow} from '../lib/editor';
 import {request,parseJobs,parseSceneJob,type Project,type Job} from '../lib/editor';
 import {confirmEstimate} from '../lib/cost-estimates';
 import {currentVoiceJob} from '../lib/course';
-import {parseVisualJobs,visualFileUrl,measuredReady,reviewFrames,visualError,sceneAudioActions,videoTaskStatus,videoProgress,latestAgentJob,canAcceptAgent,exportedVersion,chapterStatus,agentBatchScenes,visualAgentBody,failureAction,restyleOf,renderedTheme,sameLook,nextStep,type NextStep,AGENT_MAX_TURNS,estimatedSeconds,codePointOffset,AGENT_MAX_SECONDS,type VisualJob} from '../lib/visual-workbench';
+import {parseVisualJobs,visualFileUrl,measuredReady,reviewFrames,visualError,sceneAudioActions,videoTaskStatus,videoProgress,latestAgentJob,canAcceptAgent,exportedVersion,chapterStatus,agentBatchScenes,visualAgentBody,failureAction,momentNote,restyleOf,renderedTheme,sameLook,nextStep,type NextStep,AGENT_MAX_TURNS,estimatedSeconds,codePointOffset,AGENT_MAX_SECONDS,type VisualJob} from '../lib/visual-workbench';
 import {agentModelLabel,confirmVisualAction,visualAgentAction,visualAgentReviseAction,type AgentModel} from '../lib/visual-workbench-actions';
 import {parseModelSettings} from '../lib/model-settings';
 import {useConfirm} from './ConfirmContext';
@@ -88,16 +88,21 @@ export function ThemeNotice({projectId,job,restyle,themes,courseTheme,courseAcce
  </div>;
 }
 /** hidePrimary: the workbench's 「下一步」 bar starts and confirms; generating again and revising move to 「更多操作」. */
-export function VisualAgentPanel({projectId,job,exported,now,updatedAt,disabled,blockedReason,onStart,onRefresh,onCancel,onAccept,onRevise,children,hidePrimary=false}:{projectId:string;job?:VisualJob;exported?:VisualJob;now:number;updatedAt:number;disabled:boolean;blockedReason?:string;onStart:()=>void;onRefresh:()=>void;onCancel:()=>void;onAccept?:()=>void;onRevise?:(feedback:string)=>void;children?:React.ReactNode;hidePrimary?:boolean}){
+export function VisualAgentPanel({projectId,job,exported,now,updatedAt,disabled,blockedReason,onStart,onRefresh,onCancel,onAccept,onRevise,children,hidePrimary=false,captions}:{projectId:string;job?:VisualJob;exported?:VisualJob;now:number;updatedAt:number;disabled:boolean;blockedReason?:string;onStart:()=>void;onRefresh:()=>void;onCancel:()=>void;onAccept?:()=>void;onRevise?:(feedback:string)=>void;children?:React.ReactNode;hidePrimary?:boolean;captions?:{text:string;start_frame:number;end_frame:number}[]}){
  const running=!!job&&['queued','running'].includes(job.state);
  const [feedback,setFeedback]=useState('');
+ const video=useRef<HTMLVideoElement>(null),more=useRef<HTMLDetailsElement>(null);
+ // Pause the video where something is wrong, then anchor the note there: the Agent sees the time and the sentence.
+ const noteMoment=()=>{const v=video.current;if(!v)return;v.pause();const note=momentNote(v.currentTime,captions);
+  setFeedback(f=>(f.trim()?f.trimEnd()+'\n':'')+note);if(more.current)more.current.open=true;};
  return <div aria-label="Agent 视频" className="vw-current-video"><h3>Agent 视频</h3>
   {!job&&<p>由 Agent 自行设计画面并检查，通过后直接生成本章视频（使用当前配音与字幕）。</p>}
   {job&&job.state==='succeeded'&&job.result?.agent&&<p>{job.result.agent.finish_by==='model'?'Agent 已自检并通过检查':'Agent 未自行收尾，已采用最后一个通过检查的版本'} · {job.result.agent.turns} 轮 · 输出 {job.result.agent.output_tokens.toLocaleString('zh-CN')} token{job.agent?.llm?.source==='account'?` · 模型 ${job.agent.llm.model}（你的配置）`:''}</p>}
   {job?.agent?.revision&&<p className="hint">按意见修改自上一版：「{job.agent.revision.feedback}」</p>}
   {job&&job.result?.accepted===true&&<p>已确认此版本 · 可用于整课导出</p>}
   {!hidePrimary&&job&&onAccept&&canAcceptAgent(job)&&!job.result?.accepted&&<div className="vw-toolbar"><button disabled={disabled} onClick={onAccept}><Check size={14}/>看完后确认此版本</button></div>}
-  {job&&job.state==='succeeded'&&<VisualMedia projectId={projectId} job={job} diagnostics/>}
+  {job&&job.state==='succeeded'&&<VisualMedia projectId={projectId} job={job} diagnostics videoRef={video}/>}
+  {job&&onRevise&&canAcceptAgent(job)&&<div className="vw-toolbar"><button disabled={disabled||running} onClick={noteMoment}>在当前画面提意见</button></div>}
   {children}
   <p>整课导出将使用：{!exported?'暂无已确认的版本':exported.id===job?.id?'上方这个版本':`更早确认的版本${exported.created_at?`（${new Date(exported.created_at).toLocaleString('zh-CN',{hour12:false})}）`:''}`}</p>
   {job&&job.state!=='succeeded'&&<VisualTaskProgress job={job} now={now} updatedAt={updatedAt} disabled={disabled} onRefresh={onRefresh} onCancel={onCancel} onRestart={running||blockedReason?undefined:onStart}/>}
@@ -108,7 +113,7 @@ export function VisualAgentPanel({projectId,job,exported,now,updatedAt,disabled,
     <div className="vw-toolbar"><button disabled={disabled||running||!!blockedReason||!feedback.trim()} onClick={()=>onRevise(feedback)}>按意见修改（付费）</button></div></div>}
    {(!hidePrimary||job)&&<div className="vw-toolbar"><button disabled={disabled||running||!!blockedReason} onClick={onStart}><Film size={14}/>{job?'Agent 重新生成（付费）':'Agent 生成视频（付费）'}</button></div>}
    {blockedReason&&!running&&<p>{blockedReason}</p>}</>;
-   return hidePrimary?(job?<details className="vw-more"><summary>更多操作</summary>{actions}</details>:null):actions;
+   return hidePrimary?(job?<details ref={more} className="vw-more"><summary>更多操作</summary>{actions}</details>:null):actions;
   })()}
  </div>;
 }
@@ -252,7 +257,7 @@ export default function VisualWorkbench({routeProjectId}:{routeProjectId:string}
           <button disabled={disabled||audioActions!.timingBlocked} onClick={retime}><RefreshCw size={14}/>{row.state==='needs_timing'?'实测对齐（免费）':'重算时间轴（免费）'}</button></div>
           </details>
           <div className="vw-step" aria-label="视频">
-          <VisualAgentPanel key={row.id} hidePrimary projectId={project.id} job={agentJob} exported={exportedVersion(sceneJobs)} now={now} updatedAt={updatedAt} disabled={disabled} blockedReason={!measuredReady(row)?(row.state==='needs_timing'?'先完成第 1 步：实测对齐（免费）。':'先完成第 1 步：添加配音。'):active?'项目内有任务进行中，结束后再生成。':undefined}
+          <VisualAgentPanel key={row.id} hidePrimary captions={row.scene.captions} projectId={project.id} job={agentJob} exported={exportedVersion(sceneJobs)} now={now} updatedAt={updatedAt} disabled={disabled} blockedReason={!measuredReady(row)?(row.state==='needs_timing'?'先完成第 1 步：实测对齐（免费）。':'先完成第 1 步：添加配音。'):active?'项目内有任务进行中，结束后再生成。':undefined}
             onStart={startAgent}
             onRevise={text=>{if(agentJob)void act(()=>confirmVisualAction(visualAgentReviseAction(row.id,project.revision,agentJob.id,text,llm),confirm,submit));}}
             onRefresh={()=>void act(refresh)} onCancel={()=>{if(agentJob)cancelVisual(agentJob);}}
@@ -278,9 +283,9 @@ export default function VisualWorkbench({routeProjectId}:{routeProjectId:string}
   </main>;
 }
 const STILL_LABELS=['开头','中段','结尾'];
-export function VisualMedia({projectId,job,diagnostics=false}:{projectId:string;job:VisualJob;diagnostics?:boolean}) {
+export function VisualMedia({projectId,job,diagnostics=false,videoRef}:{projectId:string;job:VisualJob;diagnostics?:boolean;videoRef?:React.Ref<HTMLVideoElement>}) {
   return <>{job.result?.backup==='pending'&&<p className="vw-warning" role="status">这个视频尚未备份到 TOS（上传失败），目前只保存在本机；执行器每 10 分钟自动重试，备份前请勿清理本机缓存。</p>}
-    {job.state==='succeeded'&&job.result?.video&&<video controls preload="metadata" src={visualFileUrl(projectId,job.id,job.result.video)}/>}
+    {job.state==='succeeded'&&job.result?.video&&<video ref={videoRef} controls preload="metadata" src={visualFileUrl(projectId,job.id,job.result.video)}/>}
     {diagnostics&&<div className="vw-stills">{reviewFrames(job.result?.frames??[]).map((name,i)=><figure key={name}><img alt={STILL_LABELS[i]} src={visualFileUrl(projectId,job.id,name)}/><figcaption>{STILL_LABELS[i]}</figcaption></figure>)}</div>}
     {job.state==='succeeded'&&job.result?.video&&<a href={visualFileUrl(projectId,job.id,job.result.video)} download>下载 MP4</a>}{' '}
     {job.state==='succeeded'&&job.result?.srt&&<a href={visualFileUrl(projectId,job.id,job.result.srt)} download>下载 SRT</a>}</>;

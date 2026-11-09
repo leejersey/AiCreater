@@ -39,3 +39,12 @@ test('a failure offers the action that fixes it',async()=>{
  assert.match(html,/<a class="primary-link" href="\/account">去个人中心检查 Base URL<\/a>/);
  assert.throws(()=>parseVisualJobs({jobs:[{id:'x',project_id:'p',scene_id:'s1',kind:'agent',state:'failed',error_code:'Bad Code',result:null,input_summary:{model:'m',max_turns:25}}]},'p'));
 });
+
+test('a feedback note names the moment and the sentence narrated then',async()=>{
+ const {momentNote}=await import('../lib/visual-workbench');
+ const captions=[{text:'先读代码。',start_frame:6,end_frame:60},{text:' 再修改文件。',start_frame:60,end_frame:150}];
+ assert.equal(momentNote(2.5,captions),'【00:02，口播「再修改文件。」处】');
+ assert.equal(momentNote(0.5,captions),'【00:00，口播「先读代码。」处】');
+ assert.equal(momentNote(75,captions),'【01:15，口播「再修改文件。」处】'); // after the last caption: the last one
+ assert.equal(momentNote(1,undefined),'【00:01 处】');
+});
