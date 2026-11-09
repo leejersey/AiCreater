@@ -10,8 +10,10 @@ import {useConfirm} from '../../ConfirmContext';
 import {outlinePlaceholder, isTeachingStyle, type TeachingStyle} from '../../../lib/teaching-style';
 import {parseThemes,suggestTheme,type ThemeSummary} from '../../../lib/themes';
 import {ThemePicker} from '../../ThemePicker';
+import {Ideation} from './Ideation';
+import {emptyIdeation,toOrigin,toPlan} from '../../../lib/ideation';
 
-const initial = {title:'',source:'',audience:'',duration_hint:'',outline:'',teaching_style:'popular' as TeachingStyle,manuscript_format:'markdown' as 'markdown'|'plain'};
+const initial = {title:'',source:'',topic:'',notes:'',audience:'',duration_hint:'',outline:'',teaching_style:'popular' as TeachingStyle,manuscript_format:'markdown' as 'markdown'|'plain'};
 
 export default function NewCourse(){
   const draft=useLocalDraft({kind:'course',projectId:'',sceneId:'',label:'新建课程文稿'},0,initial);const router=useRouter();
@@ -26,9 +28,15 @@ export default function NewCourse(){
   const suggestion=themes.length?suggestTheme(themes,style,draft.value.source):undefined;
   const suggested=suggestion?.id;
   const themeId=draft.value.theme_id&&themes.some(t=>t.id===draft.value.theme_id)?draft.value.theme_id:suggested;
+  const ideation=draft.value.ideation??emptyIdeation();
+  const topic=draft.value.topic??'';
+  // The course name defaults to the topic until a direction (or the person) names it.
+  const courseTitle=(draft.value.title||topic).trim();
 
-  async function onGenerate(){
-    if(!canGenerate(draft.value)||generating||draft.blocked)return;
+  /** withPlan: follow the chosen direction's outline; otherwise the one-step generation from the topic. */
+  async function onGenerate(withPlan=false){
+    const plan=withPlan?toPlan(ideation):null;
+    if(!canGenerate({title:courseTitle,source:draft.value.source})||generating||draft.blocked||(withPlan&&!plan))return;
     if(needsOverwriteConfirm(draft.value.source)){
       const ok = await confirmDialog({
         title: '替换现有讲稿？',
@@ -42,12 +50,12 @@ export default function NewCourse(){
     setGenerating(true);setError('');
     try{
       const style=isTeachingStyle(draft.value.teaching_style)?draft.value.teaching_style:'popular';
-      const body:{title:string;audience?:string;duration_hint?:string;outline?:string;teaching_style:TeachingStyle;manuscript_format:'plain'|'markdown'}={title:draft.value.title.trim(),teaching_style:style,manuscript_format:manuscriptFormat};
+      const body:{title:string;audience?:string;duration_hint?:string;outline?:string;teaching_style:TeachingStyle;manuscript_format:'plain'|'markdown';plan?:unknown}={title:courseTitle,teaching_style:style,manuscript_format:manuscriptFormat,...(plan?{plan}:{})};
       const audience=draft.value.audience?.trim();if(audience)body.audience=audience;
       const duration_hint=draft.value.duration_hint?.trim();if(duration_hint)body.duration_hint=duration_hint;
-      const outline=draft.value.outline?.trim();if(outline)body.outline=outline;
+      const outline=draft.value.outline?.trim();if(outline&&!plan)body.outline=outline;
       const {text}=await request<{text:string}>('/api/manuscripts/generate',body);
-      draft.change({source:text});
+      draft.change({source:text,...(draft.value.title.trim()?{}:{title:courseTitle})});
     }catch(e){setError(e instanceof Error?e.message:'生成失败，讲稿已保留，可修改提示后重试。');}
     finally{setGenerating(false);}
   }
@@ -66,7 +74,7 @@ export default function NewCourse(){
         <span className="studio-badge">创建草稿免费 · AI 生成计费</span>
       </div>
       <div>
-        <button type="button" className="primary-link" style={{background:'var(--accent)',color:'#0b0f17',fontWeight:600}} disabled={!draft.value.title.trim()||!draft.value.source.trim()||blocked} onClick={() => {
+        <button type="button" className="primary-link" style={{background:'var(--accent)',color:'#0b0f17',fontWeight:600}} disabled={!courseTitle||!draft.value.source.trim()||blocked} onClick={() => {
           const form = document.getElementById('new-course-form') as HTMLFormElement | null;
           form?.requestSubmit();
         }}>
@@ -81,19 +89,23 @@ export default function NewCourse(){
 
     <form id="new-course-form" onSubmit={async e=>{e.preventDefault();if(blocked)return;setBusy(true);setError('');
       try{const style=isTeachingStyle(draft.value.teaching_style)?draft.value.teaching_style:'popular';
-      const project=await request<Project>('/api/projects',{title:draft.value.title,source_text:draft.value.source,mode:'script',teaching_style:style,manuscript_format:manuscriptFormat,...(themeId?{theme_id:themeId}:{})});draft.clear();router.replace('/courses/'+project.id);}
+      const origin=toOrigin(topic,draft.value.notes??'',ideation);
+      const project=await request<Project>('/api/projects',{title:courseTitle,source_text:draft.value.source,mode:'script',teaching_style:style,manuscript_format:manuscriptFormat,...(themeId?{theme_id:themeId}:{}),...(origin?{origin}:{})});draft.clear();router.replace('/courses/'+project.id);}
       catch(e){setError(e instanceof Error?e.message:'创建失败，输入已保留。请先检查课程列表，不要重复提交。');setBusy(false);}
     }}>
       <fieldset disabled={blocked} style={{border:0,padding:0,margin:0,minWidth:0}}>
-        <div className="new-course-studio">
+        <div className={`new-course-studio${ideation.batches.length?' ideating':''}`}>
           {/* 左栏：AI 灵感与参数配置 */}
           <div className="studio-config-pane">
-            <h3 style={{margin:'0 0 12px',display:'flex',alignItems:'center',gap:'6px'}}>
-              <Sparkles size={16} style={{color:'var(--accent)'}}/> 1. 配置教学主题
+            <h3 style={{margin:'0 0 4px',display:'flex',alignItems:'center',gap:'6px'}}>
+              <Sparkles size={16} style={{color:'var(--accent)'}}/> 1. 构思
             </h3>
 
-            <label>课程名称 *
-              <input required maxLength={80} value={draft.value.title} onChange={e=>draft.change({title:e.target.value})} placeholder="例如：快速排序算法的核心原理"/>
+            <label>选题 *
+              <input maxLength={80} value={topic} onChange={e=>draft.change({topic:e.target.value})} placeholder="例如：RAG、快速排序、为什么天空是蓝的"/>
+            </label>
+            <label>补充想法（可选）
+              <textarea maxLength={300} rows={2} value={draft.value.notes??''} onChange={e=>draft.change({notes:e.target.value})} placeholder="讲给谁、想达到什么、想避开什么，例如：讲给做客服系统的同事，别太学术"/>
             </label>
 
             <div>
@@ -110,37 +122,42 @@ export default function NewCourse(){
               </div>
             </div>
 
-            {themes.length>0&&<div>
-              <label style={{marginBottom:'6px'}}>画面主题</label>
-              <ThemePicker themes={themes} value={themeId??''} suggested={suggested} onChange={id=>draft.change({theme_id:id})}/>
-              {suggestion&&<p className="hint">推荐「{themes.find(t=>t.id===suggestion.id)?.name_zh}」：{suggestion.reason}{draft.value.theme_id&&draft.value.theme_id!==suggestion.id?'（你已另选）':''}。</p>}
-              <p className="hint">整门课使用同一个主题，决定背景、配色、字体与字幕条。之后可在工作台更换，已确认的章节不用重新生成。</p>
-            </div>}
+            <details className="more-settings">
+              <summary>更多设置{settingsSummary(draft.value,themes.find(t=>t.id===themeId)?.name_zh)}</summary>
+              <div>
+                <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:'10px'}}>
+                  <label>目标受众（可选）
+                    <input maxLength={80} value={draft.value.audience??''} onChange={e=>draft.change({audience:e.target.value})} placeholder="例如：初学者 / 大学生"/>
+                  </label>
+                  <label>建议时长（可选）
+                    <input maxLength={40} value={draft.value.duration_hint??''} onChange={e=>draft.change({duration_hint:e.target.value})} placeholder="例如：3分钟"/>
+                  </label>
+                </div>
+                {themes.length>0&&<div>
+                  <label style={{marginBottom:'6px'}}>画面主题</label>
+                  <ThemePicker themes={themes} value={themeId??''} suggested={suggested} onChange={id=>draft.change({theme_id:id})}/>
+                  {suggestion&&<p className="hint">推荐「{themes.find(t=>t.id===suggestion.id)?.name_zh}」：{suggestion.reason}{draft.value.theme_id&&draft.value.theme_id!==suggestion.id?'（你已另选）':''}。</p>}
+                  <p className="hint">整门课使用同一个主题，之后可在工作台更换，已确认的章节不用重新生成。</p>
+                </div>}
+                <label>文稿格式
+                  <select value={manuscriptFormat} onChange={e=>draft.change({manuscript_format:e.target.value as 'plain'|'markdown'})}>
+                    <option value="markdown">Markdown · AI 联合生成口播与素材</option>
+                    <option value="plain">纯文本 · 仅口播（兼容旧稿）</option>
+                  </select>
+                </label>
+                <label>核心要点（直接生成时使用，可选）
+                  <textarea maxLength={1000} rows={3} value={draft.value.outline??''} onChange={e=>draft.change({outline:e.target.value})} placeholder={outlinePlaceholder(isTeachingStyle(draft.value.teaching_style)?draft.value.teaching_style:'popular')}/>
+                </label>
+              </div>
+            </details>
 
-            <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:'10px'}}>
-              <label>目标受众（可选）
-                <input maxLength={80} value={draft.value.audience??''} onChange={e=>draft.change({audience:e.target.value})} placeholder="例如：初学者 / 大学生"/>
-              </label>
-              <label>建议时长（可选）
-                <input maxLength={40} value={draft.value.duration_hint??''} onChange={e=>draft.change({duration_hint:e.target.value})} placeholder="例如：3分钟"/>
-              </label>
-            </div>
+            <Ideation state={ideation} title={courseTitle} disabled={blocked} generating={generating}
+              context={{topic,notes:draft.value.notes??'',audience:draft.value.audience??'',duration_hint:draft.value.duration_hint??'',teaching_style:style}}
+              onChange={next=>draft.change({ideation:next})} onTitle={title=>draft.change({title})} onGenerate={()=>void onGenerate(true)}/>
 
-            <label>文稿格式
-              <select value={manuscriptFormat} onChange={e=>draft.change({manuscript_format:e.target.value as 'plain'|'markdown'})}>
-                <option value="markdown">Markdown · AI 联合生成口播与素材</option>
-                <option value="plain">纯文本 · 仅口播（兼容旧稿）</option>
-              </select>
-            </label>
-            <p className="hint">切换格式不会转换已有内容。Markdown 按段保留 ID、口播、画面素材与画面意图；只有口播参与配音。命令不执行，未经验证的输出须标为示意。</p>
-            <label>核心要点（可选）
-              <textarea maxLength={1000} rows={4} value={draft.value.outline??''} onChange={e=>draft.change({outline:e.target.value})} placeholder={outlinePlaceholder(isTeachingStyle(draft.value.teaching_style)?draft.value.teaching_style:'popular')}/>
-            </label>
-
-            <button type="button" style={{marginTop:'8px',width:'100%',padding:'11px',fontWeight:600}} disabled={!canGenerate(draft.value)||blocked} onClick={()=>void onGenerate()}>
-              {generating ? <><Spinner size={14} className="icon-spin"/> AI 正在构思讲稿…</> : <><Sparkles size={14}/> ✨ AI 一键生成文稿</>}
-            </button>
-            <p className="hint" style={{margin:'4px 0 0',textAlign:'center'}}>输入标题后点击生成，或在右侧直接手动输入讲稿</p>
+            {!ideation.chosen&&<button type="button" className="link-skip" disabled={!courseTitle||blocked} onClick={()=>void onGenerate(false)}>
+              {generating?<><Spinner size={12} className="icon-spin"/> AI 正在写文稿…</>:'跳过，直接生成文稿 →'}
+            </button>}
           </div>
 
           {/* 右栏：沉浸式讲稿编辑 */}
@@ -154,6 +171,10 @@ export default function NewCourse(){
               </span>
             </div>
 
+            <label>课程名称 *
+              <input maxLength={80} value={draft.value.title} onChange={e=>draft.change({title:e.target.value})} placeholder={topic.trim()?`默认用选题「${topic.trim()}」；选定方向后自动填入`:'选定方向后自动填入，也可以自己写'}/>
+            </label>
+
             <textarea
               required
               maxLength={manuscriptFormat==='markdown'?24000:4000}
@@ -161,14 +182,14 @@ export default function NewCourse(){
               style={{lineHeight:1.7,fontSize:'14px',resize:'vertical',minHeight:'360px'}}
               value={draft.value.source}
               onChange={e=>draft.change({source:e.target.value})}
-              placeholder={manuscriptFormat==='markdown'?'## [s1] 段落标题\n\n### 口播\n这里填写纯文本口播。\n\n### 画面素材\n补充命令、代码或流程标签，无额外素材填“无”。\n\n### 画面意图\n引用口播短句安排素材出现；不写秒数。':'编写纯文本口播，或点击左侧 AI 一键生成文稿。'}
+              placeholder={manuscriptFormat==='markdown'?'## [s1] 段落标题\n\n### 口播\n这里填写纯文本口播。\n\n### 画面素材\n补充命令、代码或流程标签，无额外素材填“无”。\n\n### 画面意图\n引用口播短句安排素材出现；不写秒数。':'编写纯文本口播，或在左侧构思后生成。'}
             />
 
             <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',flexWrap:'wrap',gap:'10px',marginTop:'4px'}}>
               <p className="hint" style={{margin:0}}>
                 确认讲稿后创建草稿免费；Markdown 全文最多24000字符、20段，口播合计最多4000字符。进入工作台后整理章节、配音并由 Agent 生成画面。
               </p>
-              <button type="submit" className="primary-link" style={{background:'var(--accent)',color:'#0b0f17',fontWeight:600,padding:'10px 20px'}} disabled={!draft.value.title.trim()||!draft.value.source.trim()||blocked}>
+              <button type="submit" className="primary-link" style={{background:'var(--accent)',color:'#0b0f17',fontWeight:600,padding:'10px 20px'}} disabled={!courseTitle||!draft.value.source.trim()||blocked}>
                 {busy ? <Spinner size={14} className="icon-spin"/> : <Sparkles size={14}/>} {createButtonLabel(busy)}
               </button>
             </div>
@@ -177,4 +198,10 @@ export default function NewCourse(){
       </fieldset>
     </form>
   </main>;
+}
+
+/** "：受众 开发者 · 3分钟 · 蓝图" when anything is set, so folded settings stay visible. */
+function settingsSummary(v:{audience?:string;duration_hint?:string},theme?:string){
+  const parts=[v.audience?.trim()&&`受众 ${v.audience.trim()}`,v.duration_hint?.trim(),theme].filter(Boolean);
+  return parts.length?`：${parts.join(' · ')}`:'';
 }

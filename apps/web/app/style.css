@@ -2436,3 +2436,47 @@ details.vw-step > summary, details.vw-more > summary { cursor:pointer; padding:6
 .course-thumb span i { border-radius:6px; }
 .course-thumb span i:last-child { border-radius:999px; aspect-ratio:1; align-self:center; }
 .course-thumb small { position:absolute; right:8px; bottom:6px; font-size:11px; padding:1px 6px; border-radius:999px; background:rgba(0,0,0,0.55); color:#fff; }
+
+/* New video: ideation (angles → chosen card with its outline) */
+.new-course-studio.ideating { grid-template-columns: 500px minmax(0, 1fr); }
+.ideation { display: flex; flex-direction: column; gap: 10px; }
+.ideation .link-button { background: none; border: 0; box-shadow: none; padding: 2px 0; color: var(--accent); font-size: 12.5px; display: inline-flex; align-items: center; gap: 4px; cursor: pointer; align-self: flex-start; }
+.ideation .link-button:disabled { color: var(--muted); cursor: default; }
+.ideation .icon-button { background: none; border: 1px solid transparent; box-shadow: none; padding: 3px; color: var(--text-secondary); border-radius: 6px; }
+.ideation .icon-button:hover:not(:disabled) { border-color: var(--line-strong); color: var(--text-main); transform: none; }
+.idea-explore { width: 100%; padding: 11px; font-weight: 600; }
+.idea-toolbar { display: flex; align-items: center; justify-content: space-between; gap: 8px; font-size: 13px; }
+.idea-card { border: 1px solid var(--line); border-radius: var(--radius-md); padding: 12px 14px; background: rgba(255,255,255,0.03); display: flex; flex-direction: column; gap: 6px; }
+.idea-card:hover { border-color: var(--line-strong); }
+.idea-card.chosen { border-color: var(--accent); background: rgba(16,185,129,0.07); }
+.idea-card-head { display: flex; align-items: flex-start; gap: 8px; }
+.idea-pick input { margin-top: 3px; }
+.idea-title { display: block; font-size: 14px; color: #fff; line-height: 1.4; }
+.idea-tags { display: block; font-size: 11.5px; color: var(--accent); margin-top: 2px; }
+.idea-line { margin: 0; font-size: 12.5px; color: var(--text-secondary); line-height: 1.5; }
+.idea-line span { display: inline-block; min-width: 44px; color: var(--muted); }
+.idea-use { padding: 5px 12px; font-size: 12.5px; }
+.idea-group { margin: 6px 0 0; font-size: 12px; color: var(--muted); }
+.idea-older summary { cursor: pointer; font-size: 12.5px; color: var(--text-secondary); margin: 4px 0; }
+.idea-older .idea-card { margin-top: 8px; }
+.idea-merge { display: flex; align-items: center; justify-content: space-between; gap: 8px; font-size: 12.5px; padding: 8px 10px; border: 1px dashed var(--line-accent); border-radius: var(--radius-md); }
+.idea-custom { display: flex; gap: 8px; }
+.idea-custom input { flex: 1; min-width: 0; }
+.idea-custom button { white-space: nowrap; }
+.idea-expanded { gap: 10px; }
+.idea-section { border: 1px solid var(--line); border-radius: var(--radius-md); padding: 8px 10px; display: flex; flex-direction: column; gap: 6px; background: rgba(0,0,0,0.15); }
+.idea-section-head { display: flex; align-items: center; gap: 6px; }
+.idea-section-head input:not(.idea-seconds) { flex: 1; min-width: 0; font-weight: 600; }
+.idea-index { width: 20px; height: 20px; border-radius: 50%; background: var(--accent-light); color: var(--accent); font-size: 11.5px; display: inline-flex; align-items: center; justify-content: center; flex: none; }
+.idea-seconds { width: 72px; flex: none; }
+.idea-section textarea { font-size: 12.5px; line-height: 1.6; resize: vertical; }
+.idea-picture { display: flex; align-items: center; gap: 8px; font-size: 12px; color: var(--muted); }
+.idea-picture input { flex: 1; font-size: 12.5px; }
+.idea-warning { color: var(--warning); margin: 0; }
+.more-settings summary { cursor: pointer; font-size: 13px; color: var(--text-secondary); }
+.more-settings[open] summary { margin-bottom: 10px; }
+.more-settings > div { display: flex; flex-direction: column; gap: 14px; }
+.link-skip { background: none; border: 0; box-shadow: none; padding: 2px 0; color: var(--text-secondary); font-size: 12.5px; align-self: flex-end; cursor: pointer; display: inline-flex; align-items: center; gap: 4px; }
+.link-skip:hover:not(:disabled) { color: var(--accent); transform: none; }
+.idea-card-foot { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+.ideation .idea-toggle { color: var(--muted); }

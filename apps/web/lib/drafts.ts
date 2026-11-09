@@ -1,6 +1,7 @@
+import {isIdeationDraft,type IdeationDraft} from './ideation';
 import {isTeachingStyle} from './teaching-style';
 export type DraftData = {
-  course: {title: string; source: string; audience?: string; duration_hint?: string; outline?: string; teaching_style?: string; manuscript_format?: 'plain'|'markdown'; theme_id?: string};
+  course: {title: string; source: string; audience?: string; duration_hint?: string; outline?: string; teaching_style?: string; manuscript_format?: 'plain'|'markdown'; theme_id?: string; topic?: string; notes?: string; ideation?: IdeationDraft};
   voice: {speaker: string};
 };
 export type DraftKind = keyof DraftData;
@@ -39,8 +40,9 @@ function validData(kind: DraftKind, data: unknown): boolean {
   if (!object(data)) return false;
   const strings = kind === 'course' ? ['title','source'] : ['speaker'];
   if (!strings.every(k=>typeof data[k] === 'string')) return false;
-  const allowed = kind==='course'?[...strings,'audience','duration_hint','outline','teaching_style','manuscript_format','theme_id']:strings;
-  if (kind === 'course' && !['audience','duration_hint','outline'].every(k=>data[k]===undefined||typeof data[k]==='string')) return false;
+  const allowed = kind==='course'?[...strings,'audience','duration_hint','outline','teaching_style','manuscript_format','theme_id','topic','notes','ideation']:strings;
+  if (kind === 'course' && !['audience','duration_hint','outline','topic','notes'].every(k=>data[k]===undefined||typeof data[k]==='string')) return false;
+  if (kind === 'course' && data.ideation !== undefined && !isIdeationDraft(data.ideation)) return false;
   if (kind === 'course' && data.manuscript_format !== undefined && !['plain','markdown'].includes(data.manuscript_format as string)) return false;
   if (kind === 'course' && data.teaching_style !== undefined && !isTeachingStyle(data.teaching_style)) return false;
   if (kind === 'course' && data.theme_id !== undefined && (typeof data.theme_id !== 'string' || !/^[a-z][a-z0-9-]{1,39}$/.test(data.theme_id))) return false;
