@@ -7,8 +7,8 @@ import {jobTheme,type SceneTheme} from '../../scene-themes/src/index';
 import {currentKit} from '../../custom-scenes/src/kit';
 
 export const SCENE_FILE='scene/Scene.tsx';
-export const KIT_FILE='kit.tsx'; // the scene kit frozen for this run: read-only, imported by the scene as './kit'
-const READABLE=[/^brief\.json$/,/^cues\.json$/,/^theme\.json$/,/^kit\.tsx$/,/^skill(\/.*)?$/,/^scene(\/.*)?$/];
+export const KIT_FILE='scene/kit.tsx'; // the scene kit frozen for this run, beside Scene.tsx as its './kit' import resolves; read-only
+const READABLE=[/^brief\.json$/,/^cues\.json$/,/^theme\.json$/,/^skill(\/.*)?$/,/^scene(\/.*)?$/];
 const WRITABLE=[/^scene\/Scene\.tsx$/]; // the scene contract is a single self-contained file
 
 export class WorkspaceError extends Error{}
@@ -28,9 +28,9 @@ export async function createWorkspace(directory:string,input:WorkspaceInput):Pro
  await writeFile(path.join(directory,'brief.json'),JSON.stringify(brief,null,2)+'\n');
  await writeFile(path.join(directory,'cues.json'),JSON.stringify(cues,null,2)+'\n');
  await writeFile(path.join(directory,'theme.json'),JSON.stringify(input.theme??jobTheme(undefined),null,2)+'\n');
- await writeFile(path.join(directory,KIT_FILE),input.kit??await currentKit());
  await cp(input.skillDir,path.join(directory,'skill'),{recursive:true,dereference:true});
  await mkdir(path.join(directory,'scene'));
+ await writeFile(path.join(directory,KIT_FILE),input.kit??await currentKit());
  await mkdir(path.join(directory,'stills'));
  if(input.initialSource!==undefined)await writeFile(path.join(directory,SCENE_FILE),input.initialSource);
  return Workspace.open(directory);
@@ -64,7 +64,7 @@ export class Workspace{
   if(normalized==='..'||normalized.startsWith('../'))throw new WorkspaceError(`path escapes the workspace: ${relative}`);
   const rules=mode==='write'?WRITABLE:READABLE;
   if(normalized!=='.'&&!rules.some(r=>r.test(normalized)))
-   throw new WorkspaceError(mode==='write'?`only ${SCENE_FILE} is writable`:`not readable: ${normalized} (readable: brief.json, cues.json, theme.json, kit.tsx, skill/, scene/)`);
+   throw new WorkspaceError(mode==='write'?`only ${SCENE_FILE} is writable`:`not readable: ${normalized} (readable: brief.json, cues.json, theme.json, skill/, scene/)`);
   const absolute=normalized==='.'?this.root:path.join(this.root,normalized);
   // No component may be a symlink, so a link planted inside the workspace cannot point outside it.
   let current=this.root;

@@ -6,7 +6,8 @@ Tested parts you can import into Scene.tsx, so you spend turns on the idea inste
 import {Box, Arrow, Doc, Cross, Check, Strike, Bar, Counter, Spotlight, Camera, ease, win, at, listOpacity} from './kit';
 ```
 
-The full source is readable as `kit.tsx` (`read_file kit.tsx`); it cannot be edited. Use the kit where it fits and plain
+The full source sits beside your scene as `scene/kit.tsx` (`read_file scene/kit.tsx`); it cannot be edited. You do not need
+to read it: the tables below list every part and prop. Use the kit where it fits and plain
 SVG for everything else; a scene made only of boxes and arrows is still a diagram, so give each cue its own action.
 
 ## How the parts work

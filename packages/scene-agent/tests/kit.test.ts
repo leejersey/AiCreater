@@ -8,6 +8,8 @@ import {checkSource} from '../../custom-scenes/src/contract';
 import {SourceTypecheckError,typecheckSource} from '../../custom-scenes/src/files';
 import {currentKit,usesKit} from '../../custom-scenes/src/kit';
 import {createWorkspace,KIT_FILE,WorkspaceError} from '../src/workspace';
+import {buildTools,executeTool} from '../src/tools/index';
+import {textOf} from '../src/provider/types';
 
 const here=path.dirname(fileURLToPath(import.meta.url));
 const skill=(name:string)=>readFile(path.join(here,'../skill',name+'.md'),'utf8');
@@ -57,8 +59,21 @@ test('a run freezes the kit in its workspace: readable, not writable, and kept w
  const workspace=await createWorkspace(dir,{brief,skillDir:path.join(here,'../skill'),kit:'export const frozen=1;\n'});
  assert.equal(workspace.kit,'export const frozen=1;\n');
  assert.equal(await readFile(path.join(workspace.root,KIT_FILE),'utf8'),'export const frozen=1;\n');
- assert.equal((await workspace.resolve('kit.tsx','read')).relative,'kit.tsx');
- await assert.rejects(workspace.resolve('kit.tsx','write'),WorkspaceError);
+ assert.equal(KIT_FILE,'scene/kit.tsx');
+ assert.equal((await workspace.resolve(KIT_FILE,'read')).relative,KIT_FILE);
+ await assert.rejects(workspace.resolve(KIT_FILE,'write'),WorkspaceError);
  const fresh=await createWorkspace(path.join(path.dirname(dir),'run2'),{brief,skillDir:path.join(here,'../skill')});
  assert.equal(fresh.kit,await currentKit());
+});
+
+test('the model finds the kit where the import points: listed and readable as scene/kit.tsx',async()=>{
+ const dir=path.join(await mkdtemp(path.join(tmpdir(),'scene-kit-')),'run');
+ const workspace=await createWorkspace(dir,{brief,skillDir:path.join(here,'../skill')});
+ const capabilities={vision:false,parallelToolCalls:true,contextTokens:128000,maxOutputTokens:8192,promptCache:true,appendOnlyHistory:false};
+ const context={workspace,renderer:{render:async()=>{throw Error('no render');},close:async()=>{}},capabilities};
+ const tools=buildTools(capabilities);
+ const call=async(name:string,args:unknown)=>textOf((await executeTool(tools,{id:'c',name,arguments:args},context as never)).content);
+ assert.match(await call('list_files',{}),/scene\/kit\.tsx/);
+ assert.match(await call('read_file',{path:'scene/kit.tsx'}),/export function Box/);
+ assert.match(await call('write_file',{path:'scene/kit.tsx',content:'x'}),/only scene\/Scene\.tsx is writable|path must be equal to one of the allowed values/);
 });
