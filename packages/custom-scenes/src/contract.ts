@@ -87,3 +87,43 @@ export function literalStyles(source:string):LiteralStyle[]{
  visit(file);
  return found;
 }
+
+/** Whether the scene reads its cue frames from the timing prop (timing.cues, or destructured from timing). */
+export function usesTiming(source:string):boolean{
+ const file=ts.createSourceFile('Scene.tsx',source,ts.ScriptTarget.ES2022,true,ts.ScriptKind.TSX);
+ let found=false;
+ const visit=(node:ts.Node)=>{
+  if(found)return;
+  if(ts.isPropertyAccessExpression(node)&&ts.isIdentifier(node.expression)&&node.expression.text==='timing'&&node.name.text==='cues')found=true;
+  if(ts.isVariableDeclaration(node)&&node.initializer&&ts.isIdentifier(node.initializer)&&node.initializer.text==='timing'&&ts.isObjectBindingPattern(node.name))found=true;
+  ts.forEachChild(node,visit);
+ };
+ visit(file);return found;
+}
+
+export type LiteralTiming={text:string;line:number};
+const FRAME_LITERAL=30; // one second: smaller numbers are durations of a fade or an offset, not a moment of the narration
+/** Frame numbers written into the scene where a cue boundary belongs: in interpolate's input range, compared with
+ * `frame`, or as a two-number window passed to a helper (fade(470, 490)). They would not move with a new voice-over. */
+export function literalTiming(source:string):LiteralTiming[]{
+ const file=ts.createSourceFile('Scene.tsx',source,ts.ScriptTarget.ES2022,true,ts.ScriptKind.TSX);
+ const found:LiteralTiming[]=[];
+ const big=(n:ts.Node):n is ts.NumericLiteral=>ts.isNumericLiteral(n)&&Number(n.text)>=FRAME_LITERAL;
+ const line=(n:ts.Node)=>file.getLineAndCharacterOfPosition(n.getStart(file)).line+1;
+ const visit=(node:ts.Node)=>{
+  if(ts.isCallExpression(node)){
+   const callee=node.expression.getText(file);
+   if(/(^|\.)interpolate$/.test(callee)&&node.arguments[1]&&ts.isArrayLiteralExpression(node.arguments[1]))
+    for(const el of node.arguments[1].elements)if(big(el))found.push({text:el.getText(file),line:line(el)});
+   if(ts.isIdentifier(node.expression)&&!/^(interpolate|spring|Math)$/.test(callee)&&node.arguments.length===2&&node.arguments.every(big)&&
+    Number((node.arguments[1] as ts.NumericLiteral).text)>Number((node.arguments[0] as ts.NumericLiteral).text))
+    found.push({text:node.getText(file),line:line(node)});
+  }
+  if(ts.isBinaryExpression(node)&&[ts.SyntaxKind.LessThanToken,ts.SyntaxKind.LessThanEqualsToken,ts.SyntaxKind.GreaterThanToken,ts.SyntaxKind.GreaterThanEqualsToken].includes(node.operatorToken.kind)){
+   const sides=[node.left,node.right];
+   if(sides.some(s=>ts.isIdentifier(s)&&s.text==='frame'))for(const s of sides)if(big(s))found.push({text:node.getText(file),line:line(s)});
+  }
+  ts.forEachChild(node,visit);
+ };
+ visit(file);return found;
+}

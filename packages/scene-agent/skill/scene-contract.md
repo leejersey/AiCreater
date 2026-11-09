@@ -17,9 +17,10 @@ type Theme = {
   radius:number; ruleWidth:number; ruleDash:string;               // card corners, divider width, strokeDasharray ("none" = solid)
   dark:boolean;
 };
-type SceneProps = {frame:number; fps:number; width:number; height:number; theme:Theme};
+type Timing = {durationInFrames:number; cues:{start:number; end:number}[]};   // one entry per narrated sentence
+type SceneProps = {frame:number; fps:number; width:number; height:number; theme:Theme; timing:Timing};
 
-export default function Scene({frame, fps, width, height, theme}: SceneProps) {
+export default function Scene({frame, fps, width, height, theme, timing}: SceneProps) {
   return <svg width={width} height={height} viewBox={`0 0 ${width} ${height}`}>…</svg>;
 }
 ```
@@ -27,6 +28,20 @@ export default function Scene({frame, fps, width, height, theme}: SceneProps) {
 - Canvas is 1920×1080 at 30 fps. The background is already filled with `theme.background`.
 - Render a single root `<svg>`. HTML outside it is not measured by the geometry audit.
 - Everything must be a pure function of `frame`. Same frame, same picture.
+
+## Timing
+
+The voice-over can be re-recorded (another voice, another speed) without generating the scene again, so the scene must
+not depend on this recording's frame numbers. `timing.cues[i]` is the i-th cue from `get_timing`, with the frames of
+whatever voice-over the video is rendered with.
+
+- Time every narrated change from the cues: `const s = timing.cues;` then `fade(s[2].start, s[2].start + 15)`.
+- Small fixed numbers are fine for the length of a fade or an offset after a boundary (up to about one second).
+- Do not write moments as numbers (`interpolate(frame, [470, 490], …)`, `frame >= 820`, `fade(600, 640)`): the check
+  reports them as `literal-timing`, and finish renders the scene again on another voice-over timing, where every
+  sentence is up to 30% longer or shorter. It must still pass there.
+- A sentence can get shorter: keep animations inside their cue (`Math.min(s[i].start + 20, s[i].end - 5)`), and let
+  things that stay on screen stay, rather than re-entering at a fixed frame.
 
 ## Theme
 

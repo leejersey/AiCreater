@@ -20,8 +20,8 @@ const capabilities={vision:true,parallelToolCalls:true,contextTokens:128000,maxO
 const brief={schemaVersion:'custom-scene-brief:1',id:'demo',title:'演示',narration:'第一句。第二句。',visualGoal:'g',facts:['f'],materials:['m'],width:1920,height:1080,fps:30,durationInFrames:120};
 const cues=[{id:'a',text:'第一句。',startFrame:0,endFrame:60},{id:'b',text:'第二句。',startFrame:60,endFrame:120}];
 const MINIMAL=`import React from 'react';
-export default function Scene({width,height,theme}:{frame:number;fps:number;width:number;height:number;theme:{background:string;foreground:string;muted:string;accent:string;secondary:string}}){
- return <svg width={width} height={height}><text id="title" x={100} y={100} fill={theme.foreground}>标题</text></svg>;
+export default function Scene({width,height,theme,timing}:{frame:number;fps:number;width:number;height:number;timing:{durationInFrames:number;cues:{start:number;end:number}[]};theme:{background:string;foreground:string;muted:string;accent:string;secondary:string}}){
+ return <svg width={width} height={height}><text id="title" x={100} y={100} fill={theme.foreground} opacity={timing.cues.length?1:0}>标题</text></svg>;
 }
 `;
 
@@ -89,7 +89,7 @@ test('list_files shows only the workspace surface; skill and timing tools',async
  assert.match(out(await call('read_skill',{topic:'nope'})),/Available: craft, examples, index, patterns, scene-contract, visual-review/);
  const timing=out(await call('get_timing'));
  assert.match(timing,/120 frames at 30 fps \(4\.00s\)/);
- assert.match(timing,/- b 60–120 \(2\.0s\): 第二句。/);
+ assert.match(timing,/- timing\.cues\[1\] \(b\) 60–120 \(2\.0s\): 第二句。/);
 });
 
 test('typecheck reports contract violations and compiler errors by Scene.tsx line',async()=>{
@@ -263,8 +263,8 @@ test('a gate-clean version with empty-area findings is kept but the model is ask
 
 test('colors and fonts written into the scene are reported, and asked to be fixed before finishing',async()=>{
  const source=`import React from 'react';
-export default function Scene({width,height,theme}:{frame:number;fps:number;width:number;height:number;theme:{foreground:string}}){
- return <svg width={width} height={height}><text id="t" x={100} y={100} fill="#ffffff" fontFamily="sans-serif">a</text><rect id="r" x={0} y={200} width={10} height={10} fill={theme.foreground}/></svg>;
+export default function Scene({width,height,theme,timing}:{frame:number;fps:number;width:number;height:number;timing:{durationInFrames:number;cues:{start:number;end:number}[]};theme:{foreground:string}}){
+ return <svg width={width} height={height}><text id="t" x={100} y={100} fill="#ffffff" fontFamily="sans-serif" opacity={timing.cues.length?1:0}>a</text><rect id="r" x={0} y={200} width={10} height={10} fill={theme.foreground}/></svg>;
 }`;
  const {call,context}=await setup({initialSource:source,vision:false});
  const report=out(await call('render_stills'));

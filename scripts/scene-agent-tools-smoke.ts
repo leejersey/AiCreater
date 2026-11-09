@@ -15,7 +15,7 @@ async function main(){
  const source=await readFile(path.join(example,'Scene.tsx'),'utf8');
  const dir=path.join(repositoryRoot,'output/scene-agent/smoke-'+new Date().toISOString().replace(/[:.]/g,'-'));
  const workspace=await createWorkspace(dir,{brief,skillDir:path.join(repositoryRoot,'packages/scene-agent/skill'),initialSource:source});
- const context:ToolContext={workspace,renderer:new RemotionStillRenderer(workspace.brief),capabilities:{vision:true,parallelToolCalls:true,contextTokens:128000,maxOutputTokens:8192,promptCache:true,appendOnlyHistory:false}};
+ const context:ToolContext={workspace,renderer:new RemotionStillRenderer(workspace.brief,undefined,workspace.cues),capabilities:{vision:true,parallelToolCalls:true,contextTokens:128000,maxOutputTokens:8192,promptCache:true,appendOnlyHistory:false}};
  const tools=buildTools(context.capabilities);
  let n=0;
  const call=async(name:string,args:unknown={})=>{

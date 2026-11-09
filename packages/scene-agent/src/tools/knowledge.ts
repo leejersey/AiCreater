@@ -27,8 +27,8 @@ export const getTiming:Tool={
   const {brief,cues}=workspace;
   const lines=[`duration: ${brief.durationInFrames} frames at ${brief.fps} fps (${(brief.durationInFrames/brief.fps).toFixed(2)}s); canvas ${brief.width}×${brief.height}`,`title: ${brief.title}`];
   if(cues.length){
-   lines.push('cues (startFrame–endFrame, end exclusive):');
-   for(const cue of cues)lines.push(`- ${cue.id} ${cue.startFrame}–${cue.endFrame} (${((cue.endFrame-cue.startFrame)/brief.fps).toFixed(1)}s): ${cue.text}`);
+   lines.push('cues (startFrame–endFrame, end exclusive). In the scene they are timing.cues[i] = {start, end}: time every change from those, never from these numbers, because a new voice-over moves them:');
+   cues.forEach((cue,i)=>lines.push(`- timing.cues[${i}] (${cue.id}) ${cue.startFrame}–${cue.endFrame} (${((cue.endFrame-cue.startFrame)/brief.fps).toFixed(1)}s): ${cue.text}`));
   }else lines.push('cues: none measured; pace the visuals evenly across the narration','narration: '+brief.narration);
   return text(lines.join('\n'));
  },

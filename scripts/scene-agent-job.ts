@@ -62,7 +62,7 @@ async function main(){
   if(typeof input.revision.feedback!=='string'||!input.revision.feedback.trim())throw Error('revision feedback is empty');
  }
  const workspace=await createWorkspace(path.join(out,'workspace'),{brief,cues,skillDir:path.join(repositoryRoot,'packages/scene-agent/skill'),initialSource,theme});
- const renderer=new RemotionStillRenderer(workspace.brief,workspace.theme);
+ const renderer=new RemotionStillRenderer(workspace.brief,workspace.theme,workspace.cues);
  let run;
  try{run=await runLoop({provider,workspace,renderer,budget:{...entry.budget,maxTurns:input.max_turns},...(input.revision?{revision:{feedback:input.revision.feedback}}:{})});}
  finally{await renderer.close();}
@@ -83,7 +83,9 @@ async function main(){
    await copyFile(path.join(stills,name),path.join(out,'stills',`frame-${frame}.png`));
    frames.push(`stills/frame-${frame}.png`);
   }
-  Object.assign(result,{sha256:run.finish.gates.sourceSha256,finish_by:run.finish.by,frames},await renderAgentVideo({source,brief,cues,scene:input.scene,audioFile:input.audio_file},out,theme));
+  // retimable: reads timing.cues and passed on another voice-over timing, so a new recording re-renders it without a model.
+  const retimable=run.finish.gates.checks.some(c=>c.gate==='retime'&&c.passed);
+  Object.assign(result,{sha256:run.finish.gates.sourceSha256,finish_by:run.finish.by,frames,retimable},await renderAgentVideo({source,brief,cues,scene:input.scene,audioFile:input.audio_file},out,theme));
  }
  await writeFile(path.join(out,'result.json'),JSON.stringify(result,null,2));
  console.log(JSON.stringify({status:run.status,reason:run.reason,turns:run.turns}));

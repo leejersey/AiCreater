@@ -14,8 +14,8 @@ const capabilities:Capabilities={vision:false,parallelToolCalls:true,contextToke
 const brief={schemaVersion:'custom-scene-brief:1',id:'demo',title:'演示',narration:'第一句。第二句。',visualGoal:'g',facts:['f'],materials:['m'],width:1920,height:1080,fps:30,durationInFrames:120};
 const cues=[{id:'a',text:'第一句。',startFrame:0,endFrame:60},{id:'b',text:'第二句。',startFrame:60,endFrame:120}];
 const scene=(y:number)=>`import React from 'react';
-export default function Scene({width,height,theme}:{frame:number;fps:number;width:number;height:number;theme:{background:string;foreground:string;muted:string;accent:string;secondary:string}}){
- return <svg width={width} height={height}><text id="title" x={100} y={${y}} fill={theme.foreground}>标题</text></svg>;
+export default function Scene({width,height,theme,timing}:{frame:number;fps:number;width:number;height:number;timing:{durationInFrames:number;cues:{start:number;end:number}[]};theme:{background:string;foreground:string;muted:string;accent:string;secondary:string}}){
+ return <svg width={width} height={height}><text id="title" x={100} y={${y}} fill={theme.foreground} opacity={timing.cues.length?1:0}>标题</text></svg>;
 }
 `;
 
@@ -80,7 +80,7 @@ test('full loop: write a broken scene, see the audit, fix it, finish passes the 
  assert.equal(result.turns,8);
  assert.deepEqual(result.usage,{inputTokens:8000,outputTokens:800,cachedInputTokens:4800});
  assert.equal(result.finish?.summary,'title inside the safe area');
- assert.deepEqual(result.finish?.gates.checks.map(c=>[c.gate,c.passed]),[['scene-exists',true],['contract',true],['typecheck',true],['render',true],['audit',true]]);
+ assert.deepEqual(result.finish?.gates.checks.map(c=>[c.gate,c.passed]),[['scene-exists',true],['contract',true],['typecheck',true],['render',true],['audit',true],['timing',true],['retime',true]]);
  assert.equal(result.sceneSha256,sourceSha256(scene(140)));
  // What the model saw along the way.
  const seen=provider.requests.map(r=>r.messages.filter(m=>m.role==='tool').at(-1)).map(m=>m?textOf(m.content):'');
@@ -102,7 +102,7 @@ test('the gate renders the full default sample even if the model rendered a subs
  const provider=new ScriptedProvider([[call('render_stills',{frames:[0]})],[call('finish',{summary:'s',selfReview:review})]]);
  const result=await runLoop({provider,workspace,renderer,budget});
  assert.equal(result.status,'passed');
- assert.equal(renderer.renders,2);
+ assert.equal(renderer.renders,3);  // the subset, the full sample, and the full sample on another voice-over timing
  assert.match(result.finish!.gates.checks.find(c=>c.gate==='render')!.detail,/6 frames rendered/);
 });
 
@@ -283,4 +283,25 @@ test('the workspace keeps the course theme and the first message describes it',a
  const {workspace:old}=await setup();
  await rm(path.join(old.root,'theme.json'));
  assert.equal((await Workspace.open(old.root)).theme.id,'blueprint');
+});
+
+test('finish requires a scene that reads timing.cues and still passes on another voice-over timing',async()=>{
+ const {runGates}=await import('../src/gates');
+ const fixed=`import React from 'react';
+export default function Scene({width,height,theme}:{frame:number;fps:number;width:number;height:number;theme:{foreground:string}}){
+ return <svg width={width} height={height}><text id="title" x={100} y={100} fill={theme.foreground}>标题</text></svg>;
+}
+`;
+ const {workspace,renderer}=await setup(fixed);
+ const context={workspace,renderer,capabilities:{vision:false,parallelToolCalls:true,contextTokens:1,maxOutputTokens:1,promptCache:false,appendOnlyHistory:false}} as any;
+ const gates=await runGates(context);
+ assert.equal(gates.passed,false);
+ assert.match(gates.checks.find(c=>c.gate==='timing')!.detail,/does not read timing.cues/);
+ // Timed, but broken when the sentences move: the retime render reports a high finding.
+ const timed=await setup(scene(140));
+ class RetimeBreaks extends FakeRenderer{async render(source:string,frames:number[],outDir:string,timing?:any){const r=await super.render(source,frames,outDir);
+  return outDir.endsWith('-retime')?{...r,frames:r.frames.map(f=>({...f,audit:{...f.audit,issues:[{kind:'label-overlap',target:'text[1]',detail:'Overlaps text[2]'}]}}))}:r;}}
+ const broken=await runGates({...context,workspace:timed.workspace,renderer:new RetimeBreaks()});
+ assert.equal(broken.passed,false);
+ assert.match(broken.checks.find(c=>c.gate==='retime')!.detail,/on another voice-over timing/);
 });

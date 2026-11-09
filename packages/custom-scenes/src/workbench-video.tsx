@@ -3,7 +3,8 @@ import {AbsoluteFill,Audio,Sequence,staticFile,useCurrentFrame,delayRender,conti
 import type {Decoration,SceneThemeProps} from '../../scene-themes/src/index';
 import {workbenchCaptionLines,workbenchDisplayCaptions} from './workbench-captions';
 import type {FrozenChapter,WorkbenchManifest} from './workbench';
-type SceneComponent=React.ComponentType<{frame:number;fps:number;width:number;height:number;theme:SceneThemeProps}>;
+import type {SceneTiming} from './timing';
+type SceneComponent=React.ComponentType<{frame:number;fps:number;width:number;height:number;theme:SceneThemeProps;timing:SceneTiming}>;
 // The theme as the host needs it: what the Scene receives, plus what only the host draws (decoration, caption bar, fonts).
 export type HostTheme={props:SceneThemeProps;decoration:Decoration;caption:{background:string;foreground:string};faces:string[];fontCss?:string};
 
@@ -23,7 +24,7 @@ function Chapter({chapter,Scene,theme}:{chapter:FrozenChapter;Scene:SceneCompone
  const over=theme.decoration==='scanlines';
  return <AbsoluteFill>
   {!over&&<ThemeDecoration decoration={theme.decoration} rule={theme.props.rule}/>}
-  <Scene frame={frame} fps={30} width={1920} height={1080} theme={theme.props}/>
+  <Scene frame={frame} fps={30} width={1920} height={1080} theme={theme.props} timing={chapter.timing??{durationInFrames:chapter.scene.duration_frames,cues:[]}}/>
   {over&&<ThemeDecoration decoration={theme.decoration} rule={theme.props.rule}/>}
   <Sequence from={chapter.scene.narration.audio_start_frame} durationInFrames={chapter.scene.duration_frames-chapter.scene.narration.audio_start_frame} layout="none"><Audio src={staticFile(chapter.audio)}/></Sequence>
   {cue&&<div data-workbench-caption style={{position:'absolute',left:80,right:80,bottom:4,height:96,display:'flex',alignItems:'center',justifyContent:'center',textAlign:'center',fontSize:30,lineHeight:'45px',color:theme.caption.foreground,background:theme.caption.background,fontFamily:theme.props.fontBody}}><div>{workbenchCaptionLines(cue.text).map((line,i)=><div key={i} style={{whiteSpace:'pre'}}>{line}</div>)}</div></div>}

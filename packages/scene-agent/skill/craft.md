@@ -2,6 +2,10 @@
 
 Practical rules learned from rendered runs. They keep the picture readable; they are not a style.
 
+## Timing
+
+- Every change the narration calls for starts at its cue: `timing.cues[i].start`. Never a frame number from `get_timing`.
+
 ## Transitions between cues
 
 - Never crossfade text over text in the same place. Fade the outgoing element fully out before the incoming one fades in, or give old and new content separate regions of the canvas.

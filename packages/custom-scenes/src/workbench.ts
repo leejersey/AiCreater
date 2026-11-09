@@ -1,8 +1,9 @@
+import type {SceneTiming} from './timing';
 import {workbenchCaptionLines,workbenchDisplayCaptions} from './workbench-captions';
 
 // A chapter in a rendered course: its scene module, measured audio and captions, placed at frame `from`.
 export type WorkbenchScene={duration_frames:number;narration:{text:string;audio_start_frame:number};captions:{text:string;start_frame:number;end_frame:number}[]};
-export type FrozenChapter={artifact:string;sha256:string;design_sha256:string;audio:string;from:number;scene:WorkbenchScene};
+export type FrozenChapter={artifact:string;sha256:string;design_sha256:string;audio:string;from:number;scene:WorkbenchScene;timing?:SceneTiming};
 export type WorkbenchManifest={durationInFrames:number;chapters:FrozenChapter[]};
 
 export function workbenchSrt(manifest:WorkbenchManifest):string{

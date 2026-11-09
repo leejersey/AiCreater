@@ -13,6 +13,7 @@ import {renderTimeouts} from '../../../custom-scenes/src/render-timeout';
 import {assertCaptionCueBinding,workbenchCaptionLines,type WorkbenchCaption} from '../../../custom-scenes/src/workbench-captions';
 import {workbenchSrt,type WorkbenchManifest,type WorkbenchScene} from '../../../custom-scenes/src/workbench';
 import {sourceSha256} from './stills';
+import {sceneTiming} from '../../../custom-scenes/src/timing';
 import {fontImports,hostTheme,jobTheme,type SceneTheme} from '../../../scene-themes/src/index';
 
 export type AgentVideoInput={source:string;brief:SceneBrief;cues:Cue[];scene:WorkbenchScene;audioFile:string};
@@ -38,7 +39,9 @@ export function courseManifest(inputs:AgentVideoInput[]):WorkbenchManifest{
  let from=0;
  const chapters=inputs.map((input,i)=>{
   const scene=chapterScene(input);
-  const chapter={artifact:`chapter-${i}/Scene.tsx`,sha256:sourceSha256(input.source),design_sha256:'',audio:`chapter-${i}/audio${path.extname(input.audioFile).toLowerCase()}`,from,scene};
+  // The scene animates from these cue frames: the current voice-over's, whichever voice-over it was generated on.
+  const chapter={artifact:`chapter-${i}/Scene.tsx`,sha256:sourceSha256(input.source),design_sha256:'',audio:`chapter-${i}/audio${path.extname(input.audioFile).toLowerCase()}`,from,scene,
+   timing:sceneTiming(scene.duration_frames,input.cues)};
   from+=scene.duration_frames;
   return chapter;
  });

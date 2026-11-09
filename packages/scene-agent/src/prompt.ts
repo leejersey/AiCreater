@@ -13,7 +13,7 @@ How to work:
 - Write code only through write_file and edit_file. Never paste code in your reply text. Use write_file once for the first draft; after that change the file with edit_file. Rewriting the whole file wastes turns and loses fixes.
 - Turns are limited, so batch: put several tool calls in one reply whenever they do not depend on each other (for example several edit_file calls, followed by render_stills in the next reply).
 - After any turn that changes scene/Scene.tsx, the harness automatically typechecks, renders and audits it and shows you the report. Read it before your next change and fix what it reports, starting with [high] findings.${capabilities.vision?' You can also see the frames: read_skill visual-review, then use view_frames after each clean check and fix what you see, not only what the audit reports. finish requires that you have viewed the frames of the final version.':''}
-- Make each narrated cue visible as a concrete change on screen, timed to its frame range.
+- Make each narrated cue visible as a concrete change on screen, timed from timing.cues[i] (never literal frame numbers: the voice-over can be re-recorded).
 - Use only facts from the brief. Do not invent numbers, dates, statistics, product names or sources; if an example needs specifics the brief does not give, keep it generic.
 - As soon as render_stills reports no [high] findings and every cue has its visual, call finish with an honest self-review. Medium findings are optional, except empty-area: fix it unless it is the closing end card. finish re-runs the final checks; if they fail, keep fixing.
 

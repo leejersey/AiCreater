@@ -2,11 +2,12 @@
 
 An icon and a title in a rounded box says the word; it does not show the idea. When the narration names a problem, a limit or a step, draw a small object whose state changes while it is spoken. These snippets come from a scene that taught three RAG challenges well. Copy the technique, not the content: your brief decides what the objects are.
 
-All snippets are frame-driven and take their colors from the theme. `fade(a,b)` is a helper for a 0→1 ramp:
+All snippets are frame-driven, timed from `timing.cues` (here `s`; the cue numbers are this example's) and take their colors from the theme. `fade(a,b)` is a helper for a 0→1 ramp:
 
 ```tsx
 const fade=(a:number,b:number)=>interpolate(frame,[a,b],[0,1],{extrapolateLeft:'clamp',extrapolateRight:'clamp'});
 const {foreground:fg,muted,accent,negative:BAD,radius}=theme;
+const s=timing.cues;
 ```
 
 ## Something that is wrong: mark it, don't describe it
@@ -14,7 +15,7 @@ const {foreground:fg,muted,accent,negative:BAD,radius}=theme;
 "召回不相关文档" — a row of retrieved documents where one is wrong and gets crossed out; the answer it feeds is struck through.
 
 ```tsx
-const bad=fade(470,490), strike=fade(500,530);
+const bad=fade(s[3].start,s[3].start+20), strike=fade(s[3].start+30,s[3].start+60);
 <g data-object id="wrong-doc">
   <g data-obstacle>
     <rect x={cx-190} y={420} width={100} height={130} rx={radius} fill={fg} fillOpacity={0.06} stroke={muted} strokeWidth={2.5}/>
@@ -37,7 +38,7 @@ const bad=fade(470,490), strike=fade(500,530);
 "上下文窗口有限" — a box with room for three snippets; the fourth and fifth arrive and stay outside, marked red.
 
 ```tsx
-const extra=[fade(600,615),fade(625,640)];
+const extra=[fade(s[4].start,s[4].start+15),fade(s[4].start+25,s[4].start+40)];
 <g data-object id="window">
   <g data-obstacle>
     <rect x={cx-200} y={398} width={400} height={230} rx={radius} fill={fg} fillOpacity={0.05} stroke={BAD} strokeWidth={3.5}/>
@@ -68,7 +69,7 @@ const swing=Math.sin(frame*0.08);
 "针对这些挑战进行优化" — reuse the objects above instead of adding new cards: the wrong document fades, the window widens so the extra snippets fit, a check mark appears.
 
 ```tsx
-const opt=fade(828,872);
+const opt=fade(s[6].start,Math.min(s[6].start+45,s[6].end));
 // wrong document: opacity={1-0.7*opt}; window width: 400+120*opt; extra snippets: y moves from outside into the box as opt grows
 ```
 

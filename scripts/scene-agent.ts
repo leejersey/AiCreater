@@ -54,7 +54,7 @@ async function main(){
  const provider=createProvider(model,models); // fails fast on a missing key, before creating the workspace
  const workspace=await createWorkspace(out,{brief,cues,skillDir:path.join(repositoryRoot,'packages/scene-agent/skill'),initialSource,theme});
  console.log(`workspace ${workspace.root}`);
- const renderer=new RemotionStillRenderer(workspace.brief,theme);
+ const renderer=new RemotionStillRenderer(workspace.brief,theme,workspace.cues);
  const controller=new AbortController();
  const stop=()=>controller.abort();
  process.once('SIGINT',stop);process.once('SIGTERM',stop);
