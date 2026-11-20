@@ -62,18 +62,39 @@ export function useLocalDraft<K extends DraftKind>(scope: DraftScope & {kind: K}
     notice:{ready,pending,record,revision,error,saved,restore,discard:clear}};
 }
 
+function draftSummary(record:DraftRecord|null):string{
+  if(!record)return '';
+  const data=record.data as Record<string,unknown>;
+  const parts:string[]=[];
+  if(typeof data.title==='string'&&data.title.trim())parts.push(`标题：「${data.title.trim()}」`);
+  else if(typeof data.topic==='string'&&data.topic.trim())parts.push(`选题：「${data.topic.trim()}」`);
+  if(typeof data.speaker==='string'&&data.speaker.trim())parts.push(`音色：${data.speaker.trim()}`);
+  if(typeof data.source==='string'&&data.source.trim()){
+    const snippet=data.source.trim().replace(/\s+/g,' ').slice(0,80);
+    parts.push(`正文预览：${snippet}${data.source.trim().length>80?'…':''}`);
+  }
+  return parts.join(' · ');
+}
+
 type NoticeProps={ready:boolean;pending:string|null;record:DraftRecord|null;revision:number;error:string;saved:boolean;
   restore:()=>void;discard:()=>void;disabled?:boolean};
 export function DraftNotice({ready,pending,record,revision,error,saved,restore,discard,disabled}:NoticeProps) {
-  return <div aria-label="本机草稿提示">
+  const summary=draftSummary(record);
+  return <div aria-label="本机草稿提示" className="draft-notice">
     {error&&<p role="alert" className="error-text">{error}</p>}
     {!ready&&<p className="hint">正在检查本机草稿…</p>}
-    {pending!==null&&<div>
-      <p className="unsaved">发现本机未保存草稿 · {record ? `r${record.revision}` : '格式损坏或不受支持'}。不自动保存到服务器。</p>
+    {pending!==null&&<div className="draft-banner">
+      <div className="draft-banner-head">
+        <p className="unsaved">发现本机未保存草稿 · {record ? `r${record.revision}` : '格式损坏或不受支持'}。不自动保存到服务器。</p>
+        {record?.updatedAt&&<span className="hint">暂存于 {new Date(record.updatedAt).toLocaleString('zh-CN')}</span>}
+      </div>
+      {summary&&<p className="draft-summary">{summary}</p>}
       {record&&record.revision!==revision&&<p className="error-text">当前已是r{revision}，版本不同；仅供复制，不会覆盖新版。</p>}
-      <details><summary>查看／复制草稿文本</summary><textarea aria-label="待恢复草稿文本" readOnly rows={8} value={record?JSON.stringify(record.data,null,2):pending}/></details>
-      {record&&record.revision===revision&&<button type="button" disabled={disabled} onClick={restore}>恢复到表单（仍未保存）</button>}
-      <button type="button" disabled={disabled} onClick={discard}>丢弃本机草稿</button>
+      <div className="draft-banner-actions">
+        {record&&record.revision===revision&&<button type="button" className="btn-accent" disabled={disabled} onClick={restore}>恢复到表单（仍未保存）</button>}
+        <button type="button" disabled={disabled} onClick={discard}>丢弃本机草稿</button>
+      </div>
+      <details className="draft-raw"><summary>查看／复制草稿文本</summary><textarea aria-label="待恢复草稿文本" readOnly rows={8} value={record?JSON.stringify(record.data,null,2):pending}/></details>
     </div>}
     {saved&&!error&&<p className="hint">已暂存到本机浏览器，尚非服务器保存；清理浏览器数据会丢失。</p>}
   </div>;

@@ -59,3 +59,18 @@ def pinned_post(client, url, *, headers, json, stage='manuscript', resolve=None,
     host_header = host if port == 443 else f'{host}:{port}'
     return client.post(pinned, follow_redirects=False, headers={**headers, 'Host': host_header}, json=json,
                        extensions={'sni_hostname': host})
+
+
+def pinned_get(client, url, *, headers=None, stage='research', resolve=None, env=None):
+    """GET url through a checked public address; certificate and Host header stay on the original host name."""
+    if isinstance(client, httpx.Client) and client.trust_env:
+        raise ProviderError('config', 'invalid_setting', 'Outbound requests must not go through an environment proxy')
+    parts = urlsplit(url)
+    if parts.scheme != 'https' or not parts.hostname: raise _unsafe(stage)
+    host, port = parts.hostname, parts.port or 443
+    address = checked_address(host, port, stage=stage, resolve=resolve, env=env)
+    netloc = ('[' + address + ']' if ':' in address else address) + ('' if port == 443 else f':{port}')
+    pinned = urlunsplit(('https', netloc, parts.path, parts.query, ''))
+    host_header = host if port == 443 else f'{host}:{port}'
+    return client.get(pinned, follow_redirects=False, headers={**(headers or {}), 'Host': host_header},
+                      extensions={'sni_hostname': host})

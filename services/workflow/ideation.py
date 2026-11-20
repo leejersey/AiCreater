@@ -12,6 +12,7 @@ import httpx
 from services.accounts.model_settings import DEEPSEEK_BASE_URL
 from services.workflow.destination import pinned_post
 from services.workflow.providers import ProviderError, _status
+from services.workflow.research import brief_lines, check_brief
 
 log = logging.getLogger(__name__)
 
@@ -154,9 +155,11 @@ def _chat(llm, client, system, user, check, kind, user_id=None):
 
 
 def generate_angles(llm, client, *, topic, notes='', audience='', duration_hint='', teaching_style='popular', count=4,
-                    exclude=(), custom='', merge=None, user_id=None):
+                    exclude=(), custom='', merge=None, research=None, user_id=None):
     """`count` distinct angles; or one card from the person's own direction (`custom`); or one card merging two (`merge`)."""
     lines = _context(topic, notes, audience, duration_hint, teaching_style)
+    if research is not None:
+        lines += brief_lines(check_brief(research))
     if merge:
         lines.append('把下面两个方向融合成一个新方向（取各自的长处，结构类型取更适合融合后的那个），只输出 1 个：')
         lines.append(json.dumps(merge, ensure_ascii=False))
@@ -172,8 +175,10 @@ def generate_angles(llm, client, *, topic, notes='', audience='', duration_hint=
 
 
 def generate_outline(llm, client, *, topic, angle, notes='', audience='', duration_hint='', teaching_style='popular',
-                     previous=None, feedback='', user_id=None):
+                     previous=None, feedback='', research=None, user_id=None):
     lines = _context(topic, notes, audience, duration_hint, teaching_style)
+    if research is not None:
+        lines += brief_lines(check_brief(research))
     lines.append('选定的方向：' + json.dumps(angle, ensure_ascii=False))
     if previous is not None:
         lines.append('上一版大纲：' + json.dumps(previous, ensure_ascii=False))

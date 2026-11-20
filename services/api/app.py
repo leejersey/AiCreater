@@ -23,6 +23,8 @@ from services.projects.storage import ObjectStore
 from services.accounts.model_settings import resolve_llm
 from services.workflow.manuscript import generate_manuscript
 from services.workflow import ideation
+from services.workflow import research as hotspot_research
+from services.workflow import trends as hotspot_trends
 from services.workflow.providers import ProviderError
 from services.projects.store import ROOT
 
@@ -39,6 +41,7 @@ class GenerateManuscript(Body):
     manuscript_format: Literal['plain', 'markdown'] = 'plain'
     teaching_style: Literal['popular', 'technical'] = 'popular'
     plan: dict | None = None  # {angle, outline} from ideation; checked by services.workflow.ideation
+    research: dict | None = None  # validated ResearchBrief from hotspot deconstruction
 
 
 class IdeaContext(Body):
@@ -47,6 +50,24 @@ class IdeaContext(Body):
     audience: str = Field(default='', max_length=80)
     duration_hint: str = Field(default='', max_length=40)
     teaching_style: Literal['popular', 'technical'] = 'popular'
+    research: dict | None = None
+
+
+class ResearchSearch(Body):
+    query: str = Field(min_length=1, max_length=120)
+    platforms: list[str] = Field(default_factory=lambda: ['all'], max_length=9)
+    time_range: Literal['day', 'week', 'month'] = 'week'
+    max_results: int = Field(default=8, ge=1, le=12)
+
+
+class ResearchExtract(Body):
+    url: str = Field(min_length=8, max_length=500)
+
+
+class ResearchAnalyze(Body):
+    topic: str = Field(default='', max_length=80)
+    sources: list[dict] = Field(min_length=1, max_length=5)
+    viral_style: Literal['balanced', 'short_video', 'deep_article', 'myth_bust'] = 'balanced'
 
 
 class IdeaAngles(IdeaContext):
@@ -163,6 +184,60 @@ def create_app(store=None, *, authentication=True):
         with request.app.state.store.connection() as conn: conn.execute('SELECT 1')
         return {'status': 'ready'}
 
+    @app.get('/api/research/status')
+    def research_status_route():
+        return hotspot_research.research_status()
+
+    @app.get('/api/research/trends')
+    def research_trends_route(platform: str = 'all', limit: int = 12):
+        try:
+            with httpx.Client(timeout=20, trust_env=False) as client:
+                return hotspot_trends.fetch_trends(platform, client=client, limit=limit)
+        except ProviderError as exc:
+            return JSONResponse({'code': exc.code, 'message': str(exc)},
+                                status_code=_provider_error_status(exc.code))
+
+    @app.post('/api/research/search')
+    def research_search_route(body: ResearchSearch):
+        try:
+            with httpx.Client(timeout=30, trust_env=False) as client:
+                return hotspot_research.search_hot_sources(
+                    body.query, platforms=body.platforms, time_range=body.time_range,
+                    max_results=body.max_results, client=client)
+        except ValueError as problem:
+            return JSONResponse({'code': 'validation', 'message': str(problem)}, status_code=422)
+        except ProviderError as exc:
+            return JSONResponse({'code': exc.code, 'message': str(exc)},
+                                status_code=_provider_error_status(exc.code))
+
+    @app.post('/api/research/extract')
+    def research_extract_route(body: ResearchExtract):
+        try:
+            with httpx.Client(timeout=30, trust_env=False) as client:
+                item = hotspot_research.extract_url_content(body.url, client=client)
+                return {'item': item}
+        except ValueError as problem:
+            return JSONResponse({'code': 'validation', 'message': str(problem)}, status_code=422)
+        except ProviderError as exc:
+            return JSONResponse({'code': exc.code, 'message': str(exc)},
+                                status_code=_provider_error_status(exc.code))
+
+    @app.post('/api/research/analyze')
+    def research_analyze_route(body: ResearchAnalyze, request: Request):
+        user_id = getattr(request.state, 'user', {}).get('id')
+        try:
+            llm = resolve_llm(request.app.state.store, user_id)
+            with httpx.Client(timeout=120, trust_env=False) as client:
+                brief = hotspot_research.analyze_viral_brief(
+                    llm, client, topic=body.topic.strip(), sources=body.sources,
+                    viral_style=body.viral_style, user_id=user_id)
+            return {'brief': brief}
+        except ValueError as problem:
+            return JSONResponse({'code': 'validation', 'message': str(problem)}, status_code=422)
+        except ProviderError as exc:
+            return JSONResponse({'code': exc.code, 'message': str(exc)},
+                                status_code=_provider_error_status(exc.code))
+
     @app.post('/api/manuscripts/generate')
     def manuscript_generate(body: GenerateManuscript, request: Request):
         try:
@@ -172,7 +247,8 @@ def create_app(store=None, *, authentication=True):
                 text = generate_manuscript(body.title, llm, client, audience=body.audience,
                     duration_hint=body.duration_hint, outline=body.outline,
                     user_id=getattr(request.state, 'user', {}).get('id'),
-                    teaching_style=body.teaching_style, manuscript_format=body.manuscript_format, plan=body.plan)
+                    teaching_style=body.teaching_style, manuscript_format=body.manuscript_format,
+                    plan=body.plan, research=body.research)
         except ProviderError as exc:
             return JSONResponse({'code': exc.code, 'message': str(exc)},
                                 status_code=_provider_error_status(exc.code))
@@ -184,6 +260,7 @@ def create_app(store=None, *, authentication=True):
         try:
             merge = [ideation.check_angle(a) for a in body.merge] if body.merge else None
             exclude = [ideation._text(t, 40, 'exclude') for t in body.exclude]
+            research = hotspot_research.check_brief(body.research) if body.research is not None else None
         except ValueError as problem:
             return JSONResponse({'code': 'validation', 'message': str(problem)}, status_code=422)
         if body.custom.strip() and merge:
@@ -193,7 +270,7 @@ def create_app(store=None, *, authentication=True):
             with httpx.Client(timeout=120, trust_env=False) as client:
                 angles = ideation.generate_angles(llm, client, topic=body.topic.strip(), notes=body.notes.strip(),
                     audience=body.audience.strip(), duration_hint=body.duration_hint.strip(), teaching_style=body.teaching_style,
-                    count=body.count, exclude=exclude, custom=body.custom.strip(), merge=merge, user_id=user_id)
+                    count=body.count, exclude=exclude, custom=body.custom.strip(), merge=merge, research=research, user_id=user_id)
         except ProviderError as exc:
             return JSONResponse({'code': exc.code, 'message': str(exc)}, status_code=_provider_error_status(exc.code))
         return {'angles': angles}
@@ -204,6 +281,7 @@ def create_app(store=None, *, authentication=True):
         try:
             angle = ideation.check_angle(body.angle)
             previous = ideation.check_outline(body.previous) if body.previous is not None else None
+            research = hotspot_research.check_brief(body.research) if body.research is not None else None
         except ValueError as problem:
             return JSONResponse({'code': 'validation', 'message': str(problem)}, status_code=422)
         if (previous is None) != (not body.feedback.strip()):
@@ -213,7 +291,7 @@ def create_app(store=None, *, authentication=True):
             with httpx.Client(timeout=120, trust_env=False) as client:
                 outline = ideation.generate_outline(llm, client, topic=body.topic.strip(), angle=angle, notes=body.notes.strip(),
                     audience=body.audience.strip(), duration_hint=body.duration_hint.strip(), teaching_style=body.teaching_style,
-                    previous=previous, feedback=body.feedback.strip(), user_id=user_id)
+                    previous=previous, feedback=body.feedback.strip(), research=research, user_id=user_id)
         except ProviderError as exc:
             return JSONResponse({'code': exc.code, 'message': str(exc)}, status_code=_provider_error_status(exc.code))
         return {'outline': outline}

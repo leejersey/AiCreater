@@ -4,12 +4,14 @@ import type {Project} from '../lib/editor';
 import {themeName,type ThemeSummary} from '../lib/themes';
 import {ThemePicker} from './ThemePicker';
 import {useConfirm} from './ConfirmContext';
+import {useToast} from './ToastContext';
 
 /** One theme per course, optionally with its own accent color. Changing it is free: accepted chapters stay accepted, and
  * the next export renders in it. */
 export function ThemeSettings({project,themes,disabled,act,onSave}:{project:Project;themes:ThemeSummary[];disabled:boolean;
  act:(fn:()=>Promise<unknown>)=>Promise<void>;onSave:(themeId:string,accent:string|null)=>Promise<void>}){
  const confirmDialog=useConfirm();
+ const toast=useToast();
  const current=project.theme_id??themes.find(t=>t.default)?.id??'';
  const currentAccent=project.theme_accent??null;
  const [open,setOpen]=useState(false),[choice,setChoice]=useState(current),[accent,setAccent]=useState<string|null>(currentAccent);
@@ -33,6 +35,7 @@ export function ThemeSettings({project,themes,disabled,act,onSave}:{project:Proj
       confirmText:'确认更换',variant:'info'});
      if(!ok)return;
      await onSave(choice,accent);setOpen(false);
+     toast(`已切换为「${themeName(themes,choice)}」主题`,{variant:'success'});
     })}>保存主题</button>
     <button type="button" disabled={disabled} onClick={()=>setOpen(false)}>取消</button>
    </div>

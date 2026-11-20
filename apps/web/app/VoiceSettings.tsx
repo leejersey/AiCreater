@@ -2,12 +2,14 @@
 import type {Project} from '../lib/editor';
 import {DraftNotice,useLocalDraft} from './LocalDraft';
 import {useConfirm} from './ConfirmContext';
+import {useToast} from './ToastContext';
 
 export function VoiceSettings({project,dirty,busy,formEditing,onDirty,onSave,act}:{
   project:Project;dirty:boolean;busy:boolean;formEditing:boolean;onDirty:(value:boolean)=>void;
   onSave:(speaker:string)=>Promise<void>;act:(fn:()=>Promise<unknown>)=>Promise<void>;
 }) {
   const confirmDialog = useConfirm();
+  const toast = useToast();
   const draft=useLocalDraft({kind:'voice',projectId:project.id,sceneId:'',label:project.title+' · 项目音色'},
     project.revision,{speaker:project.voice?.speaker??''},()=>onDirty(true));
   const disabled=busy||(dirty&&!formEditing)||!project.voice;
@@ -27,6 +29,7 @@ export function VoiceSettings({project,dirty,busy,formEditing,onDirty,onSave,act
         });
         if(!ok)return;
         await onSave(draft.value.speaker);draft.clear();
+        toast('已保存项目音色设置',{variant:'success'});
       });}}>
         <fieldset disabled={disabled||draft.blocked} style={{border:0,padding:0,margin:0,minWidth:0}}>
           <label>项目音色ID<input required maxLength={200} pattern={'[A-Za-z0-9_\\-]{1,200}'} value={draft.value.speaker}

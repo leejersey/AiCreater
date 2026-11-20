@@ -6,6 +6,7 @@ import {clearProjectDrafts} from '../../lib/drafts';
 import {DraftShelf} from '../LocalDraft';
 import {useRouter} from 'next/navigation';
 import {useConfirm} from '../ConfirmContext';
+import {useToast} from '../ToastContext';
 import {visualFileUrl} from '../../lib/visual-workbench';
 import {parseThemes,type ThemeSummary} from '../../lib/themes';
 import {Plus, Search, RefreshCw, BookOpen, Clock, AlertCircle, Mic, CheckCircle, Spinner, ChevronRight, Trash2} from '../Icons';
@@ -21,7 +22,7 @@ export default function Courses(){
   useEffect(()=>{let live=true;request<unknown>('/api/themes').then(v=>{if(live)setThemes(parseThemes(v));}).catch(()=>{});return()=>{live=false;};},[]);
   const [projects,setProjects]=useState<ProjectSummary[]>([]),[query,setQuery]=useState(''),[loading,setLoading]=useState(true),[error,setError]=useState(''),[deletingId,setDeletingId]=useState<string|null>(null);
   const [statusFilter,setStatusFilter]=useState<'all'|'running'|'needs_voice'|'to_confirm'|'done'>('all');
-  const router=useRouter();const confirmDialog=useConfirm();
+  const router=useRouter();const confirmDialog=useConfirm();const toast=useToast();
   async function load(){setLoading(true);setError('');try{setProjects(parseProjectSummaries(await request('/api/projects')));}catch(e){setError(e instanceof Error?e.message:'读取课程失败');}finally{setLoading(false);}}
   useEffect(()=>{void load();},[]);
   async function deleteProject(p: ProjectSummary){
@@ -40,6 +41,7 @@ export default function Courses(){
       await request('/api/projects/'+p.id+'/delete',{expected_revision:p.revision,confirmed:true});
       if(typeof window!=='undefined')clearProjectDrafts(window.localStorage,p.id);
       setProjects(prev=>prev.filter(x=>x.id!==p.id));
+      toast(`已删除「${p.title}」`,{variant:'success'});
     }catch(e){setError(e instanceof Error?e.message:'删除失败');}
     finally{setDeletingId(null);}
   }
@@ -58,14 +60,11 @@ export default function Courses(){
   return <main className="courses-page">
     <div className="studio-topbar">
       <div className="studio-title-group">
-        <Link href="/" title="返回首页" style={{textDecoration:'none',display:'inline-flex',alignItems:'center'}}>
-          <b className="brand">AI CREATER</b>
-        </Link>
-        <h1 style={{fontSize:'20px',margin:0}}>我的视频</h1>
+        <h1 style={{fontSize:'22px',margin:0}}>我的视频</h1>
         <span className="studio-badge">共 {projects.length} 个作品</span>
       </div>
       <div>
-        <Link className="primary-link" style={{background:'var(--accent)',color:'#0b0f17',fontWeight:600}} href="/courses/new">
+        <Link className="primary-link btn-accent" href="/courses/new">
           <Plus size={16} /> 新建视频
         </Link>
       </div>
@@ -109,17 +108,26 @@ export default function Courses(){
       </div>
     </div>
 
-    {loading&&<p role="status"><Spinner size={16} className="icon-spin" /> 正在读取课程…</p>}
+    {loading&&!projects.length&&<div className="course-grid" aria-label="正在读取课程" role="status">
+      {[0,1,2].map(i=><article key={i} className="course-skeleton" aria-hidden="true">
+        <div className="skeleton-box skeleton-thumb"/>
+        <div className="skeleton-box skeleton-title"/>
+        <div className="skeleton-box skeleton-meta"/>
+        <div className="skeleton-box skeleton-foot"/>
+      </article>)}
+    </div>}
     {error&&<p role="alert"><AlertCircle size={16} /> {error} 可点击刷新重试，已有列表保留。</p>}
     {!loading&&!error&&!projects.length&&<section className="empty"><h2><BookOpen size={24} /> 还没有视频</h2><p>点击“新建视频”，生成或填写讲稿；进入工作台后配音，再由 Agent 生成每章画面。</p><Link href="/courses/new"><Plus size={16} />创建第一堂课</Link></section>}
     {!loading&&projects.length>0&&!visible.length&&<p className="muted" style={{textAlign:'center',padding:'32px'}}>没有符合当前条件的视频项目。</p>}
-    <div className="course-grid">{visible.map(p=>{const job=activeJobLabel(p);const theme=themes.find(t=>t.id===p.theme_id);return <article key={p.id} style={{display:'flex',flexDirection:'column'}}>
-      <div className="course-thumb" style={theme?{background:theme.preview.background}:undefined}>
-       {p.thumbnail?<img alt="" loading="lazy" src={visualFileUrl(p.id,p.thumbnail.job_id,p.thumbnail.file)}/>
-        :theme&&<span aria-hidden="true"><i style={{background:theme.preview.surface}}/><i style={{background:theme.preview.accent}}/></span>}
-       {theme&&<small>{theme.name_zh}</small>}
-      </div>
-      <h2>{p.title}</h2>
+    <div className="course-grid">{visible.map(p=>{const job=activeJobLabel(p);const theme=themes.find(t=>t.id===p.theme_id);return <article key={p.id} className="course-card">
+      <Link href={'/courses/'+p.id} className="course-card-main">
+        <div className="course-thumb" style={theme?{background:theme.preview.background}:undefined}>
+         {p.thumbnail?<img alt="" loading="lazy" src={visualFileUrl(p.id,p.thumbnail.job_id,p.thumbnail.file)}/>
+          :theme&&<span aria-hidden="true"><i style={{background:theme.preview.surface}}/><i style={{background:theme.preview.accent}}/></span>}
+         {theme&&<small>{theme.name_zh}</small>}
+        </div>
+        <h2>{p.title}</h2>
+      </Link>
       <div className="scene-meta">
         {job?<span className="status-pill running"><Spinner size={12} className="icon-spin" />{job}</span>:
          p.scene_count===0?<span className="status-pill"><AlertCircle size={12} />待整理章节</span>:
@@ -127,14 +135,13 @@ export default function Courses(){
          p.needs_timing?<span className="status-pill needs_timing"><Clock size={12} />待对齐</span>:
          projectStage(p)==='done'?<span className="status-pill ready"><CheckCircle size={12} />已全部确认</span>:
          <span className="status-pill">已确认 {p.confirmed_count??0}/{p.scene_count}</span>}
-        <span className="scene-type-badge"><BookOpen size={12} /> {p.scene_count??'—'}章</span>
-        <span className="scene-type-badge">r{p.revision??'—'}</span>
+        <span className="scene-type-badge" title={p.revision!=null?`版本 r${p.revision}`:undefined}><BookOpen size={12} /> {p.scene_count??'—'}章</span>
       </div>
       {p.active_job_state==='queued'&&<p className="hint">任务在排队。未启动 Worker 时会一直等待；可进课程查看进度或取消。</p>}
       <p className="hint" style={{marginTop:'8px'}}><Clock size={12} /> 最近修改：{p.updated_at?new Date(p.updated_at).toLocaleString('zh-CN'):'旧项目时间未知'}</p>
-      <div style={{display:'flex',gap:'12px',alignItems:'center',flexWrap:'wrap',marginTop:'auto',paddingTop:'12px'}}>
+      <div className="course-card-actions">
         <Link href={'/courses/'+p.id} className="primary-link" style={{fontSize:'12.5px',padding:'6px 12px'}}>继续制作 <ChevronRight size={14} /></Link>
-        <button type="button" style={{fontSize:'12px',padding:'6px 10px'}} disabled={loading||deletingId===p.id||p.revision==null} onClick={()=>void deleteProject(p)} aria-label={'删除 '+p.title}>
+        <button type="button" className="course-delete-btn" disabled={loading||deletingId===p.id||p.revision==null} onClick={()=>void deleteProject(p)} aria-label={'删除 '+p.title}>
           {deletingId===p.id?<Spinner size={13} className="icon-spin"/>:<Trash2 size={13}/>} 删除
         </button>
       </div></article>;})}</div>

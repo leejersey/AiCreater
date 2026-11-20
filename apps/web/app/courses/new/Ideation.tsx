@@ -5,9 +5,10 @@ import {useEffect,useState} from 'react';
 import {request} from '../../../lib/editor';
 import {addBatch,addExtra,addSection,angleTags,choose,moveSection,outlineProblems,outlineWarnings,removeSection,
   sameAngle,setOutline,shownTitles,totalSeconds,undo,updateSection,type Angle,type IdeationDraft,type Outline} from '../../../lib/ideation';
+import type {ResearchBrief} from '../../../lib/research';
 import {Sparkles,Spinner,ChevronUp,ChevronDown,X,Plus,RefreshCw,Check} from '../../Icons';
 
-export type IdeaContext = {topic:string;notes:string;audience:string;duration_hint:string;teaching_style:'popular'|'technical'};
+export type IdeaContext = {topic:string;notes:string;audience:string;duration_hint:string;teaching_style:'popular'|'technical';research?:ResearchBrief|null};
 type Busy = ''|'angles'|'custom'|'merge'|'outline'|'refine';
 
 export function Ideation({state,context,title,disabled,generating,onChange,onTitle,onGenerate}:{
@@ -20,7 +21,7 @@ export function Ideation({state,context,title,disabled,generating,onChange,onTit
   const locked=disabled||!!busy||generating;
   const latest=state.batches[state.batches.length-1]??[],older=state.batches.slice(0,-1);
   const body=()=>({topic:context.topic.trim(),notes:context.notes.trim(),audience:context.audience.trim(),
-    duration_hint:context.duration_hint.trim(),teaching_style:context.teaching_style});
+    duration_hint:context.duration_hint.trim(),teaching_style:context.teaching_style,...(context.research?{research:context.research}:{})});
 
   async function call<T>(kind:Busy,run:()=>Promise<T>):Promise<T|undefined>{
     setBusy(kind);setError('');
@@ -59,9 +60,8 @@ export function Ideation({state,context,title,disabled,generating,onChange,onTit
   const toggle=(a:Angle)=>setPicked(p=>p.some(b=>sameAngle(a,b))?p.filter(b=>!sameAngle(a,b)):p.length>=2?[p[1],a]:[...p,a]);
   const card=(a:Angle,key:string)=>{
     const chosen=sameAngle(a,state.chosen),checked=picked.some(b=>sameAngle(a,b));
-    return <div key={key} className={`idea-card${chosen?' chosen':''}`}>
+    return <div key={key} className={`idea-card${chosen?' chosen':''}${checked?' picked-merge':''}`}>
       <div className="idea-card-head">
-        <label className="idea-pick" title="勾选两个可以合并"><input type="checkbox" checked={checked} disabled={locked} onChange={()=>toggle(a)}/></label>
         <div style={{minWidth:0,flex:1}}>
           <b className="idea-title">{a.title}</b>
           <span className="idea-tags">{angleTags(a)}</span>
@@ -74,7 +74,12 @@ export function Ideation({state,context,title,disabled,generating,onChange,onTit
         <p className="idea-line"><span>章节</span>{a.chapters.join(' / ')}</p>
       </>}
       <div className="idea-card-foot">
-        <button type="button" className="link-button idea-toggle" onClick={()=>setOpen(o=>{const n=new Set(o);n.has(key)?n.delete(key):n.add(key);return n;})}>{open.has(key)?'收起 ▴':'展开 ▸'}</button>
+        <div className="idea-card-foot-left">
+          <button type="button" className="link-button idea-toggle" onClick={()=>setOpen(o=>{const n=new Set(o);n.has(key)?n.delete(key):n.add(key);return n;})}>{open.has(key)?'收起 ▴':'展开 ▸'}</button>
+          <button type="button" className={`idea-merge-chip${checked?' active':''}`} disabled={locked} aria-pressed={checked} title="选择两个方向可合并" onClick={()=>toggle(a)}>
+            {checked?'已选合并':'加入合并'}
+          </button>
+        </div>
         {chosen?<span className="studio-badge"><Check size={12}/> 已选</span>
           :<button type="button" className="idea-use" disabled={locked} onClick={()=>void pick(a)}>用这个方向</button>}
       </div>

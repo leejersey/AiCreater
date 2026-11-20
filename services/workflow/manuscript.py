@@ -10,6 +10,7 @@ from services.workflow.providers import ProviderError, _status
 
 from services.workflow.manuscript_document import format_document
 from services.workflow.ideation import check_angle, check_outline, plan_lines
+from services.workflow.research import brief_lines, check_brief
 
 log = logging.getLogger(__name__)
 
@@ -66,12 +67,14 @@ def _validate(title, audience, duration_hint, outline):
     return title
 
 
-def _user_message(title, audience, duration_hint, outline, teaching_style, plan=None, markdown=False):
+def _user_message(title, audience, duration_hint, outline, teaching_style, plan=None, markdown=False, research=None):
     lines = [f'主题：{title}']
     if audience:
         lines.append(f'受众：{audience}')
     if duration_hint:
         lines.append(f'时长参考：{duration_hint}')
+    if research:
+        lines += brief_lines(research)
     if outline:
         lines.append(f'必须覆盖的要点：{outline}')
         if teaching_style == 'technical':
@@ -90,12 +93,15 @@ def _user_message(title, audience, duration_hint, outline, teaching_style, plan=
 
 
 def generate_manuscript(title, llm, client, *, audience='', duration_hint='', outline='', user_id=None,
-                      teaching_style='popular', manuscript_format='plain', plan=None):
+                      teaching_style='popular', manuscript_format='plain', plan=None, research=None):
     """llm: services.accounts.model_settings.LLM (the account's model or the server's DeepSeek).
     plan: {angle, outline} chosen in ideation; the manuscript follows that outline chapter by chapter."""
     if plan is not None:
         try: plan = {'angle': check_angle(plan.get('angle')), 'outline': check_outline(plan.get('outline'))}
         except (ValueError, AttributeError) as problem: raise ProviderError('manuscript', 'input_limit', f'Invalid plan: {problem}') from None
+    if research is not None:
+        try: research = check_brief(research)
+        except (ValueError, AttributeError) as problem: raise ProviderError('manuscript', 'input_limit', f'Invalid research: {problem}') from None
     if manuscript_format not in ('plain', 'markdown'):
         raise ProviderError('manuscript', 'input_limit', 'Unsupported manuscript format')
     if teaching_style not in _TEACHING_STYLES:
@@ -105,7 +111,7 @@ def generate_manuscript(title, llm, client, *, audience='', duration_hint='', ou
     if not llm.api_key: raise ProviderError('config', 'missing_setting', '请在个人中心配置模型，或在服务端设置 DEEPSEEK_API_KEY')
     body = {'model': llm.model, 'messages': [
         {'role': 'system', 'content': system},
-        {'role': 'user', 'content': _user_message(title, audience, duration_hint, outline, teaching_style, plan, manuscript_format == 'markdown')}],
+        {'role': 'user', 'content': _user_message(title, audience, duration_hint, outline, teaching_style, plan, manuscript_format == 'markdown', research=research)}],
         'max_tokens': 8192}
     if manuscript_format == 'markdown':
         body['response_format'] = {'type': 'json_object'}
