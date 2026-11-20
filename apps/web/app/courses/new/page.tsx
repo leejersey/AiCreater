@@ -8,14 +8,18 @@ import {useLocalDraft,DraftNotice} from '../../LocalDraft';
 import {ArrowLeft,ChevronRight,Sparkles,Spinner,AlertCircle} from '../../Icons';
 import {useConfirm} from '../../ConfirmContext';
 import {useToast} from '../../ToastContext';
+import {useAccount} from '../../AccountSession';
 import {Modal} from '../../Modal';
 import {outlinePlaceholder, isTeachingStyle, type TeachingStyle} from '../../../lib/teaching-style';
 import {parseThemes,suggestTheme,type ThemeSummary} from '../../../lib/themes';
 import {ThemePicker} from '../../ThemePicker';
 import {Ideation} from './Ideation';
 import {ResearchModal} from './ResearchModal';
+import {StoryboardEditor} from './StoryboardEditor';
+import {ArticleConvertModal,CritiqueModal,PersonaModal,PublishKitModal} from './CreatorToolsModals';
 import {emptyIdeation,toOrigin,toPlan} from '../../../lib/ideation';
-import {viralStyleLabel} from '../../../lib/research';
+import {replaceFirstOpening,viralStyleLabel,type ManuscriptHook} from '../../../lib/research';
+import {auditManuscript,loadActivePersonaId,loadPersonas,parseMarkdownSections,saveActivePersonaId,savePersonas,type PersonaProfile} from '../../../lib/manuscript-tools';
 
 const initial = {title:'',source:'',topic:'',notes:'',audience:'',duration_hint:'',outline:'',teaching_style:'popular' as TeachingStyle,manuscript_format:'markdown' as 'markdown'|'plain'};
 
@@ -53,11 +57,29 @@ function formatDuration(sec:number){
 
 export default function NewCourse(){
   const draft=useLocalDraft({kind:'course',projectId:'',sceneId:'',label:'新建课程文稿'},0,initial);const router=useRouter();
-  const confirmDialog=useConfirm();const toast=useToast();
+  const confirmDialog=useConfirm();const toast=useToast();const userId=useAccount().user?.id;
   const [busy,setBusy]=useState(false),[generating,setGenerating]=useState(false),[error,setError]=useState('');
   const [focusPane,setFocusPane]=useState<'split'|'ideate'|'write'>('split');
   const [settingsOpen,setSettingsOpen]=useState(false);
   const [researchOpen,setResearchOpen]=useState(false);
+  const [hooksOpen,setHooksOpen]=useState(false);
+  const [hooksLoading,setHooksLoading]=useState(false);
+  const [hooksList,setHooksList]=useState<ManuscriptHook[]>([]);
+  const [polishing,setPolishing]=useState(false);
+  const [editorMode,setEditorMode]=useState<'source'|'cards'>('source');
+  const [rewritingId,setRewritingId]=useState<string|null>(null);
+  const [personas,setPersonas]=useState<PersonaProfile[]>([]);
+  const [activePersonaId,setActivePersonaId]=useState('');
+  const [personaOpen,setPersonaOpen]=useState(false);
+  const [critiqueOpen,setCritiqueOpen]=useState(false);
+  const [publishOpen,setPublishOpen]=useState(false);
+  const [articleOpen,setArticleOpen]=useState(false);
+  useEffect(()=>{
+    setPersonas(loadPersonas(userId));
+    setActivePersonaId(loadActivePersonaId(userId));
+  },[userId]);
+  const activePersona=personas.find(p=>p.id===activePersonaId)??null;
+  const personaPayload=activePersona?{name:activePersona.name,audience_call:activePersona.audience_call,tone:activePersona.tone,catchphrases:activePersona.catchphrases,banned_words:activePersona.banned_words,ending_cta:activePersona.ending_cta,sample:activePersona.sample}:undefined;
   const blocked=busy||generating||draft.blocked;
   const manuscriptFormat=draft.value.manuscript_format??'plain';
   const [themes,setThemes]=useState<ThemeSummary[]>([]);
@@ -89,7 +111,7 @@ export default function NewCourse(){
     setGenerating(true);setError('');
     try{
       const style=isTeachingStyle(draft.value.teaching_style)?draft.value.teaching_style:'popular';
-      const body:{title:string;audience?:string;duration_hint?:string;outline?:string;teaching_style:TeachingStyle;manuscript_format:'plain'|'markdown';plan?:unknown;research?:unknown}={title:courseTitle,teaching_style:style,manuscript_format:manuscriptFormat,...(plan?{plan}:{}),...(draft.value.research?{research:draft.value.research}:{})};
+      const body:{title:string;audience?:string;duration_hint?:string;outline?:string;teaching_style:TeachingStyle;manuscript_format:'plain'|'markdown';plan?:unknown;research?:unknown;persona?:unknown}={title:courseTitle,teaching_style:style,manuscript_format:manuscriptFormat,...(plan?{plan}:{}),...(draft.value.research?{research:draft.value.research}:{}),...(personaPayload?{persona:personaPayload}:{})};
       const audience=draft.value.audience?.trim();if(audience)body.audience=audience;
       const duration_hint=draft.value.duration_hint?.trim();if(duration_hint)body.duration_hint=duration_hint;
       const outline=draft.value.outline?.trim();if(outline&&!plan)body.outline=outline;
@@ -100,6 +122,68 @@ export default function NewCourse(){
     }catch(e){setError(e instanceof Error?e.message:'生成失败，讲稿已保留，可修改提示后重试。');}
     finally{setGenerating(false);}
   }
+
+  async function onGenerateHooks(){
+    if(!draft.value.source.trim()||hooksLoading||blocked)return;
+    setHooksOpen(true);setHooksLoading(true);setError('');
+    try{
+      const res=await request<{hooks:ManuscriptHook[]}>('/api/manuscripts/hooks',{
+        title:courseTitle,source_text:draft.value.source,
+        ...(draft.value.research?{research:draft.value.research}:{}),
+        ...(personaPayload?{persona:personaPayload}:{}),
+      });
+      setHooksList(Array.isArray(res.hooks)?res.hooks:[]);
+    }catch(e){
+      setError(e instanceof Error?e.message:'生成开场钩子失败，请重试。');
+      setHooksOpen(false);
+    }finally{setHooksLoading(false);}
+  }
+
+  function applyHook(hook:ManuscriptHook){
+    const prev=draft.value.source;
+    const next=replaceFirstOpening(prev,hook.opening,manuscriptFormat);
+    draft.change({source:next});
+    setHooksOpen(false);
+    toast(`已替换为「${hook.label}」开场钩子`,{variant:'success',duration:6000,action:{label:'撤销',onClick:()=>draft.change({source:prev})}});
+  }
+
+  async function onPolishDeAi(instruction=''){
+    if(!draft.value.source.trim()||polishing||blocked)return false;
+    const prev=draft.value.source;
+    setPolishing(true);setError('');
+    try{
+      const res=await request<{text:string}>('/api/manuscripts/polish',{
+        source_text:prev,manuscript_format:manuscriptFormat,
+        ...(personaPayload?{persona:personaPayload}:{}),
+        ...(instruction.trim()?{instruction:instruction.trim()}:{}),
+      });
+      draft.change({source:res.text});
+      toast(instruction.trim()?'已按审稿建议完成全局改写':'已完成口语化去 AI 味润色',{variant:'success',duration:6000,action:{label:'撤销',onClick:()=>draft.change({source:prev})}});
+      return true;
+    }catch(e){setError(e instanceof Error?e.message:'润色失败，原文已保留。');return false;}
+    finally{setPolishing(false);}
+  }
+
+  async function onRewriteSection(sectionId:string,instruction:string){
+    if(!draft.value.source.trim()||rewritingId||blocked)return false;
+    const prev=draft.value.source;
+    setRewritingId(sectionId);setError('');
+    try{
+      const res=await request<{text:string}>('/api/manuscripts/rewrite-section',{
+        title:courseTitle,source_text:prev,section_id:sectionId,instruction,
+        ...(draft.value.research?{research:draft.value.research}:{}),
+        ...(personaPayload?{persona:personaPayload}:{}),
+      });
+      draft.change({source:res.text});
+      toast(`已重写段落 [${sectionId}]`,{variant:'success',duration:6000,action:{label:'撤销重写',onClick:()=>draft.change({source:prev})}});
+      return true;
+    }catch(e){setError(e instanceof Error?e.message:'局部重写失败，原文已保留。');return false;}
+    finally{setRewritingId(null);}
+  }
+
+  const parsedSections=manuscriptFormat==='markdown'?parseMarkdownSections(draft.value.source):null;
+  const audit=auditManuscript(draft.value.source,manuscriptFormat);
+  const auditWarnCount=audit.issues.filter(i=>i.severity==='warn').length;
   const stats=inspectManuscript(draft.value.source,manuscriptFormat);
   const studioClass=`new-course-studio${ideation.batches.length?' ideating':''}${focusPane!=='split'?` focus-${focusPane}`:''}`;
   return <main className="new-course-container">
@@ -185,8 +269,32 @@ export default function NewCourse(){
               <ChevronRight size={15}/>
             </button>
 
+            <button
+              type="button"
+              className={`more-settings-trigger research-trigger${activePersona?' active':''}`}
+              disabled={blocked}
+              onClick={()=>setPersonaOpen(true)}
+            >
+              <span>
+                {activePersona
+                  ? `博主口吻：${activePersona.name}${activePersona.audience_call?` · 称呼「${activePersona.audience_call}」`:''}`
+                  : '🎭 博主口吻 / 人设档案 · 固定个人风格（可选）'}
+              </span>
+              <ChevronRight size={15}/>
+            </button>
+
+            <button
+              type="button"
+              className="more-settings-trigger"
+              disabled={blocked}
+              onClick={()=>setArticleOpen(true)}
+            >
+              <span>📄 长文 / 笔记转视频脚本 · 粘贴文章、链接或导入 .md/.txt</span>
+              <ChevronRight size={15}/>
+            </button>
+
             <Ideation state={ideation} title={courseTitle} disabled={blocked} generating={generating}
-              context={{topic,notes:draft.value.notes??'',audience:draft.value.audience??'',duration_hint:draft.value.duration_hint??'',teaching_style:style,research:draft.value.research}}
+              context={{topic,notes:draft.value.notes??'',audience:draft.value.audience??'',duration_hint:draft.value.duration_hint??'',teaching_style:style,research:draft.value.research,persona:activePersona}}
               onChange={next=>draft.change({ideation:next})} onTitle={title=>draft.change({title})} onGenerate={()=>void onGenerate(true)}/>
 
             {!ideation.chosen&&<button type="button" className="link-skip" disabled={!courseTitle||blocked} onClick={()=>void onGenerate(false)}>
@@ -215,15 +323,44 @@ export default function NewCourse(){
               <input maxLength={80} value={draft.value.title} onChange={e=>draft.change({title:e.target.value})} placeholder={topic.trim()?`默认用选题「${topic.trim()}」；选定方向后自动填入`:'选定方向后自动填入，也可以自己写'}/>
             </label>
 
-            <textarea
-              required
-              maxLength={manuscriptFormat==='markdown'?24000:4000}
-              rows={18}
-              style={{lineHeight:1.7,fontSize:'14px',resize:'vertical',minHeight:'360px'}}
-              value={draft.value.source}
-              onChange={e=>draft.change({source:e.target.value})}
-              placeholder={manuscriptFormat==='markdown'?'## [s1] 段落标题\n\n### 口播\n这里填写纯文本口播。\n\n### 画面素材\n补充命令、代码或流程标签，无额外素材填“无”。\n\n### 画面意图\n引用口播短句安排素材出现；不写秒数。':'编写纯文本口播，或在左侧构思后生成。'}
-            />
+            {draft.value.source.trim()&&<div className="manuscript-tools">
+              {manuscriptFormat==='markdown'&&parsedSections&&parsedSections.length>0&&<div className="studio-view-switch" role="group" aria-label="文稿编辑视图">
+                <button type="button" className={editorMode==='cards'?'active':undefined} onClick={()=>setEditorMode('cards')}>分镜卡片 ({parsedSections.length})</button>
+                <button type="button" className={editorMode==='source'?'active':undefined} onClick={()=>setEditorMode('source')}>Markdown 源码</button>
+              </div>}
+              <button type="button" className="research-mini-btn" disabled={blocked||hooksLoading||polishing} onClick={()=>void onGenerateHooks()}>
+                {hooksLoading?<><Spinner size={12} className="icon-spin"/> 生成钩子中…</>:'🪝 开场钩子 3 选 1'}
+              </button>
+              <button type="button" className="research-mini-btn" disabled={blocked||polishing||hooksLoading} onClick={()=>void onPolishDeAi()}>
+                {polishing?<><Spinner size={12} className="icon-spin"/> 去 AI 味润色中…</>:'✨ 一键去 AI 味'}
+              </button>
+              <button type="button" className={`research-mini-btn${auditWarnCount>0?' audit-btn-warn':''}`} disabled={blocked} onClick={()=>setCritiqueOpen(true)}>
+                🩺 文稿体检 ({audit.score}分{auditWarnCount>0?` · ${auditWarnCount}预警`:''})
+              </button>
+              <button type="button" className="research-mini-btn" disabled={blocked} onClick={()=>setPublishOpen(true)}>
+                📦 发布套件
+              </button>
+            </div>}
+
+            {editorMode==='cards'&&manuscriptFormat==='markdown'&&parsedSections&&parsedSections.length>0?(
+              <StoryboardEditor
+                sections={parsedSections}
+                disabled={blocked}
+                rewritingId={rewritingId}
+                onChangeSource={next=>draft.change({source:next})}
+                onRewriteSection={(id,ins)=>void onRewriteSection(id,ins)}
+              />
+            ):(
+              <textarea
+                required
+                maxLength={manuscriptFormat==='markdown'?24000:4000}
+                rows={18}
+                style={{lineHeight:1.7,fontSize:'14px',resize:'vertical',minHeight:'360px'}}
+                value={draft.value.source}
+                onChange={e=>draft.change({source:e.target.value})}
+                placeholder={manuscriptFormat==='markdown'?'## [s1] 段落标题\n\n### 口播\n这里填写纯文本口播。\n\n### 画面素材\n补充命令、代码或流程标签，无额外素材填“无”。\n\n### 画面意图\n引用口播短句安排素材出现；不写秒数。':'编写纯文本口播，或在左侧构思后生成。'}
+              />
+            )}
 
             <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',flexWrap:'wrap',gap:'10px',marginTop:'4px'}}>
               <p className="hint" style={{margin:0}}>
@@ -279,7 +416,83 @@ export default function NewCourse(){
       disabled={blocked}
       onClose={()=>setResearchOpen(false)}
       onApplyBrief={brief=>draft.change({research:brief})}
+      onApplyPitch={(pitch,brief)=>draft.change({
+        topic:pitch.title,
+        title:pitch.title,
+        duration_hint:pitch.duration_hint,
+        teaching_style:pitch.teaching_style,
+        notes:`【${pitch.platform_name}】封面大字：${pitch.cover_text}；开场可参考：「${pitch.hook}」；${pitch.notes}`.slice(0,300),
+        research:brief,
+      })}
       onUseTopic={nextTopic=>draft.change({topic:nextTopic})}
+    />
+
+    <Modal
+      open={hooksOpen}
+      onClose={()=>setHooksOpen(false)}
+      title="开场钩子 3 选 1（替换第 1 段口播）"
+      maxWidth="760px"
+      footer={<button type="button" className="btn-modal-cancel" onClick={()=>setHooksOpen(false)}>关闭</button>}
+    >
+      {hooksLoading?<p className="hint"><Spinner size={15} className="icon-spin"/> 正在为当前文稿定制 3 种风格的黄金前 10 秒开场…</p>
+        :<div className="hooks-grid">
+          {hooksList.map(h=><div key={h.type} className="hook-card">
+            <div className="research-item-meta">
+              <span className="research-plat-tag">{h.label}</span>
+              <span className="research-cover-badge">封面大字：{h.cover_line}</span>
+            </div>
+            <p className="hook-opening">「{h.opening}」</p>
+            <p className="hint" style={{margin:0}}>留存原理：{h.why}</p>
+            <div>
+              <button type="button" className="btn-accent research-pitch-use" onClick={()=>applyHook(h)}>替换第 1 段开场</button>
+            </div>
+          </div>)}
+        </div>}
+    </Modal>
+
+    <PersonaModal
+      open={personaOpen}
+      personas={personas}
+      activeId={activePersonaId}
+      onClose={()=>setPersonaOpen(false)}
+      onSelect={id=>{setActivePersonaId(id);saveActivePersonaId(id,userId);}}
+      onSaveList={next=>{setPersonas(next);savePersonas(next,userId);}}
+    />
+
+    <CritiqueModal
+      open={critiqueOpen}
+      title={courseTitle}
+      source={draft.value.source}
+      format={manuscriptFormat}
+      sections={parsedSections}
+      audit={audit}
+      disabled={blocked||polishing||!!rewritingId}
+      onRewriteSection={onRewriteSection}
+      onGlobalFix={ins=>onPolishDeAi(ins)}
+      onClose={()=>setCritiqueOpen(false)}
+    />
+
+    <PublishKitModal
+      open={publishOpen}
+      title={courseTitle}
+      source={draft.value.source}
+      onClose={()=>setPublishOpen(false)}
+    />
+
+    <ArticleConvertModal
+      open={articleOpen}
+      teachingStyle={style}
+      manuscriptFormat={manuscriptFormat}
+      persona={personaPayload}
+      disabled={blocked}
+      onClose={()=>setArticleOpen(false)}
+      onConverted={({title:nextTitle,text})=>{
+        const prevSource=draft.value.source;
+        const prevTitle=draft.value.title;
+        draft.change({source:text,...(nextTitle?{title:nextTitle,topic:draft.value.topic||nextTitle}:{})});
+        if(focusPane==='ideate')setFocusPane('split');
+        toast('长文已转换为视频分镜脚本',{variant:'success',duration:6000,action:prevSource?{label:'撤销',onClick:()=>draft.change({source:prevSource,title:prevTitle})}:undefined});
+      }}
     />
   </main>;
 }

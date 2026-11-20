@@ -13,6 +13,7 @@ import {useToast} from './ToastContext';
 import {Modal} from './Modal';
 import {VoiceSettings} from './VoiceSettings';
 import {ThemeSettings} from './ThemeSettings';
+import {PublishKitModal} from './courses/new/CreatorToolsModals';
 import {parseThemes,themeName,type ThemeSummary} from '../lib/themes';
 import {ArrowLeft,RefreshCw,Check,Film,Mic,X} from './Icons';
 
@@ -276,7 +277,7 @@ export default function VisualWorkbench({routeProjectId}:{routeProjectId:string}
   const [jobs,setJobs]=useState<VisualJob[]>([]);
   const [voiceJobs,setVoiceJobs]=useState<Job[]>([]);
   const [themes,setThemes]=useState<ThemeSummary[]>([]);
-  const [settingsOpen,setSettingsOpen]=useState(false),[reviewing,setReviewing]=useState(false);
+  const [settingsOpen,setSettingsOpen]=useState(false),[reviewing,setReviewing]=useState(false),[publishKitOpen,setPublishKitOpen]=useState(false);
   const [undo,setUndo]=useState<{sceneId:string;at:number;label:string;until:number}|null>(null);
   useEffect(()=>{if(!undo)return;const timer=setTimeout(()=>setUndo(null),Math.max(0,undo.until-Date.now()));return()=>clearTimeout(timer);},[undo]);
   const [llmSettings,setLlm]=useState<AgentModel|undefined>();
@@ -413,7 +414,7 @@ export default function VisualWorkbench({routeProjectId}:{routeProjectId:string}
     setProject(restored);setSelected(sceneId);});
   return <main className="visual-workbench">
     <header className="vw-header"><div><Link href="/courses" className="studio-back-link"><ArrowLeft size={14}/> 我的视频</Link><h1>{project?.title??'视觉工作台'}</h1><span>{project?`${project.scenes.length} 章 · 已确认 ${confirmedCount}/${project.scenes.length}`:''}</span>{costs&&<small className="vw-costs" title={costs.prices.deepseek_configured?'DeepSeek 按 .env 配置的价格换算':'在 .env 配置 DEEPSEEK_PRICE_* 可把 DeepSeek token 换算成元'}>{costSummary(costs)}</small>}</div>
-      <nav>{reviewItems.length>0&&<button className="vw-next-button" onClick={()=>setReviewing(true)}>连续审片（{reviewItems.length}）</button>}{project&&<button aria-expanded={settingsOpen} onClick={()=>setSettingsOpen(open=>!open)}>课程设置</button>}<button title="刷新项目与任务" aria-label="刷新项目与任务" disabled={busy} onClick={()=>void act(async()=>{await refresh();toast('已刷新状态',{variant:'info',duration:1800});})}><RefreshCw size={16}/></button></nav>
+      <nav>{reviewItems.length>0&&<button className="vw-next-button" onClick={()=>setReviewing(true)}>连续审片（{reviewItems.length}）</button>}{project&&project.scenes.length>0&&<button onClick={()=>setPublishKitOpen(true)}>发布套件</button>}{project&&<button aria-expanded={settingsOpen} onClick={()=>setSettingsOpen(open=>!open)}>课程设置</button>}<button title="刷新项目与任务" aria-label="刷新项目与任务" disabled={busy} onClick={()=>void act(async()=>{await refresh();toast('已刷新状态',{variant:'info',duration:1800});})}><RefreshCw size={16}/></button></nav>
     </header>
     {error&&<p role="alert" className="vw-error">{error}</p>}
     {reviewing&&project&&<ReviewMode projectId={project.id} items={reviewItems} disabled={busy} onAccept={acceptInReview} onRevise={reviseInReview} onClose={()=>setReviewing(false)}/>}
@@ -423,6 +424,7 @@ export default function VisualWorkbench({routeProjectId}:{routeProjectId:string}
        :pilot.reason==='llm_changed'?<>整课自动生成已停止：提交后修改了模型配置，请重新开始。</>:<>整课自动生成已停止。</>}
     </div>}
     {undo&&<div className="vw-undo" role="status">已删除{undo.label}<button disabled={busy} onClick={restoreChapter}>撤销</button></div>}
+    {project&&<PublishKitModal open={publishKitOpen} title={project.title} source={project.scenes.map((s,i)=>`第${i+1}章：${s.scene.narration.text}`).join('\n\n')} onClose={()=>setPublishKitOpen(false)}/>}
     {project&&<Modal open={settingsOpen} onClose={()=>setSettingsOpen(false)} title="课程设置" maxWidth="720px"
       footer={<button type="button" className="btn-modal-confirm primary" onClick={()=>setSettingsOpen(false)}>关闭</button>}>
       <div className="vw-settings-modal">

@@ -21,7 +21,15 @@ from services.projects.estimates import estimate_project, estimate_retry
 from services.projects.store import Store, StoreError
 from services.projects.storage import ObjectStore
 from services.accounts.model_settings import resolve_llm
-from services.workflow.manuscript import generate_manuscript
+from services.workflow.manuscript import (
+    convert_article_to_manuscript,
+    critique_manuscript,
+    generate_hooks,
+    generate_manuscript,
+    generate_publish_kit,
+    polish_manuscript,
+    rewrite_section,
+)
 from services.workflow import ideation
 from services.workflow import research as hotspot_research
 from services.workflow import trends as hotspot_trends
@@ -42,6 +50,7 @@ class GenerateManuscript(Body):
     teaching_style: Literal['popular', 'technical'] = 'popular'
     plan: dict | None = None  # {angle, outline} from ideation; checked by services.workflow.ideation
     research: dict | None = None  # validated ResearchBrief from hotspot deconstruction
+    persona: dict | None = None  # optional creator voice/persona profile
 
 
 class IdeaContext(Body):
@@ -51,6 +60,7 @@ class IdeaContext(Body):
     duration_hint: str = Field(default='', max_length=40)
     teaching_style: Literal['popular', 'technical'] = 'popular'
     research: dict | None = None
+    persona: dict | None = None
 
 
 class ResearchSearch(Body):
@@ -68,6 +78,56 @@ class ResearchAnalyze(Body):
     topic: str = Field(default='', max_length=80)
     sources: list[dict] = Field(min_length=1, max_length=5)
     viral_style: Literal['balanced', 'short_video', 'deep_article', 'myth_bust'] = 'balanced'
+
+
+class ResearchPitches(Body):
+    topic: str = Field(default='', max_length=80)
+    brief: dict
+
+
+class ManuscriptHooks(Body):
+    title: str = Field(default='', max_length=80)
+    source_text: str = Field(min_length=1, max_length=24000)
+    research: dict | None = None
+    persona: dict | None = None
+
+
+class ManuscriptPolish(Body):
+    source_text: str = Field(min_length=1, max_length=24000)
+    manuscript_format: Literal['plain', 'markdown'] = 'markdown'
+    persona: dict | None = None
+    instruction: str = Field(default='', max_length=300)
+
+
+class ManuscriptRewriteSection(Body):
+    title: str = Field(default='', max_length=80)
+    source_text: str = Field(min_length=1, max_length=24000)
+    section_id: str = Field(min_length=1, max_length=32)
+    instruction: str = Field(min_length=1, max_length=300)
+    research: dict | None = None
+    persona: dict | None = None
+
+
+class ManuscriptCritique(Body):
+    title: str = Field(default='', max_length=80)
+    source_text: str = Field(min_length=1, max_length=24000)
+    manuscript_format: Literal['plain', 'markdown'] = 'markdown'
+
+
+class ManuscriptPublishKit(Body):
+    title: str = Field(default='', max_length=80)
+    source_text: str = Field(min_length=1, max_length=24000)
+    platform: Literal['general', 'douyin', 'xiaohongshu', 'bilibili', 'wechat'] = 'general'
+
+
+class ManuscriptFromArticle(Body):
+    article_text: str = Field(min_length=20, max_length=25000)
+    title: str = Field(default='', max_length=80)
+    duration_hint: str = Field(default='3分钟', max_length=40)
+    teaching_style: Literal['popular', 'technical'] = 'popular'
+    manuscript_format: Literal['plain', 'markdown'] = 'markdown'
+    focus: str = Field(default='', max_length=300)
+    persona: dict | None = None
 
 
 class IdeaAngles(IdeaContext):
@@ -238,6 +298,115 @@ def create_app(store=None, *, authentication=True):
             return JSONResponse({'code': exc.code, 'message': str(exc)},
                                 status_code=_provider_error_status(exc.code))
 
+    @app.post('/api/research/pitches')
+    def research_pitches_route(body: ResearchPitches, request: Request):
+        user_id = getattr(request.state, 'user', {}).get('id')
+        try:
+            llm = resolve_llm(request.app.state.store, user_id)
+            with httpx.Client(timeout=120, trust_env=False) as client:
+                pitches = hotspot_research.generate_platform_pitches(
+                    llm, client, topic=body.topic.strip(), brief=body.brief, user_id=user_id)
+            return {'pitches': pitches}
+        except ValueError as problem:
+            return JSONResponse({'code': 'validation', 'message': str(problem)}, status_code=422)
+        except ProviderError as exc:
+            return JSONResponse({'code': exc.code, 'message': str(exc)},
+                                status_code=_provider_error_status(exc.code))
+
+    @app.post('/api/manuscripts/hooks')
+    def manuscript_hooks_route(body: ManuscriptHooks, request: Request):
+        user_id = getattr(request.state, 'user', {}).get('id')
+        try:
+            llm = resolve_llm(request.app.state.store, user_id)
+            with httpx.Client(timeout=120, trust_env=False) as client:
+                hooks = generate_hooks(body.title, body.source_text, llm, client,
+                                       research=body.research, persona=body.persona, user_id=user_id)
+            return {'hooks': hooks}
+        except ValueError as problem:
+            return JSONResponse({'code': 'validation', 'message': str(problem)}, status_code=422)
+        except ProviderError as exc:
+            return JSONResponse({'code': exc.code, 'message': str(exc)},
+                                status_code=_provider_error_status(exc.code))
+
+    @app.post('/api/manuscripts/polish')
+    def manuscript_polish_route(body: ManuscriptPolish, request: Request):
+        user_id = getattr(request.state, 'user', {}).get('id')
+        try:
+            llm = resolve_llm(request.app.state.store, user_id)
+            with httpx.Client(timeout=120, trust_env=False) as client:
+                text = polish_manuscript(body.source_text, llm, client,
+                                         manuscript_format=body.manuscript_format, persona=body.persona,
+                                         instruction=body.instruction, user_id=user_id)
+            return {'text': text}
+        except ValueError as problem:
+            return JSONResponse({'code': 'validation', 'message': str(problem)}, status_code=422)
+        except ProviderError as exc:
+            return JSONResponse({'code': exc.code, 'message': str(exc)},
+                                status_code=_provider_error_status(exc.code))
+
+    @app.post('/api/manuscripts/rewrite-section')
+    def manuscript_rewrite_section_route(body: ManuscriptRewriteSection, request: Request):
+        user_id = getattr(request.state, 'user', {}).get('id')
+        try:
+            llm = resolve_llm(request.app.state.store, user_id)
+            with httpx.Client(timeout=120, trust_env=False) as client:
+                text = rewrite_section(body.title, body.source_text, body.section_id, body.instruction, llm, client,
+                                       persona=body.persona, research=body.research, user_id=user_id)
+            return {'text': text}
+        except ValueError as problem:
+            return JSONResponse({'code': 'validation', 'message': str(problem)}, status_code=422)
+        except ProviderError as exc:
+            return JSONResponse({'code': exc.code, 'message': str(exc)},
+                                status_code=_provider_error_status(exc.code))
+
+    @app.post('/api/manuscripts/critique')
+    def manuscript_critique_route(body: ManuscriptCritique, request: Request):
+        user_id = getattr(request.state, 'user', {}).get('id')
+        try:
+            llm = resolve_llm(request.app.state.store, user_id)
+            with httpx.Client(timeout=120, trust_env=False) as client:
+                critique = critique_manuscript(body.title, body.source_text, llm, client,
+                                               manuscript_format=body.manuscript_format, user_id=user_id)
+            return {'critique': critique}
+        except ValueError as problem:
+            return JSONResponse({'code': 'validation', 'message': str(problem)}, status_code=422)
+        except ProviderError as exc:
+            return JSONResponse({'code': exc.code, 'message': str(exc)},
+                                status_code=_provider_error_status(exc.code))
+
+    @app.post('/api/manuscripts/publish-kit')
+    def manuscript_publish_kit_route(body: ManuscriptPublishKit, request: Request):
+        user_id = getattr(request.state, 'user', {}).get('id')
+        try:
+            llm = resolve_llm(request.app.state.store, user_id)
+            with httpx.Client(timeout=120, trust_env=False) as client:
+                kit = generate_publish_kit(body.title, body.source_text, llm, client,
+                                           platform=body.platform, user_id=user_id)
+            return {'kit': kit}
+        except ValueError as problem:
+            return JSONResponse({'code': 'validation', 'message': str(problem)}, status_code=422)
+        except ProviderError as exc:
+            return JSONResponse({'code': exc.code, 'message': str(exc)},
+                                status_code=_provider_error_status(exc.code))
+
+    @app.post('/api/manuscripts/from-article')
+    def manuscript_from_article_route(body: ManuscriptFromArticle, request: Request):
+        user_id = getattr(request.state, 'user', {}).get('id')
+        try:
+            llm = resolve_llm(request.app.state.store, user_id)
+            with httpx.Client(timeout=120, trust_env=False) as client:
+                result = convert_article_to_manuscript(
+                    body.article_text, llm, client,
+                    title=body.title, duration_hint=body.duration_hint,
+                    teaching_style=body.teaching_style, manuscript_format=body.manuscript_format,
+                    focus=body.focus, persona=body.persona, user_id=user_id)
+            return result
+        except ValueError as problem:
+            return JSONResponse({'code': 'validation', 'message': str(problem)}, status_code=422)
+        except ProviderError as exc:
+            return JSONResponse({'code': exc.code, 'message': str(exc)},
+                                status_code=_provider_error_status(exc.code))
+
     @app.post('/api/manuscripts/generate')
     def manuscript_generate(body: GenerateManuscript, request: Request):
         try:
@@ -248,7 +417,7 @@ def create_app(store=None, *, authentication=True):
                     duration_hint=body.duration_hint, outline=body.outline,
                     user_id=getattr(request.state, 'user', {}).get('id'),
                     teaching_style=body.teaching_style, manuscript_format=body.manuscript_format,
-                    plan=body.plan, research=body.research)
+                    plan=body.plan, research=body.research, persona=body.persona)
         except ProviderError as exc:
             return JSONResponse({'code': exc.code, 'message': str(exc)},
                                 status_code=_provider_error_status(exc.code))
@@ -270,7 +439,8 @@ def create_app(store=None, *, authentication=True):
             with httpx.Client(timeout=120, trust_env=False) as client:
                 angles = ideation.generate_angles(llm, client, topic=body.topic.strip(), notes=body.notes.strip(),
                     audience=body.audience.strip(), duration_hint=body.duration_hint.strip(), teaching_style=body.teaching_style,
-                    count=body.count, exclude=exclude, custom=body.custom.strip(), merge=merge, research=research, user_id=user_id)
+                    count=body.count, exclude=exclude, custom=body.custom.strip(), merge=merge,
+                    research=research, persona=body.persona, user_id=user_id)
         except ProviderError as exc:
             return JSONResponse({'code': exc.code, 'message': str(exc)}, status_code=_provider_error_status(exc.code))
         return {'angles': angles}
@@ -291,7 +461,7 @@ def create_app(store=None, *, authentication=True):
             with httpx.Client(timeout=120, trust_env=False) as client:
                 outline = ideation.generate_outline(llm, client, topic=body.topic.strip(), angle=angle, notes=body.notes.strip(),
                     audience=body.audience.strip(), duration_hint=body.duration_hint.strip(), teaching_style=body.teaching_style,
-                    previous=previous, feedback=body.feedback.strip(), research=research, user_id=user_id)
+                    previous=previous, feedback=body.feedback.strip(), research=research, persona=body.persona, user_id=user_id)
         except ProviderError as exc:
             return JSONResponse({'code': exc.code, 'message': str(exc)}, status_code=_provider_error_status(exc.code))
         return {'outline': outline}

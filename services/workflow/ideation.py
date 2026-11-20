@@ -155,9 +155,14 @@ def _chat(llm, client, system, user, check, kind, user_id=None):
 
 
 def generate_angles(llm, client, *, topic, notes='', audience='', duration_hint='', teaching_style='popular', count=4,
-                    exclude=(), custom='', merge=None, research=None, user_id=None):
+                    exclude=(), custom='', merge=None, research=None, persona=None, user_id=None):
     """`count` distinct angles; or one card from the person's own direction (`custom`); or one card merging two (`merge`)."""
     lines = _context(topic, notes, audience, duration_hint, teaching_style)
+    if persona is not None:
+        from services.workflow.manuscript import check_persona, persona_lines
+        checked_persona = check_persona(persona)
+        if checked_persona:
+            lines += persona_lines(checked_persona)
     if research is not None:
         lines += brief_lines(check_brief(research))
     if merge:
@@ -175,8 +180,13 @@ def generate_angles(llm, client, *, topic, notes='', audience='', duration_hint=
 
 
 def generate_outline(llm, client, *, topic, angle, notes='', audience='', duration_hint='', teaching_style='popular',
-                     previous=None, feedback='', research=None, user_id=None):
+                     previous=None, feedback='', research=None, persona=None, user_id=None):
     lines = _context(topic, notes, audience, duration_hint, teaching_style)
+    if persona is not None:
+        from services.workflow.manuscript import check_persona, persona_lines
+        checked_persona = check_persona(persona)
+        if checked_persona:
+            lines += persona_lines(checked_persona)
     if research is not None:
         lines += brief_lines(check_brief(research))
     lines.append('选定的方向：' + json.dumps(angle, ensure_ascii=False))

@@ -1,6 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { isResearchBrief, type ResearchBrief } from '../lib/research';
+import { isResearchBrief, replaceFirstOpening, type ResearchBrief } from '../lib/research';
+import { auditManuscript, parseMarkdownSections, resolveCritiqueSectionId, serializeMarkdownSections } from '../lib/manuscript-tools';
 import { readDraft, writeDraft, type DraftScope } from '../lib/drafts';
 
 class MemoryStorage {
@@ -31,4 +32,24 @@ test('research brief validates shape and survives local course draft roundtrip',
   const raw = writeDraft(store, scope, 0, { title: 'RAG 避坑', source: '', research: sampleBrief }, null);
   const loaded = readDraft(raw, scope);
   assert.deepEqual(loaded?.data.research, sampleBrief);
+});
+
+test('replaceFirstOpening swaps only the first section narration in markdown and first paragraph in plain', () => {
+  const md = '## [s1] 开场\n\n### 口播\n旧开场。\n\n### 画面素材\n对比图\n\n### 画面意图\n显示对比。';
+  const nextMd = replaceFirstOpening(md, '新钩子开场！', 'markdown');
+  assert.match(nextMd, /### 口播\n新钩子开场！\n\n### 画面素材\n对比图/);
+  assert.equal(replaceFirstOpening('第一段。\n\n第二段。', '新第一段！', 'plain'), '新第一段！\n\n第二段。');
+});
+
+test('storyboard sections roundtrip and zero-cost audit flags cliches and empty materials', () => {
+  const md = '## [s1] 痛点\n\n### 口播\n综上所述，RAG 经常答错。\n\n### 画面素材\n无\n\n### 画面意图\n展示痛点卡片。';
+  const sections = parseMarkdownSections(md);
+  assert.equal(sections?.length, 1);
+  assert.equal(sections?.[0].id, 's1');
+  assert.equal(serializeMarkdownSections(sections!), md);
+  const report = auditManuscript(md, 'markdown');
+  assert.ok(report.issues.some(i => i.message.includes('综上所述')));
+  assert.ok(report.issues.some(i => i.message.includes('画面素材')));
+  assert.equal(resolveCritiqueSectionId({ section: '第1段', problem: 'p', fix: 'f' }, sections), 's1');
+  assert.equal(resolveCritiqueSectionId({ section: '全局', problem: 'p', fix: 'f' }, sections), null);
 });

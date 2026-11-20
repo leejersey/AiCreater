@@ -174,6 +174,116 @@ class ResearchTests(unittest.TestCase):
         self.assertIn('4.5万', items[0]['metrics'])
         self.assertEqual(items[1]['platform'], 'xiaohongshu')
 
+    def test_platform_pitches_hooks_and_de_ai_polish(self):
+        llm = LLM(base_url='https://api.deepseek.com', api_key='sk-test', model='deepseek-flash', source='env', version=0)
+        brief = {
+            'facts': ['混合检索比纯向量召回稳定'],
+            'hooks': ['为什么你的 RAG 总是答非所问？'],
+            'pain_points': ['切分破坏上下文'],
+            'pacing': '痛点开场 → 对比 → 实操',
+            'viral_style': 'short_video',
+            'sources': [],
+        }
+        md_source = '## [s1] 开场\n\n### 口播\n综上所述，首先我们来看看 RAG。\n\n### 画面素材\n纯向量 vs 混合检索\n\n### 画面意图\n说到混合检索时展示对比卡片。'
+
+        def handler(req: httpx.Request):
+            sys_prompt = json.loads(req.content)['messages'][0]['content']
+            if '多平台爆款内容策划总监' in sys_prompt:
+                content = json.dumps({'pitches': [
+                    {'platform': 'douyin', 'platform_name': '抖音 · 60秒', 'duration_hint': '1分钟', 'teaching_style': 'popular',
+                     'title': '60秒看懂 RAG 避坑', 'cover_text': 'RAG 90%做错了', 'hook': '你搭的 RAG 为什么总答错？',
+                     'angle_summary': '强反差开场直接给答案', 'notes': '按抖音快节奏写，强调切分痛点'},
+                    {'platform': 'xiaohongshu', 'platform_name': '小红书 · 2.5分钟', 'duration_hint': '2.5分钟', 'teaching_style': 'popular',
+                     'title': 'RAG 避坑清单', 'cover_text': '3步救活RAG', 'hook': '做 RAG 别再踩这 3 个坑了',
+                     'angle_summary': '清单式干货避坑', 'notes': '突出 3 条可抄作业的步骤'},
+                    {'platform': 'bilibili', 'platform_name': 'B站 · 5分钟深讲', 'duration_hint': '5分钟', 'teaching_style': 'technical',
+                     'title': '从原理到实战：RAG 混合检索拆解', 'cover_text': '混合检索深拆', 'hook': '换了最强模型 RAG 还是不准？',
+                     'angle_summary': '深挖 BM25 + 向量 + Rerank', 'notes': '讲清召回与重排机制'},
+                ]}, ensure_ascii=False)
+            elif '开场钩子专家' in sys_prompt:
+                content = json.dumps({'hooks': [
+                    {'type': 'contrarian', 'label': '反常识冲击', 'cover_line': '别再换大模型了', 'opening': '你以为 RAG 答错是模型太笨？其实九成问题出在检索第一步。', 'why': '直接打破惯性认知'},
+                    {'type': 'pain', 'label': '痛点扎心', 'cover_line': 'RAG 总答非所问', 'opening': '辛辛苦苦喂了几百份文档，一问还是胡说八道，你是不是也遇到过？', 'why': '精准命中一线痛点'},
+                    {'type': 'suspense', 'label': '悬念提问', 'cover_line': '多加一步准3倍', 'opening': '同样一份知识库，为什么别人只多加了一个动作，准确率就翻倍？', 'why': '用结果差制造悬念'},
+                ]}, ensure_ascii=False)
+            else:
+                content = json.dumps({'sections': [{
+                    'id': 's1', 'title': '开场',
+                    'narration': '你搭的 RAG 是不是总答非所问？咱们直接看原因。',
+                    'materials': '纯向量 vs 混合检索',
+                    'visual_intent': '说到混合检索时展示对比卡片。',
+                }]}, ensure_ascii=False)
+            return httpx.Response(200, json={'choices': [{'finish_reason': 'stop', 'message': {'content': content}}]})
+
+        with patch('services.workflow.destination.checked_address', return_value='1.1.1.1'):
+            with _fake_client(handler) as client:
+                pitches = research.generate_platform_pitches(llm, client, topic='RAG 避坑', brief=brief)
+                self.assertEqual([p['platform'] for p in pitches], ['douyin', 'xiaohongshu', 'bilibili'])
+                hooks = manuscript.generate_hooks('RAG 避坑', md_source, llm, client, research=brief)
+                self.assertEqual(len(hooks), 3)
+                polished = manuscript.polish_manuscript(md_source, llm, client, manuscript_format='markdown')
+                self.assertIn('答非所问', polished)
+                self.assertIn('### 画面素材', polished)
+                self.assertNotIn('综上所述', polished)
+
+    def test_rewrite_section_critique_publish_kit_and_persona_injection(self):
+        llm = LLM(base_url='https://api.deepseek.com', api_key='sk-test', model='deepseek-flash', source='env', version=0)
+        persona = {'name': '犀利架构师', 'audience_call': '各位工程师', 'tone': '直接犀利、短句为主', 'banned_words': '总而言之'}
+        md = (
+            '## [s1] 痛点\n\n### 口播\n第一段原口播。\n\n### 画面素材\n对比图\n\n### 画面意图\n展示对比图。\n\n'
+            '## [s2] 原理\n\n### 口播\n第二段原口播。\n\n### 画面素材\n无\n\n### 画面意图\n展示原理。'
+        )
+        seen = []
+
+        def handler(req: httpx.Request):
+            body = json.loads(req.content)
+            sys_p = body['messages'][0]['content']
+            seen.append(body['messages'][-1]['content'])
+            if '局部修改的那一段' in sys_p:
+                out = {'id': 's2', 'title': '原理拆解', 'narration': '各位工程师，核心就在两步检索。', 'materials': 'Step1 BM25 -> Step2 向量', 'visual_intent': '说到两步检索时依次点亮两步流程。'}
+            elif '毒舌审稿' in sys_p:
+                out = {'overall_score': 86, 'scores': {'hook': 80, 'density': 90, 'pacing': 88, 'visual': 86},
+                       'verdict': '干货扎实，但第2段画面素材需要补强。',
+                       'issues': [{'section': '第2段', 'problem': '画面素材为空', 'fix': '补充流程图节点'}]}
+            else:
+                out = {'titles': ['标题1', '标题2', '标题3', '标题4', '标题5'], 'cover_main': 'RAG 避坑指南',
+                       'cover_sub': '3步准确率翻倍', 'summary': '一文讲透混合检索与重排。',
+                       'tags': ['AI', 'RAG', '大模型'], 'pinned_comment': '你用 RAG 踩过最大的坑是什么？评论区聊聊！'}
+            return httpx.Response(200, json={'choices': [{'finish_reason': 'stop', 'message': {'content': json.dumps(out, ensure_ascii=False)}}]})
+
+        with patch('services.workflow.destination.checked_address', return_value='1.1.1.1'):
+            with _fake_client(handler) as client:
+                rewritten = manuscript.rewrite_section('RAG', md, 's2', '加流程图素材', llm, client, persona=persona)
+                self.assertIn('第一段原口播。', rewritten)
+                self.assertIn('Step1 BM25 -> Step2 向量', rewritten)
+                self.assertIn('犀利架构师', seen[0])
+                critique = manuscript.critique_manuscript('RAG', rewritten, llm, client)
+                self.assertEqual(critique['overall_score'], 86)
+                kit = manuscript.generate_publish_kit('RAG', rewritten, llm, client, platform='bilibili')
+                self.assertEqual(len(kit['titles']), 5)
+                self.assertEqual(kit['cover_main'], 'RAG 避坑指南')
+
+    def test_convert_long_article_to_storyboard_manuscript(self):
+        llm = LLM(base_url='https://api.deepseek.com', api_key='sk-test', model='deepseek-flash', source='env', version=0)
+        article = '深度解析 MCP 协议：为什么所有 AI Agent 都在接入它？传统函数调用需要为每个工具单独写胶水代码，而 MCP 统一了上下文协议。'
+
+        def handler(req: httpx.Request):
+            out = {'sections': [{
+                'id': 's1', 'title': '为什么全行业都在接 MCP',
+                'narration': '还在给每个工具手写胶水代码？MCP 一招把接口全统一了。',
+                'materials': '传统 N×M 胶水代码 vs MCP 统一协议',
+                'visual_intent': '说到胶水代码时展示杂乱连线，切到 MCP 时收束为统一总线。',
+            }]}
+            return httpx.Response(200, json={'choices': [{'finish_reason': 'stop', 'message': {'content': json.dumps(out, ensure_ascii=False)}}]})
+
+        with patch('services.workflow.destination.checked_address', return_value='1.1.1.1'):
+            with _fake_client(handler) as client:
+                res = manuscript.convert_article_to_manuscript(
+                    article, llm, client, duration_hint='2分钟', teaching_style='popular', manuscript_format='markdown')
+        self.assertEqual(res['title'], '为什么全行业都在接 MCP')
+        self.assertIn('## [s1] 为什么全行业都在接 MCP', res['text'])
+        self.assertIn('传统 N×M 胶水代码 vs MCP 统一协议', res['text'])
+
 
 if __name__ == '__main__':
     unittest.main()

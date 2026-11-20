@@ -96,3 +96,39 @@ export function isResearchBrief(v: unknown): v is ResearchBrief {
 export function viralStyleLabel(style: ViralStyle): string {
   return VIRAL_STYLE_OPTIONS.find(o => o.id === style)?.label ?? '均衡爆款';
 }
+
+export type PlatformPitch = {
+  platform: 'douyin' | 'xiaohongshu' | 'bilibili';
+  platform_name: string;
+  duration_hint: string;
+  teaching_style: 'popular' | 'technical';
+  title: string;
+  cover_text: string;
+  hook: string;
+  angle_summary: string;
+  notes: string;
+};
+
+export type ManuscriptHook = {
+  type: 'contrarian' | 'pain' | 'suspense';
+  label: string;
+  cover_line: string;
+  opening: string;
+  why: string;
+};
+
+/** Replace the first section's narration in a Markdown manuscript (or the first paragraph in plain text). */
+export function replaceFirstOpening(source: string, opening: string, format: 'markdown' | 'plain'): string {
+  const clean = opening.trim();
+  if (!clean) return source;
+  if (format === 'markdown') {
+    const pattern = /(###\s*口播\s*\r?\n)([\s\S]*?)(\r?\n\s*\r?\n###\s*画面素材)/;
+    if (pattern.test(source)) {
+      return source.replace(pattern, `$1${clean}$3`);
+    }
+  }
+  const parts = source.split(/\r?\n\s*\r?\n/);
+  if (!parts.length) return clean;
+  parts[0] = clean;
+  return parts.join('\n\n');
+}

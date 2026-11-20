@@ -5,6 +5,7 @@ import {
   PLATFORM_OPTIONS,
   TREND_OPTIONS,
   VIRAL_STYLE_OPTIONS,
+  type PlatformPitch,
   type ResearchBrief,
   type ResearchItem,
   type ResearchStatus,
@@ -23,6 +24,7 @@ export function ResearchModal({
   disabled,
   onClose,
   onApplyBrief,
+  onApplyPitch,
   onUseTopic,
 }: {
   open: boolean;
@@ -31,6 +33,7 @@ export function ResearchModal({
   disabled: boolean;
   onClose: () => void;
   onApplyBrief: (brief: ResearchBrief | null) => void;
+  onApplyPitch: (pitch: PlatformPitch, brief: ResearchBrief) => void;
   onUseTopic: (nextTopic: string) => void;
 }) {
   const toast = useToast();
@@ -63,6 +66,8 @@ export function ResearchModal({
   const [viralStyle, setViralStyle] = useState<ViralStyle>(currentBrief?.viral_style ?? 'balanced');
   const [analyzing, setAnalyzing] = useState(false);
   const [draftBrief, setDraftBrief] = useState<ResearchBrief | null>(currentBrief ?? null);
+  const [pitches, setPitches] = useState<PlatformPitch[]>([]);
+  const [generatingPitches, setGeneratingPitches] = useState(false);
   const [error, setError] = useState('');
 
   useEffect(() => {
@@ -198,12 +203,31 @@ export function ResearchModal({
         viral_style: viralStyle,
       });
       setDraftBrief(res.brief);
+      setPitches([]);
       setTab('brief');
       toast('已拆解出爆款事实、钩子与叙事节奏', { variant: 'success' });
     } catch (e) {
       setError(e instanceof Error ? e.message : '爆款拆解失败');
     } finally {
       setAnalyzing(false);
+    }
+  }
+
+  async function runPitches() {
+    if (!draftBrief || generatingPitches) return;
+    setGeneratingPitches(true);
+    setError('');
+    try {
+      const res = await request<{ pitches: PlatformPitch[] }>('/api/research/pitches', {
+        topic: (topic || query || selected[0]?.title || '热点选题').trim().slice(0, 80),
+        brief: draftBrief,
+      });
+      setPitches(Array.isArray(res.pitches) ? res.pitches : []);
+      toast('已生成抖音 / 小红书 / B站三平台适配方案', { variant: 'success' });
+    } catch (e) {
+      setError(e instanceof Error ? e.message : '生成平台方案失败');
+    } finally {
+      setGeneratingPitches(false);
     }
   }
 
@@ -532,6 +556,43 @@ export function ResearchModal({
                     onChange={e => setDraftBrief({ ...draftBrief, pacing: e.target.value })}
                   />
                 </label>
+
+                <div className="research-pitches-section">
+                  <div className="idea-toolbar">
+                    <b>一鱼多吃：按平台定位生成选题方案</b>
+                    <button type="button" className="research-mini-btn active" disabled={generatingPitches || disabled} onClick={() => void runPitches()}>
+                      {generatingPitches ? <><Spinner size={12} className="icon-spin" /> 生成中…</> : <><Sparkles size={12} /> 生成抖音 / 小红书 / B站方案</>}
+                    </button>
+                  </div>
+                  {pitches.length > 0 && (
+                    <div className="research-pitches-grid">
+                      {pitches.map(p => (
+                        <div key={p.platform} className="research-pitch-card">
+                          <div className="research-item-meta">
+                            <span className="research-plat-tag">{p.platform_name}</span>
+                            <span className="hint">{p.duration_hint}</span>
+                          </div>
+                          <div className="research-cover-badge">封面大字：{p.cover_text}</div>
+                          <b className="research-item-title">{p.title}</b>
+                          <p className="research-snippet"><b>前 3 秒：</b>「{p.hook}」</p>
+                          <p className="research-snippet">{p.angle_summary}</p>
+                          <button
+                            type="button"
+                            className="btn-accent research-pitch-use"
+                            disabled={disabled}
+                            onClick={() => {
+                              onApplyPitch(p, draftBrief);
+                              toast(`已套用「${p.platform_name}」方案，可直接发散或生成文稿`, { variant: 'success' });
+                              onClose();
+                            }}
+                          >
+                            <Check size={13} /> 采用此平台方案
+                          </button>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
               </div>
             )}
           </div>

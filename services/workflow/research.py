@@ -431,3 +431,89 @@ def brief_lines(brief: dict) -> list[str]:
         f'推荐叙事骨架：{brief["pacing"]}',
     ]
     return lines
+
+
+_PITCHES_SYSTEM = (
+    '你是多平台爆款内容策划总监。根据用户给的热点选题和“爆款参考简报”，一次输出 3 套针对不同平台定位的视频选题方案（一鱼多吃），'
+    '严格输出一个 JSON 对象，不要在 JSON 外写任何文字：\n'
+    '{"pitches":[\n'
+    '  {"platform":"douyin","platform_name":"抖音 / 快手 · 60秒强反转","duration_hint":"1分钟","teaching_style":"popular",'
+    '"title":"爆款标题（≤32字）","cover_text":"封面大字（≤14字）","hook":"前3秒开场第一句（≤70字）","angle_summary":"切入逻辑与节奏（≤100字）","notes":"可直接填入补充想法的写作指令（≤160字）"},\n'
+    '  {"platform":"xiaohongshu","platform_name":"小红书 · 2.5分钟干货避坑","duration_hint":"2.5分钟","teaching_style":"popular","title":"...","cover_text":"...","hook":"...","angle_summary":"...","notes":"..."},\n'
+    '  {"platform":"bilibili","platform_name":"B站 / YouTube · 5分钟深度拆解","duration_hint":"5分钟","teaching_style":"technical","title":"...","cover_text":"...","hook":"...","angle_summary":"...","notes":"..."}\n'
+    ']}\n'
+    '必须正好 3 条，platform 依次为 douyin、xiaohongshu、bilibili；teaching_style 只能是 popular 或 technical；不编造简报之外的数据。'
+)
+
+
+def _check_pitches(value) -> list[dict]:
+    pitches = value.get('pitches') if isinstance(value, dict) else None
+    if not isinstance(pitches, list) or len(pitches) != 3:
+        raise ValueError('pitches: exactly 3 items expected')
+    allowed = {'douyin', 'xiaohongshu', 'bilibili'}
+    seen = set()
+    out = []
+    for item in pitches:
+        if not isinstance(item, dict):
+            raise ValueError('pitch: object expected')
+        plat = item.get('platform')
+        if plat not in allowed or plat in seen:
+            raise ValueError('pitch.platform: must be unique douyin/xiaohongshu/bilibili')
+        seen.add(plat)
+        tstyle = item.get('teaching_style')
+        if tstyle not in ('popular', 'technical'):
+            raise ValueError('pitch.teaching_style: must be popular or technical')
+        out.append({
+            'platform': plat,
+            'platform_name': _clean_text(item.get('platform_name') or plat, 40, 'platform_name'),
+            'duration_hint': _clean_text(item.get('duration_hint') or '3分钟', 20, 'duration_hint'),
+            'teaching_style': tstyle,
+            'title': _clean_text(item.get('title') or '', 40, 'title'),
+            'cover_text': _clean_text(item.get('cover_text') or '', 24, 'cover_text'),
+            'hook': _clean_text(item.get('hook') or '', 90, 'hook'),
+            'angle_summary': _clean_text(item.get('angle_summary') or '', 140, 'angle_summary'),
+            'notes': _clean_text(item.get('notes') or '', 220, 'notes'),
+        })
+    return out
+
+
+def generate_platform_pitches(llm, client: httpx.Client, *, topic: str, brief: dict, user_id=None) -> list[dict]:
+    """Turn a ResearchBrief into 3 platform-tailored video pitches (Douyin 1m / Xiaohongshu 2.5m / Bilibili 5m)."""
+    if not llm.api_key:
+        raise ProviderError('config', 'missing_setting', '请在个人中心配置模型，或在服务端设置 DEEPSEEK_API_KEY')
+    validated = check_brief(brief)
+    topic_clean = _clean_text(topic or '热点选题', 80, 'topic')
+    user_content = '\n'.join([f'核心热点选题：{topic_clean}', *brief_lines(validated)])
+    messages = [{'role': 'system', 'content': _PITCHES_SYSTEM}, {'role': 'user', 'content': user_content}]
+    ok = False
+    try:
+        for attempt in range(2):
+            body = {'model': llm.model, 'messages': messages, 'max_tokens': 2400, 'response_format': {'type': 'json_object'}}
+            if llm.model in ['deepseek-flash', 'deepseek-v4-flash'] and llm.base_url == DEEPSEEK_BASE_URL:
+                body['thinking'] = {'type': 'disabled'}
+            response = pinned_post(client, llm.base_url.rstrip('/') + '/chat/completions',
+                                   headers={'Authorization': 'Bearer ' + llm.api_key}, json=body, stage='research')
+            _status(response, 'research')
+            if len(response.content) > 1024 * 1024:
+                raise ProviderError('research', 'response_limit', 'Response exceeds 1 MiB')
+            choice = response.json()['choices'][0]
+            if choice.get('finish_reason') == 'content_filter':
+                raise ProviderError('research', 'response_filtered', 'Pitch generation was filtered')
+            content = choice['message']['content'] if choice.get('finish_reason') == 'stop' else None
+            try:
+                pitches = _check_pitches(json.loads(content or ''))
+                ok = True
+                return pitches
+            except (ValueError, TypeError) as problem:
+                if attempt:
+                    raise ProviderError('research', 'invalid_response', f'平台方案生成结果不符合要求：{problem}') from None
+                messages = messages + [
+                    {'role': 'assistant', 'content': content or ''},
+                    {'role': 'user', 'content': f'上面的输出不符合要求（{problem}）。请按要求重新输出完整 JSON。'},
+                ]
+    except httpx.HTTPError:
+        raise ProviderError('research', 'transport_error', 'Provider request failed') from None
+    except (KeyError, IndexError, AttributeError):
+        raise ProviderError('research', 'invalid_response', 'Expected a complete response') from None
+    finally:
+        log.info('event=research_pitches user_id=%s ok=%s', user_id, ok)
