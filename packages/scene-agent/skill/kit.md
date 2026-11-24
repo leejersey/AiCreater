@@ -11,8 +11,30 @@ import {
 ```
 
 The full source sits beside your scene as `scene/kit.tsx` (`read_file scene/kit.tsx`); it cannot be edited. You do not need
-to read it: the tables below list every part and prop. Use the kit where it fits and plain
-SVG for everything else; a scene made only of boxes and arrows is still a diagram, so give each cue its own action.
+to read it: the tables below list every part and prop.
+
+**Build with the kit first.** Each part is already audit-marked, themed and tested, so a scene built from parts needs
+fewer fix-up turns than hand-drawn rectangles. Hand-draw only what no part covers (a custom object, a route, a scene
+detail). Parts are building blocks, not the idea: a scene made only of boxes and arrows is still a diagram, so give each
+cue its own action (something crossed out, filling up, moving, lighting up).
+
+## Which part for what
+
+| You want to show | Use |
+| --- | --- |
+| a component, stage, store, person or concept | `Box` (lit while it is spoken) |
+| a flow, a request, a dependency | `Arrow` (draws itself; `dashed` for optional or weak links) |
+| a document, a page, a file, a knowledge-base entry | `Doc` |
+| wrong / rejected, right / accepted, removed | `Cross`, `Check`, `Strike` |
+| a quantity growing, a before/after amount | `Bar`, `MetricCard` (only numbers the brief gives) |
+| a single number counting up | `Counter` |
+| steps over time, an evolution, a process with stages | `Timeline` |
+| two ways side by side, old vs new, A vs B | `CompareCard` |
+| a command, code, a log | `Terminal` |
+| a user's question, a myth, a comment | `SpeechBubble` |
+| the takeaway, a key sentence | `QuoteCard` |
+| a status or category label on something | `Badge` |
+| focus on one part, pushing in on a detail | `Spotlight`, `Camera` |
 
 ## How the parts work
 

@@ -15,7 +15,7 @@ and then sit still is a poster.
 - When the narration names items one by one ("首先…其次…最后…", "一是…二是…"), show **one item per cue**. Never bring
   all items in at once with a stagger.
 - The item being spoken is lit (full opacity, `theme.accent` outline or fill); earlier items stay as context, dimmed to
-  opacity 0.35–0.45 — not removed. The last cue may relight everything for the summary.
+  opacity 0.35–0.45 — not removed. The last cue may relight everything for the summary, at full size (see craft: the last cue fills the frame too).
 - Each cue puts at most 1–3 things in focus: one hero object, a number, or one comparison. Supporting labels stay small
   and `theme.muted`.
 

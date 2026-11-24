@@ -2,6 +2,10 @@
 
 An icon and a title in a rounded box says the word; it does not show the idea. When the narration names a problem, a limit or a step, draw a small object whose state changes while it is spoken. These snippets come from scenes that passed and read well (RAG challenges; vector search and graph hops, timed from `timing.cues`). Copy the technique, not the content: your brief decides what the objects are.
 
+These snippets draw by hand to show the technique. When one of the shapes is a card, connector, document, mark, bar,
+number, timeline, comparison, terminal, quote or bubble, build it with the matching part from `./kit` instead
+(read_skill kit) and keep the technique: what changes, when, and why.
+
 All snippets are frame-driven, timed from `timing.cues` (here `s`; the cue numbers are this example's) and take their colors from the theme. `fade(a,b)` is a helper for a 0→1 ramp:
 
 ```tsx

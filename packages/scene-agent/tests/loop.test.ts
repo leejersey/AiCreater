@@ -1,3 +1,4 @@
+import {systemPrompt} from '../src/prompt';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {mkdir,mkdtemp,readFile,rm,writeFile} from 'node:fs/promises';
@@ -261,6 +262,8 @@ test('a revision run opens with the person\'s feedback and asks for edits to the
  const plain=initialMessage(workspace.brief);
  const revised=initialMessage(workspace.brief,{feedback:'  把流程图画大一些 '});
  assert.match(plain,/Begin with get_timing and read_skill/);
+ assert.match(systemPrompt({vision:false}),/Build with the scene kit first/);
+ assert.match(systemPrompt({vision:false}),/empty-area, which you fix in every cue, the last one included/);
  assert.doesNotMatch(plain,/This is a revision/);
  assert.match(revised,/This is a revision[\s\S]*\n\n把流程图画大一些\n\n[\s\S]*with edit_file[\s\S]*do not rewrite the file/);
  assert.doesNotMatch(revised,/Begin with get_timing and read_skill/);

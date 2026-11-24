@@ -9,7 +9,7 @@ The audit measures geometry; it cannot tell whether the picture teaches. Look at
 - **Missing visuals for named items.** Every item the narration names in this cue (a step, a component, a problem) has its own graphic, not only a label. A lone label with no shape next to it reads as a leftover.
 - **Leftovers and stray marks.** Labels or shapes from an earlier cue still visible when they no longer mean anything; lines or underlines that cross a card border; empty dashed placeholders.
 - **Hierarchy.** One thing dominates each cue; secondary text is smaller and muted. Several equally loud blocks mean the viewer does not know where to look.
-- **The ending.** The last cue shows a clear summary or end card, centred, not a small text in a corner.
+- **The ending.** The last cue fills the frame like the others: a large recap built from the scene's own objects, not a small card or a line of text in the middle of an empty canvas.
 
 ## How to work
 

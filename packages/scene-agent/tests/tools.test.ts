@@ -266,7 +266,21 @@ test('a gate-clean version with empty-area findings is kept but the model is ask
  assert.match(report,/\[medium\] empty-area/);
  assert.match(report,/nothing drawn in y 300–980 \(69% of the height\)/);
  assert.match(report,/passes the final gates and is kept\. Fix these medium findings before finishing: The empty-area finding/);
+ assert.match(report,/The last cue too: recap with the objects already on screen/);
+ assert.doesNotMatch(report,/end card may stay/);
  assert.ok(context.cleanCheckpoint); // still a fallback: empty space never blocks the gates
+});
+
+test('hand-drawn cards get a hint toward the kit, and a scene that imports it does not',async()=>{
+ const cards=(open:string)=>`import React from 'react';${open}
+export default function Scene({width,height,theme,timing}:{frame:number;fps:number;width:number;height:number;timing:{durationInFrames:number;cues:{start:number;end:number}[]};theme:{surface:string;foreground:string}}){
+ return <svg width={width} height={height}><rect id="c0" x={100} y={300} width={300} height={200} rx={12} fill={theme.surface}/><rect id="c1" x={500} y={300} width={300} height={200} rx={12} fill={theme.surface}/><rect id="c2" x={900} y={300} width={300} height={200} rx={12} fill={theme.surface}/><text id="t" x={100} y={100} fill={theme.foreground} opacity={timing.cues.length?1:0}>a</text></svg>;
+}
+`;
+ const {call}=await setup({initialSource:cards('')});
+ assert.match(out(await call('render_stills')),/\[note\] kit — 3 rounded boxes are drawn by hand\. Box, CompareCard/);
+ const kit=await setup({initialSource:cards("import {Box} from './kit';")});
+ assert.doesNotMatch(out(await kit.call('render_stills')),/\[note\] kit/);
 });
 
 test('colors and fonts written into the scene are reported, and asked to be fixed before finishing',async()=>{

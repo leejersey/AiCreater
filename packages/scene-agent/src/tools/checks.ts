@@ -1,4 +1,5 @@
 import {mkdir,readFile,writeFile} from 'node:fs/promises';
+import {usesKit} from '../../../custom-scenes/src/kit';
 import path from 'node:path';
 import {checkSource,literalStyles,literalTiming,usesTiming} from '../../../custom-scenes/src/contract';
 import {SourceTypecheckError,typecheckSource} from '../../../custom-scenes/src/files';
@@ -78,7 +79,7 @@ export function inkFindings(render:StillsResult,cues:Cue[],duration:number):Audi
   }
  }
  if(empty.length)out.push({severity:'medium',kind:'empty-area',target:'frame',frames:render.frames.filter(f=>empty.some(e=>e.startsWith(`frame ${f.frame}:`))).map(f=>f.frame),
-  detail:'A large part of the canvas above the captions stays empty while a cue is narrated. Enlarge or move the main object, or give the cue a second visual element; only a closing end card may stay this sparse.\n    '+empty.join('\n    ')});
+  detail:'A large part of the canvas above the captions stays empty while a cue is narrated. Enlarge or move the main object, or give the cue a second visual element. The last cue too: recap with the objects already on screen, at full size, not a small card in the middle.\n    '+empty.join('\n    ')});
  return out;
 }
 
@@ -174,10 +175,12 @@ export const renderStills:Tool={
   const timed=cues.length<2||usesTiming(source),fixedFrames=literalTiming(source);
   if(!timed)lines.push('[high] timing — the scene does not read timing.cues. Time every narrated change from timing.cues[i].start / .end so the picture follows any voice-over (scene-contract, section Timing); finish requires it.');
   if(fixedFrames.length)lines.push(`[medium] literal-timing — ${fixedFrames.length} frame number${fixedFrames.length>1?'s':''} where a sentence boundary belongs: ${fixedFrames.slice(0,6).map(l=>`${l.text} (line ${l.line})`).join(', ')}${fixedFrames.length>6?', …':''}. Use timing.cues[i].start / .end (plus a small offset) instead.`);
+  const handCards=usesKit(source)?0:(source.match(/<rect\b[^>]*\brx=/g)??[]).length;
+  if(handCards>=3)lines.push(`[note] kit — ${handCards} rounded boxes are drawn by hand. Box, CompareCard, MetricCard, QuoteCard, SpeechBubble, Badge, Timeline and Terminal from './kit' draw these with audit markers and theme styling already set (read_skill kit); switching saves fix-up turns. Optional.`);
   const findings=summarizeAudit(render,cues,brief.durationInFrames).findings;
   const clean=timed&&!render.failures.length&&!findings.some(f=>f.severity==='high');
   const empty=findings.some(f=>f.kind==='empty-area');
-  const mustFix=[...(empty?['The empty-area finding: viewers notice a half-empty frame. Enlarge or spread the content of those cues (a closing end card may stay sparse).']:[]),
+  const mustFix=[...(empty?['The empty-area finding: viewers notice a half-empty frame. Enlarge or spread the content of those cues, the last one included.']:[]),
    ...(literal.length?['The literal-style finding: replace those values with theme tokens, so the scene follows the course theme.']:[]),
    ...(fixedFrames.length?['The literal-timing finding: replace those frame numbers with timing.cues, so the scene follows a new voice-over.']:[])];
   const fullSample=defaultFrames(brief.durationInFrames,cues).every(f=>frames.includes(f));

@@ -42,7 +42,8 @@ The narration recaps and looks ahead ("总结一下…", "随着…发展…", "
 
 - Recap by reusing the picture the viewer already knows: the same pipeline from earlier chapters, compact, with its steps named.
 - Outlook statements without data stay qualitative: an arrow forward, a road extending, the pipeline growing a new branch. Do not draw bar charts, axes or growth curves unless the brief gives the numbers; a chart implies measurements.
-- Closing lines ("谢谢观看") get a clean end card: title, one line, nothing else.
+- The last sentence fills the frame like every other: recap with the scene's own objects at full size. A closing line
+  ("谢谢观看") gets large type across the width together with the course's key object, not a small card in the middle.
 
 ## Before calling finish
 

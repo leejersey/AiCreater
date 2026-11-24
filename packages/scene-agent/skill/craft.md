@@ -18,6 +18,9 @@ Practical rules learned from rendered runs. They keep the picture readable; they
 - Keep at least 24 px between separate text labels. Stacked captions with no gap read as one blurred line.
 - Use the whole canvas above the caption area (y up to 980). A scene that fills only the top half looks unfinished. The audit reports `empty-area` with the empty band's coordinates when more than 40% of the height or 35% of the width stays empty during a cue; draw the main object large (at least half the width) rather than a small panel in the middle.
 - One idea per cue should dominate the frame; secondary labels stay smaller and muted.
+- **The last cue fills the frame too.** It is what the viewer is left with. Recap with the objects already on screen:
+  relight the whole pipeline, put before and after side by side, bring the chapter's key object back large. Never shrink
+  to a small panel or one line in the middle of an empty canvas; `empty-area` applies to the last cue like any other.
 
 ## Color
 
