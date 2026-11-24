@@ -6,6 +6,7 @@
 
 ## 2026-11-23
 
+- **18:01** 新部件真实渲染验证（蓝图、纸刊两个主题，4 帧，0 审查问题）中发现并修复：`QuoteCard` 的装饰引号被审查当成标签、与首行重叠（改为图形绘制）；`Terminal` 超长行会冲出窗口（改为在边缘以 … 截断）。（`8b75bd3`）
 - **17:58** 画面组件库新增 7 个部件：`Badge`（状态标签）、`MetricCard`（数据卡片，数字递增）、`Terminal`（终端 / 代码窗口，逐行打出）、`Timeline`（步骤 / 演进轨道）、`CompareCard`（A vs B 对比）、`QuoteCard`（金句卡）、`SpeechBubble`（提问 / 误区气泡）；`kit` skill 与测试同步。（`57dc97e`）
 - **17:58** 首页改版为 editorial 风格，全站加载主题字体（Noto Serif SC、Noto Sans SC、JetBrains Mono）。（`bd879bd`）
 
