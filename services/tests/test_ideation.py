@@ -71,6 +71,19 @@ class IdeationTests(unittest.TestCase):
         with self.assertRaises(ProviderError):  # cut off: treated as a failed reply, asked again, then fails
             ideation.generate_angles(self.llm(), self.client(reply({'angles': FOUR}, 'length'), reply('', 'length')), topic='RAG')
 
+    def test_a_batch_of_only_the_obvious_structures_is_asked_for_again_and_the_order_is_shuffled(self):
+        from services.workflow import ideation
+        obvious = [angle('problem', 'intro'), angle('journey', 'intro'), angle('compare', 'intermediate'), angle('myth', 'intermediate')]
+        client = self.client(reply({'angles': obvious}), reply({'angles': FOUR}))
+        with patch('services.workflow.ideation.random.sample', side_effect=lambda seq, n: list(reversed(seq))):
+            self.assertEqual(len(ideation.generate_angles(self.llm(), client, topic='RAG')), 4)
+        messages = client.post.call_args.kwargs['json']['messages']
+        self.assertIn('include at least one of howto', messages[3]['content'])
+        first = messages[1]['content']
+        self.assertIn('本批可选的结构类型（顺序随机，不代表优先级）：story（故事）、history', first)
+        self.assertIn('至少要有一个是 howto（实操）、history（演进 / 历史）、story（故事） 之一', first)
+        self.assertEqual(ideation.check_angles({'angles': obvious[:3]}, 3)[0]['structure'], 'problem')  # three may stay obvious
+
     def test_the_persons_own_direction_and_a_merge_each_make_one_card(self):
         from services.workflow import ideation
         client = self.client(reply({'angles': [angle('howto')]}))

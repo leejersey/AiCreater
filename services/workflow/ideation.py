@@ -6,6 +6,7 @@ half a result. Only single videos for now: Angle.scope is always 'single' and a 
 the places a series would plug in later. Never log prompts or secrets."""
 import json
 import logging
+import random
 
 import httpx
 
@@ -16,6 +17,9 @@ from services.workflow.research import brief_lines, check_brief
 
 log = logging.getLogger(__name__)
 
+# Batches of four or more must include at least one of these: left to itself the model keeps to problem / journey /
+# compare / myth, the first structures it sees.
+LESS_OBVIOUS = ('howto', 'history', 'story')
 STRUCTURES = {'problem': '问题驱动', 'journey': '旅程 / 流程', 'compare': '对比', 'myth': '误区纠正',
               'howto': '实操', 'history': '演进 / 历史', 'story': '故事'}
 DEPTHS = {'intro': '入门', 'intermediate': '进阶', 'advanced': '深入'}
@@ -73,6 +77,8 @@ def check_angles(value, count):
     angles = [check_angle(a) for a in angles]
     if len({a['structure'] for a in angles}) != len(angles): raise ValueError('angles: structures must differ')
     if count >= 3 and len({a['depth'] for a in angles}) < 2: raise ValueError('angles: use at least two depths')
+    if count >= 4 and not any(a['structure'] in LESS_OBVIOUS for a in angles):
+        raise ValueError('angles: include at least one of ' + ' / '.join(f'{k}（{STRUCTURES[k]}）' for k in LESS_OBVIOUS))
     if len({a['title'] for a in angles}) != len(angles): raise ValueError('angles: titles must differ')
     return angles
 
@@ -174,6 +180,11 @@ def generate_angles(llm, client, *, topic, notes='', audience='', duration_hint=
         check = lambda v: check_angles(v, 1)
     else:
         if exclude: lines.append('已经给过这些方向，新方向必须与它们不同：' + '；'.join(exclude))
+        # A fresh order each time, in the user message (the system prompt stays the same for the prompt cache).
+        order = random.sample(list(STRUCTURES), len(STRUCTURES))
+        lines.append('本批可选的结构类型（顺序随机，不代表优先级）：' + '、'.join(f'{k}（{STRUCTURES[k]}）' for k in order) + '。')
+        if count >= 4:
+            lines.append('其中至少要有一个是 ' + '、'.join(f'{k}（{STRUCTURES[k]}）' for k in LESS_OBVIOUS) + ' 之一；深度尽量拉开，适合时可以有一个 advanced（深入）。')
         lines.append(f'请给出 {count} 个方向。')
         check = lambda v: check_angles(v, count)
     return _chat(llm, client, _ANGLES_SYSTEM, '\n'.join(lines), check, 'ideas_angles', user_id)
