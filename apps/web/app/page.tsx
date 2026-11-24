@@ -37,62 +37,65 @@ export default function Home(){
         <button type="button" onClick={reload} style={{marginLeft:'auto',padding:'4px 10px',fontSize:'12px'}}><RefreshCw size={12} /> 重试</button>
       </p>}
 
-      <section className="home-hero">
-        <div className="hero-badge">
-          <Sparkles size={13} className="hero-badge-icon" />
-          <span>全新 AI 教学讲解视频生成平台</span>
+      <section className="home-hero home-hero-editorial">
+        <div className="hero-kicker">
+          <span className="hero-kicker-dot" aria-hidden="true" />
+          <span>STUDIO EDITION // 1080P · 30FPS · SCENE AGENT</span>
         </div>
 
         <h1 className="hero-title">
-          把教学想法与讲稿<br />
-          <span className="hero-gradient-text">一键变成专业级讲解视频</span>
+          把教学想法与热点素材<br />
+          <span className="hero-gradient-text">编排成电影级讲解视频</span>
         </h1>
 
         <p className="hero-desc">
-          专为知识教学与原理科普打造。输入讲稿或主题，系统拆分章节、配音并对齐字幕，再由 AI Agent 为每一章设计、检查并渲染讲解画面，输出 1080P 视频与字幕。
+          面向中文知识创作者的暗房剪辑工作台。从全网热点拆解、人设口播与分镜卡片，到字级配音对齐与 Scene Agent 逐章自主绘制动画，端到端输出 1080P 成片与字幕。
         </p>
 
         <div className="hero-cta-group">
           <Link className="home-primary-btn" href="/courses/new">
-            <Plus size={18} /> 新建视频作品
+            <Plus size={18} /> 开始创作新视频
           </Link>
           <Link className="home-secondary-btn" href="/courses">
-            <BookOpen size={16} /> 查看我的视频项目
+            <BookOpen size={16} /> 进入我的作品库
           </Link>
         </div>
 
-        {/* 4 维核心能力 Bento 微卡片 */}
         <div className="hero-bento-grid">
           <div className="bento-card">
-            <div className="bento-icon-wrapper" style={{color:'#34d399'}}>
-              <Sparkles size={18} />
+            <div className="bento-head">
+              <span className="bento-index">01</span>
+              <div className="bento-icon-wrapper"><Sparkles size={16} /></div>
             </div>
-            <h3>AI 生成讲稿</h3>
-            <p>按主题、受众与讲解风格生成口播，可附画面素材与画面意图；原稿逐字保留。</p>
+            <h3>热点拆解与爆款分镜</h3>
+            <p>多平台热点检索、长文一键转脚本、分镜卡片与开场钩子 3 选 1，告别干瘪 AI 腔。</p>
           </div>
 
           <div className="bento-card">
-            <div className="bento-icon-wrapper" style={{color:'#60a5fa'}}>
-              <Code size={18} />
+            <div className="bento-head">
+              <span className="bento-index">02</span>
+              <div className="bento-icon-wrapper"><Code size={16} /></div>
             </div>
-            <h3>Agent 逐章设计画面</h3>
-            <p>Agent 自己写画面、渲染、检查重叠与留白并修改，通过检查后才出片。</p>
+            <h3>Scene Agent 自主绘片</h3>
+            <p>内置指标大卡、对比双栏、时间轴与代码终端组件，自动渲染、几何审计并迭代修改。</p>
           </div>
 
           <div className="bento-card">
-            <div className="bento-icon-wrapper" style={{color:'#c084fc'}}>
-              <Mic size={18} />
+            <div className="bento-head">
+              <span className="bento-index">03</span>
+              <div className="bento-icon-wrapper"><Mic size={16} /></div>
             </div>
-            <h3>字级配音与字幕对齐</h3>
-            <p>火山引擎 TTS 2.0 原生时间戳驱动，毫秒级音画同步与可读字幕排版。</p>
+            <h3>字级配音与实测对齐</h3>
+            <p>火山引擎 TTS 2.0 原生时间戳驱动，画面跟随口播节奏，换音色免费自动重渲染。</p>
           </div>
 
           <div className="bento-card">
-            <div className="bento-icon-wrapper" style={{color:'#fbbf24'}}>
-              <Film size={18} />
+            <div className="bento-head">
+              <span className="bento-index">04</span>
+              <div className="bento-icon-wrapper"><Film size={16} /></div>
             </div>
-            <h3>1080P/30FPS 实时渲染</h3>
-            <p>基于 Remotion 本机渲染，每章确认后一键导出整课 MP4 与 SRT。</p>
+            <h3>连续审片与一键成片</h3>
+            <p>全键盘连续审片、按画面时刻提意见，整课本机 1080P 导出并附带多平台发布套件。</p>
           </div>
         </div>
       </section>

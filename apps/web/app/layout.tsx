@@ -1,4 +1,11 @@
 import type {Metadata} from 'next';
+import '@fontsource/noto-serif-sc/600.css';
+import '@fontsource/noto-serif-sc/700.css';
+import '@fontsource/noto-sans-sc/400.css';
+import '@fontsource/noto-sans-sc/500.css';
+import '@fontsource/noto-sans-sc/600.css';
+import '@fontsource/jetbrains-mono/400.css';
+import '@fontsource/jetbrains-mono/600.css';
 import './style.css';
 import {AccountSession} from './AccountSession';
 import {ConfirmProvider} from './ConfirmContext';
