@@ -46,7 +46,7 @@ SVG for everything else; a scene made only of boxes and arrows is still a diagra
 | `Camera` | `k` (scale, ≤ 1.6), `cx, cy`, children | push in on a detail: wrap the world in it |
 | `Badge` | `x, y, text, tone?` (`'accent'\|'positive'\|'negative'\|'muted'`), `fontSize?` (24) | a compact status/category pill above a card or node ("旧方案", "实测", "痛点") |
 | `MetricCard` | `x, y, w, h, label, value, suffix?, delta?, deltaTone?, lit?` | a KPI / data card with animated number count-up and optional delta ("+62%"); only use numbers from the brief |
-| `Terminal` | `x, y, w, h, title?, lines, fontSize?` (24), `highlightLine?` | a code/CLI window with typewriter reveal and optional highlighted line |
+| `Terminal` | `x, y, w, h, title?, lines, fontSize?` (24), `highlightLine?` | a code/CLI window with typewriter reveal and optional highlighted line; lines too long for `w` end in … (keep commands short) |
 | `Timeline` | `x, y, length, steps` (`{label, note?}[]`), `activeIndex?, vertical?` | a multi-step flow or evolution track starting at `(x, y)` that draws along the track and lights the active step |
 | `CompareCard` | `x, y, w, h, leftTitle, leftItems, rightTitle, rightItems, leftTone?, rightTone?` | side-by-side A vs B comparison with a central VS badge and staggered bullet reveals |
 | `QuoteCard` | `x, y, w, h, lines, author?, fontSize?` (36) | a punchy takeaway, hook, or contrarian quote card with an accent bar |

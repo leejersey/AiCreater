@@ -184,9 +184,20 @@ export function Terminal({id, x, y, w, h, title = 'terminal', lines, theme, prog
   const p = clamp01(progress);
   const topH = 44;
   const lineH = Math.round(fontSize * 1.55);
-  const totalChars = lines.reduce((n, l) => n + Array.from(l).length, 0) || 1;
+  // A monospace glyph is about 0.6em wide (a CJK one about 1em): longer lines end in … instead of leaving the window.
+  const room = w - 52, fit = (line: string) => {
+    let width = 0, out = '';
+    for (const c of Array.from(line)) {
+      const cw = (c.charCodeAt(0) > 0x2e80 ? 1 : 0.6) * fontSize;
+      if (width + cw > room - fontSize * 0.6) return out + '…';
+      width += cw; out += c;
+    }
+    return out;
+  };
+  const fitted = lines.map(fit);
+  const totalChars = fitted.reduce((n, l) => n + Array.from(l).length, 0) || 1;
   let budget = Math.ceil(totalChars * p);
-  const shown = lines.map(line => {
+  const shown = fitted.map(line => {
     const chars = Array.from(line);
     const take = Math.max(0, Math.min(chars.length, budget));
     budget -= take;
@@ -292,7 +303,10 @@ export function QuoteCard({id, x, y, w, h, lines, author, theme, progress = 1, f
     <rect data-obstacle id={`${id}-box`} x={-w / 2} y={-h / 2} width={w} height={h} rx={theme.radius}
       fill={theme.surface} stroke={theme.rule} strokeWidth={theme.ruleWidth * 1.5}/>
     <rect x={-w / 2} y={-h / 2 + 16} width={8} height={h - 32} rx={4} fill={theme.accent}/>
-    <text x={-w / 2 + 34} y={-h / 2 + 64} fill={theme.accent} fontFamily={theme.fontDisplay} fontSize={64} opacity={0.35}>“</text>
+    {/* The opening quote is drawn, not typed: as text the audit would measure it as a label overlapping the first line. */}
+    <g opacity={0.35} fill={theme.accent} transform={`translate(${-w / 2 + 30} ${-h / 2 + 22})`}>
+      {[0, 22].map(dx => <path key={dx} d={`M ${dx} 18 a 8 8 0 1 0 16 0 a 8 8 0 1 0 -16 0 Z M ${dx} 18 Q ${dx} 4 ${dx + 14} 0 L ${dx + 14} 5 Q ${dx + 6} 8 ${dx + 5} 16 Z`}/>)}
+    </g>
     {lines.map((line, i) => <text key={i} id={`${id}-line-${i}`} x={-w / 2 + 54} y={startY + i * lineH} textAnchor="start"
       fill={theme.foreground} fontFamily={theme.fontDisplay} fontSize={fontSize} fontWeight={600}>{line}</text>)}
     {author && <text id={`${id}-author`} x={w / 2 - 36} y={h / 2 - 28} textAnchor="end" fill={theme.muted}
