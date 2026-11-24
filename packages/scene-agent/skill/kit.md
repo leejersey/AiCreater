@@ -3,7 +3,11 @@
 Tested parts you can import into Scene.tsx, so you spend turns on the idea instead of on arrowheads and audit markers:
 
 ```tsx
-import {Box, Arrow, Doc, Cross, Check, Strike, Bar, Counter, Spotlight, Camera, ease, win, at, listOpacity} from './kit';
+import {
+  Box, Arrow, Doc, Cross, Check, Strike, Bar, Counter, Spotlight, Camera,
+  Badge, MetricCard, Terminal, Timeline, CompareCard, QuoteCard, SpeechBubble,
+  ease, win, at, listOpacity
+} from './kit';
 ```
 
 The full source sits beside your scene as `scene/kit.tsx` (`read_file scene/kit.tsx`); it cannot be edited. You do not need
@@ -40,6 +44,13 @@ SVG for everything else; a scene made only of boxes and arrows is still a diagra
 | `Counter` | `x, y, value, size?` (88), `suffix?`, `anchor?` | a number counting up; only numbers the brief gives |
 | `Spotlight` | `x, y, w, h` (no id) | a soft accent area behind the focus; draw it before the focused part |
 | `Camera` | `k` (scale, ≤ 1.6), `cx, cy`, children | push in on a detail: wrap the world in it |
+| `Badge` | `x, y, text, tone?` (`'accent'\|'positive'\|'negative'\|'muted'`), `fontSize?` (24) | a compact status/category pill above a card or node ("旧方案", "实测", "痛点") |
+| `MetricCard` | `x, y, w, h, label, value, suffix?, delta?, deltaTone?, lit?` | a KPI / data card with animated number count-up and optional delta ("+62%"); only use numbers from the brief |
+| `Terminal` | `x, y, w, h, title?, lines, fontSize?` (24), `highlightLine?` | a code/CLI window with typewriter reveal and optional highlighted line |
+| `Timeline` | `x, y, length, steps` (`{label, note?}[]`), `activeIndex?, vertical?` | a multi-step flow or evolution track starting at `(x, y)` that draws along the track and lights the active step |
+| `CompareCard` | `x, y, w, h, leftTitle, leftItems, rightTitle, rightItems, leftTone?, rightTone?` | side-by-side A vs B comparison with a central VS badge and staggered bullet reveals |
+| `QuoteCard` | `x, y, w, h, lines, author?, fontSize?` (36) | a punchy takeaway, hook, or contrarian quote card with an accent bar |
+| `SpeechBubble` | `x, y, w, h, speaker?, lines, side?` (`'left'\|'right'`), `tone?` | a viewer question, common myth, or hot-comment bubble |
 
 ## Example
 

@@ -77,3 +77,40 @@ test('the model finds the kit where the import points: listed and readable as sc
  assert.match(await call('read_file',{path:'scene/kit.tsx'}),/export function Box/);
  assert.match(await call('write_file',{path:'scene/kit.tsx',content:'x'}),/only scene\/Scene\.tsx is writable|path must be equal to one of the allowed values/);
 });
+
+test('advanced kit components compile against the kit contract and render cleanly with audit attributes',async()=>{
+ const scene=`import React from 'react';
+import {Badge, MetricCard, Terminal, Timeline, CompareCard, QuoteCard, SpeechBubble, win} from './kit';
+export default function Scene({frame, theme, timing}: ${PROPS}) {
+  const p = win(frame, timing.cues[0].start, 18, timing.cues[0].end);
+  return <svg width={1920} height={1080} viewBox="0 0 1920 1080">
+    <Badge id="b1" x={200} y={100} text="实测" theme={theme} progress={p}/>
+    <MetricCard id="m1" x={400} y={300} w={360} h={200} label="准确率" value={92} suffix="%" delta="+35%" theme={theme} lit progress={p}/>
+    <Terminal id="t1" x={1200} y={300} w={600} h={240} lines={['$ npm run dev', 'ready']} highlightLine={1} theme={theme} progress={p}/>
+    <Timeline id="tl1" x={260} y={620} length={1400} steps={[{label:'召回'},{label:'重排',note:'核心'}]} activeIndex={1} theme={theme} progress={p}/>
+    <CompareCard id="c1" x={960} y={400} w={900} h={360} leftTitle="纯向量" leftItems={['漏关键词']} rightTitle="混合检索" rightItems={['召回更稳']} theme={theme} progress={p}/>
+    <QuoteCard id="q1" x={960} y={450} w={900} h={240} lines={['切分比模型更关键']} author="实测结论" theme={theme} progress={p}/>
+    <SpeechBubble id="sb1" x={500} y={450} w={480} h={160} speaker="常见误区" lines={['换更大模型就行？']} side="left" tone="negative" theme={theme} progress={p}/>
+  </svg>;
+}`;
+ checkSource(scene);
+ await typecheckSource(scene);
+ const {createElement}=await import('react');
+ const {renderToStaticMarkup}=await import('react-dom/server');
+ const kit=await import('../../scene-kit/kit');
+ const theme={background:'#0b1020',surface:'#141c30',surface2:'#1c2640',foreground:'#f3f6ff',muted:'#94a3b8',faint:'#475569',rule:'#2c3858',accent:'#38bdf8',accentSoft:'rgba(56,189,248,0.16)',secondary:'#f59e0b',positive:'#34d399',negative:'#f87171',fontDisplay:'sans-serif',fontBody:'sans-serif',fontMono:'monospace',radius:12,ruleWidth:2,ruleDash:'6 4',dark:true};
+ const html=renderToStaticMarkup(createElement('svg',null,
+  createElement(kit.Badge,{id:'b1',x:200,y:100,text:'实测',theme,progress:0.8}),
+  createElement(kit.MetricCard,{id:'m1',x:400,y:300,w:360,h:200,label:'准确率',value:92,suffix:'%',delta:'+35%',theme,lit:true,progress:1}),
+  createElement(kit.Terminal,{id:'t1',x:1200,y:300,w:600,h:240,lines:['$ npm run dev','ready'],highlightLine:1,theme,progress:0.6}),
+  createElement(kit.Timeline,{id:'tl1',x:260,y:620,length:1400,steps:[{label:'召回'},{label:'重排',note:'核心'}],activeIndex:1,theme,progress:1}),
+  createElement(kit.CompareCard,{id:'c1',x:960,y:400,w:900,h:360,leftTitle:'纯向量',leftItems:['漏关键词'],rightTitle:'混合检索',rightItems:['召回更稳'],theme,progress:1}),
+  createElement(kit.QuoteCard,{id:'q1',x:960,y:450,w:900,h:240,lines:['切分比模型更关键'],author:'实测结论',theme,progress:1}),
+  createElement(kit.SpeechBubble,{id:'sb1',x:500,y:450,w:480,h:160,speaker:'常见误区',lines:['换更大模型就行？'],side:'left',tone:'negative',theme,progress:1}),
+ ));
+ assert.match(html,/data-object/);
+ assert.match(html,/data-obstacle/);
+ assert.match(html,/data-route/);
+ assert.match(html,/92%/);
+ assert.match(html,/VS/);
+});
