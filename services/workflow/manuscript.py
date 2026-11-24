@@ -1,5 +1,6 @@
 """DeepSeek plain-text manuscript generation; never log prompts or secrets."""
 import json
+import re
 import logging
 
 import httpx
@@ -8,7 +9,7 @@ from services.accounts.model_settings import DEEPSEEK_BASE_URL
 from services.workflow.destination import pinned_post
 from services.workflow.providers import ProviderError, _status
 
-from services.workflow.manuscript_document import format_document, parse_document
+from services.workflow.manuscript_document import format_document, narration_text, parse_document
 from services.workflow.ideation import check_angle, check_outline, plan_lines
 from services.workflow.research import brief_lines, check_brief
 
@@ -202,6 +203,50 @@ def _user_message(title, audience, duration_hint, outline, teaching_style, plan=
     return '\n'.join(lines)
 
 
+
+def _complete(llm, client, body, stage='manuscript'):
+    """One chat completion's text, after the provider and finish-reason checks every manuscript call shares."""
+    response = pinned_post(client, llm.base_url.rstrip('/') + '/chat/completions',
+                           headers={'Authorization': 'Bearer ' + llm.api_key}, json=body)
+    _status(response, stage)
+    if len(response.content) > 1024 * 1024:
+        raise ProviderError(stage, 'response_limit', 'Response exceeds 1 MiB')
+    choice = response.json()['choices'][0]
+    if choice.get('finish_reason') == 'length':
+        raise ProviderError(stage, 'output_limit', 'Generation reached token or context budget')
+    if choice.get('finish_reason') == 'content_filter':
+        raise ProviderError(stage, 'response_filtered', 'Generation was filtered')
+    if choice.get('finish_reason') != 'stop':
+        raise ProviderError(stage, 'incomplete_response', 'Generation did not finish normally')
+    text = (choice['message']['content'] or '').strip()
+    if not text:
+        raise ProviderError(stage, 'invalid_response', 'Expected non-empty text')
+    return text
+
+
+def _document(llm, client, body, advise=None):
+    """A Markdown storyboard document: (formatted text, parsed JSON). A reply that fails the document check is asked for
+    once more with the reason (the model sometimes leaves a blank field or a list mark in the narration).
+    advise(parsed) may return a soft problem (e.g. far too long): asked once to fix it, then the second reply is kept."""
+    messages = body['messages']
+    for attempt in range(2):
+        text = _complete(llm, client, {**body, 'messages': messages})
+        if len(text) > 24000:
+            raise ProviderError('manuscript', 'output_limit', 'Document exceeds 24000 code points')
+        try:
+            parsed = json.loads(text)
+            formatted = format_document(parsed)
+            advice = advise(parsed) if advise and not attempt else None
+            if not advice:
+                return formatted, parsed
+            messages = messages + [{'role': 'assistant', 'content': text}, {'role': 'user', 'content': advice + '请重新输出完整 JSON。'}]
+        except (json.JSONDecodeError, ProviderError) as problem:
+            if isinstance(problem, ProviderError) and problem.code != 'invalid_response' or attempt:
+                raise ProviderError('manuscript', 'invalid_response', f'模型返回的文稿不符合格式要求：{problem}') from None
+            reason = 'JSON 无法解析' if isinstance(problem, json.JSONDecodeError) else str(problem).split(': ', 2)[-1]
+            messages = messages + [{'role': 'assistant', 'content': text},
+                                   {'role': 'user', 'content': f'上面的输出不符合要求：{reason}。请按要求重新输出完整 JSON。'}]
+
 def generate_manuscript(title, llm, client, *, audience='', duration_hint='', outline='', user_id=None,
                       teaching_style='popular', manuscript_format='plain', plan=None, research=None, persona=None):
     """llm: services.accounts.model_settings.LLM (the account's model or the server's DeepSeek).
@@ -233,27 +278,9 @@ def generate_manuscript(title, llm, client, *, audience='', duration_hint='', ou
         body['thinking'] = {'type': 'disabled'}
     chars, ok = 0, False
     try:
-        response = pinned_post(client, llm.base_url.rstrip('/') + '/chat/completions',
-                               headers={'Authorization': 'Bearer ' + llm.api_key}, json=body)
-        _status(response, 'manuscript')
-        if len(response.content) > 1024 * 1024:
-            raise ProviderError('manuscript', 'response_limit', 'Response exceeds 1 MiB')
-        data = response.json()
-        choice = data['choices'][0]
-        if choice.get('finish_reason') == 'length':
-            raise ProviderError('manuscript', 'output_limit', 'Generation reached token or context budget')
-        if choice.get('finish_reason') == 'content_filter':
-            raise ProviderError('manuscript', 'response_filtered', 'Generation was filtered')
-        if choice.get('finish_reason') != 'stop':
-            raise ProviderError('manuscript', 'incomplete_response', 'Generation did not finish normally')
-        text = choice['message']['content'].strip()
-        if not text:
-            raise ProviderError('manuscript', 'invalid_response', 'Expected non-empty narration text')
         if manuscript_format == 'markdown':
-            if len(text) > 24000:
-                raise ProviderError('manuscript', 'output_limit', 'Document exceeds 24000 code points')
-            text = format_document(json.loads(text))
-        elif len(text) > 4000:
+            text, _ = _document(llm, client, body)
+        elif len(text := _complete(llm, client, body)) > 4000:
             raise ProviderError('manuscript', 'output_limit', 'Manuscript exceeds 4000 code points')
         chars, ok = len(text), True
         return text
@@ -390,24 +417,9 @@ def polish_manuscript(source_text, llm, client, *, manuscript_format='markdown',
         body['thinking'] = {'type': 'disabled'}
     ok = False
     try:
-        response = pinned_post(client, llm.base_url.rstrip('/') + '/chat/completions',
-                               headers={'Authorization': 'Bearer ' + llm.api_key}, json=body)
-        _status(response, 'manuscript')
-        if len(response.content) > 1024 * 1024:
-            raise ProviderError('manuscript', 'response_limit', 'Response exceeds 1 MiB')
-        choice = response.json()['choices'][0]
-        if choice.get('finish_reason') == 'length':
-            raise ProviderError('manuscript', 'output_limit', 'Generation reached token or context budget')
-        if choice.get('finish_reason') == 'content_filter':
-            raise ProviderError('manuscript', 'response_filtered', 'Generation was filtered')
-        if choice.get('finish_reason') != 'stop':
-            raise ProviderError('manuscript', 'incomplete_response', 'Generation did not finish normally')
-        text = (choice['message']['content'] or '').strip()
-        if not text:
-            raise ProviderError('manuscript', 'invalid_response', 'Expected non-empty text')
         if manuscript_format == 'markdown':
-            text = format_document(json.loads(text))
-        elif len(text) > 4000:
+            text, _ = _document(llm, client, body)
+        elif len(text := _complete(llm, client, body)) > 4000:
             raise ProviderError('manuscript', 'output_limit', 'Manuscript exceeds 4000 code points')
         ok = True
         return text
@@ -587,6 +599,30 @@ def generate_publish_kit(title, source_text, llm, client, *, platform='general',
     return _call_json_llm(llm, client, _PUBLISH_KIT_SYSTEM, user_content, _check, 'manuscript_publish_kit', max_tokens=2000, user_id=user_id)
 
 
+
+def _budget_seconds(duration_hint):
+    m = re.search(r'(\d+(?:\.\d+)?)\s*(分钟|分|min|m|秒|s)?', duration_hint or '', re.I)
+    seconds = 180 if not m else float(m.group(1)) * (1 if (m.group(2) or '分钟').lower() in ('秒', 's') else 60)
+    return max(30, min(int(seconds), 780))
+
+
+def _too_long(document, duration_hint):
+    """Advice when the narration is more than 25% over the budget's cap; None when it fits."""
+    chars, budget = len(narration_text(document)), _budget_seconds(duration_hint) * 5
+    if chars <= budget * 1.15 * 1.25:
+        return None
+    return (f'口播合计 {chars} 字，约 {chars // 5} 秒，远超目标时长（约 {budget} 字）。请压缩到 {budget} 字左右：'
+            f'只保留最有价值的几点，合并或删掉次要段落，段数控制在 {max(2, budget // 225)}–{max(3, budget // 125)} 段。')
+
+
+def _length_budget(duration_hint):
+    """The narration budget for a target length, at about 5 spoken characters per second (the TTS pace we measure):
+    a long article otherwise comes back two or three times too long."""
+    seconds = _budget_seconds(duration_hint)
+    chars = seconds * 5
+    return (f'口播合计约 {chars} 字，最多不超过 {int(chars * 1.15)} 字（约每秒 5 字）；分 {max(2, seconds // 45)}–{max(3, seconds // 25)} 段，'
+            '每段口播不超过 100 秒。原文内容多时只挑最有价值的几点讲透，不要全部罗列。')
+
 def convert_article_to_manuscript(article_text, llm, client, *, title='', duration_hint='3分钟',
                                   teaching_style='popular', manuscript_format='markdown',
                                   focus='', persona=None, user_id=None):
@@ -610,7 +646,7 @@ def convert_article_to_manuscript(article_text, llm, client, *, title='', durati
 
     lines = [
         '【任务：长文 / 笔记提炼改写为短视频分镜口播稿】',
-        f'目标视频时长：{dur_clean}（按每秒约 5 字控制总口播字数；每段口播不超过 100 秒）',
+        f'目标视频时长：{dur_clean}。' + _length_budget(dur_clean),
         '风格：' + ('知识干货（讲清机制、数据与步骤）' if teaching_style == 'technical' else '通俗科普（用类比和短句讲透核心观点）'),
         '改写要求：',
         '1. 严格忠于下方原文中的真实事实、数据、案例与观点，绝不编造原文没有的数字或结论；',
@@ -638,28 +674,12 @@ def convert_article_to_manuscript(article_text, llm, client, *, title='', durati
         body['thinking'] = {'type': 'disabled'}
     ok = False
     try:
-        response = pinned_post(client, llm.base_url.rstrip('/') + '/chat/completions',
-                               headers={'Authorization': 'Bearer ' + llm.api_key}, json=body)
-        _status(response, 'manuscript')
-        if len(response.content) > 1024 * 1024:
-            raise ProviderError('manuscript', 'response_limit', 'Response exceeds 1 MiB')
-        choice = response.json()['choices'][0]
-        if choice.get('finish_reason') == 'length':
-            raise ProviderError('manuscript', 'output_limit', 'Generation reached token or context budget')
-        if choice.get('finish_reason') == 'content_filter':
-            raise ProviderError('manuscript', 'response_filtered', 'Generation was filtered')
-        if choice.get('finish_reason') != 'stop':
-            raise ProviderError('manuscript', 'incomplete_response', 'Generation did not finish normally')
-        text = (choice['message']['content'] or '').strip()
-        if not text:
-            raise ProviderError('manuscript', 'invalid_response', 'Expected non-empty text')
         derived_title = title_clean
         if manuscript_format == 'markdown':
-            parsed = json.loads(text)
-            if not derived_title and isinstance(parsed, dict) and parsed.get('sections'):
+            text, parsed = _document(llm, client, body, advise=lambda doc: _too_long(doc, dur_clean))
+            if not derived_title:
                 derived_title = str(parsed['sections'][0].get('title') or '').strip()[:80]
-            text = format_document(parsed)
-        elif len(text) > 4000:
+        elif len(text := _complete(llm, client, body)) > 4000:
             raise ProviderError('manuscript', 'output_limit', 'Manuscript exceeds 4000 code points')
         if not derived_title:
             first_line = next((ln.strip('# ').strip() for ln in article_text.splitlines() if ln.strip()), '长文转视频')

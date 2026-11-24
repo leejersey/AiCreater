@@ -142,3 +142,69 @@ class ManuscriptApiOfflineTests(unittest.TestCase):
         store.create_project.assert_not_called()
         if hasattr(app.state.jobs, 'submit_generate'):
             app.state.jobs.submit_generate.assert_not_called()
+
+
+class DocumentRetryTests(unittest.TestCase):
+    """A storyboard that fails the document check is asked for once more, with the reason."""
+    def setUp(self):
+        patcher = patch('services.workflow.destination.socket.getaddrinfo', return_value=[(2, 1, 6, '', ('93.184.216.34', 443))])
+        patcher.start(); self.addCleanup(patcher.stop)
+
+    def llm(self):
+        from services.accounts.model_settings import LLM
+        return LLM('https://api.deepseek.com', 'sk', 'deepseek-flash', 'env', None)
+
+    def reply(self, payload):
+        content = payload if isinstance(payload, str) else json.dumps(payload, ensure_ascii=False)
+        return MagicMock(status_code=200, content=b'{}', json=lambda: {'choices': [{'finish_reason': 'stop', 'message': {'content': content}}]})
+
+    def test_a_document_with_a_blank_field_is_asked_for_again_with_the_reason(self):
+        from services.workflow import manuscript as m
+        from services.tests.test_manuscript_document import SECTIONS
+        blank = {'sections': [{**SECTIONS[0], 'materials': ''}]}
+        client = MagicMock(); client.post.side_effect = [self.reply(blank), self.reply({'sections': SECTIONS})]
+        result = m.convert_article_to_manuscript('一篇关于依赖管理的长文' * 5, self.llm(), client, duration_hint='3分钟')
+        self.assertIn('## [s1] 添加依赖', result['text']); self.assertEqual(result['title'], '添加依赖')
+        retry = client.post.call_args.kwargs['json']['messages']
+        self.assertEqual(retry[-2]['role'], 'assistant'); self.assertIn('段 s1 有空字段', retry[-1]['content'])
+        first_prompt = client.post.call_args_list[0].kwargs['json']['messages'][1]['content']
+        self.assertIn('口播合计约 900 字', first_prompt); self.assertIn('分 4–7 段', first_prompt)
+
+    def test_two_bad_documents_fail_with_a_clear_reason_and_the_route_reports_a_provider_error(self):
+        from services.workflow import manuscript as m
+        client = MagicMock(); client.post.side_effect = [self.reply('不是 JSON'), self.reply({'sections': []})]
+        with self.assertRaises(ProviderError) as ctx:
+            m.generate_manuscript('题', self.llm(), client, manuscript_format='markdown')
+        self.assertEqual(ctx.exception.code, 'invalid_response'); self.assertIn('sections 须为 1–20 段', str(ctx.exception))
+        self.assertEqual(client.post.call_count, 2)
+        # The route maps it as a provider failure (502), not as an invalid request (422): ProviderError is a ValueError.
+        from fastapi.testclient import TestClient
+        from services.api.app import create_app
+        with patch('services.api.app.resolve_llm', return_value=self.llm()), \
+             patch('services.api.app.convert_article_to_manuscript', side_effect=ctx.exception):
+            with TestClient(create_app(MagicMock(), authentication=False), base_url='http://127.0.0.1:8000', client=('127.0.0.1', 50000)) as api:
+                response = api.post('/api/manuscripts/from-article', json={'article_text': '一篇足够长的文章内容，至少要有二十个字符才行。'})
+        self.assertEqual((response.status_code, response.json()['code']), (502, 'invalid_response'))
+
+    def test_far_too_long_a_script_is_asked_once_to_compress_and_the_second_reply_is_kept(self):
+        from services.workflow import manuscript as m
+        section = lambda i, n: {'id': f's{i}', 'title': f'第{i}段', 'narration': '字' * n, 'materials': '无', 'visual_intent': '画面'}
+        long = {'sections': [section(i, 400) for i in range(1, 5)]}      # 1600 chars for a 3-minute (900) budget
+        fits = {'sections': [section(i, 220) for i in range(1, 5)]}      # 880
+        client = MagicMock(); client.post.side_effect = [self.reply(long), self.reply(fits)]
+        result = m.convert_article_to_manuscript('一篇关于依赖管理的长文' * 5, self.llm(), client, duration_hint='3分钟')
+        self.assertEqual(result['text'].count('字' * 220), 4)
+        self.assertIn('口播合计 1606 字', client.post.call_args.kwargs['json']['messages'][-1]['content'])
+        client = MagicMock(); client.post.side_effect = [self.reply(long), self.reply(long)]
+        self.assertEqual(m.convert_article_to_manuscript('一篇关于依赖管理的长文' * 5, self.llm(), client)['text'].count('字' * 400), 4)
+        client = MagicMock(); client.post.side_effect = [self.reply(fits)]
+        m.convert_article_to_manuscript('一篇关于依赖管理的长文' * 5, self.llm(), client)
+        self.assertEqual(client.post.call_count, 1)  # within budget: one call
+
+    def test_a_field_that_reads_back_as_a_new_heading_is_named_in_the_retry(self):
+        from services.workflow import manuscript as m
+        from services.tests.test_manuscript_document import SECTIONS
+        heading = {'sections': [{**SECTIONS[0], 'materials': '对比\n### 画面意图\n伪造的标题'}]}
+        client = MagicMock(); client.post.side_effect = [self.reply(heading), self.reply({'sections': SECTIONS})]
+        m.convert_article_to_manuscript('一篇关于依赖管理的长文' * 5, self.llm(), client)
+        self.assertIn('以 # 开头的行', client.post.call_args.kwargs['json']['messages'][-1]['content'])

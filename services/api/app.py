@@ -264,11 +264,11 @@ def create_app(store=None, *, authentication=True):
                 return hotspot_research.search_hot_sources(
                     body.query, platforms=body.platforms, time_range=body.time_range,
                     max_results=body.max_results, client=client)
-        except ValueError as problem:
-            return JSONResponse({'code': 'validation', 'message': str(problem)}, status_code=422)
-        except ProviderError as exc:
+        except ProviderError as exc:  # a ValueError too: catch it first
             return JSONResponse({'code': exc.code, 'message': str(exc)},
                                 status_code=_provider_error_status(exc.code))
+        except ValueError as problem:
+            return JSONResponse({'code': 'validation', 'message': str(problem)}, status_code=422)
 
     @app.post('/api/research/extract')
     def research_extract_route(body: ResearchExtract):
@@ -276,11 +276,11 @@ def create_app(store=None, *, authentication=True):
             with httpx.Client(timeout=30, trust_env=False) as client:
                 item = hotspot_research.extract_url_content(body.url, client=client)
                 return {'item': item}
-        except ValueError as problem:
-            return JSONResponse({'code': 'validation', 'message': str(problem)}, status_code=422)
-        except ProviderError as exc:
+        except ProviderError as exc:  # a ValueError too: catch it first
             return JSONResponse({'code': exc.code, 'message': str(exc)},
                                 status_code=_provider_error_status(exc.code))
+        except ValueError as problem:
+            return JSONResponse({'code': 'validation', 'message': str(problem)}, status_code=422)
 
     @app.post('/api/research/analyze')
     def research_analyze_route(body: ResearchAnalyze, request: Request):
@@ -292,11 +292,11 @@ def create_app(store=None, *, authentication=True):
                     llm, client, topic=body.topic.strip(), sources=body.sources,
                     viral_style=body.viral_style, user_id=user_id)
             return {'brief': brief}
-        except ValueError as problem:
-            return JSONResponse({'code': 'validation', 'message': str(problem)}, status_code=422)
-        except ProviderError as exc:
+        except ProviderError as exc:  # a ValueError too: catch it first
             return JSONResponse({'code': exc.code, 'message': str(exc)},
                                 status_code=_provider_error_status(exc.code))
+        except ValueError as problem:
+            return JSONResponse({'code': 'validation', 'message': str(problem)}, status_code=422)
 
     @app.post('/api/research/pitches')
     def research_pitches_route(body: ResearchPitches, request: Request):
@@ -307,11 +307,11 @@ def create_app(store=None, *, authentication=True):
                 pitches = hotspot_research.generate_platform_pitches(
                     llm, client, topic=body.topic.strip(), brief=body.brief, user_id=user_id)
             return {'pitches': pitches}
-        except ValueError as problem:
-            return JSONResponse({'code': 'validation', 'message': str(problem)}, status_code=422)
-        except ProviderError as exc:
+        except ProviderError as exc:  # a ValueError too: catch it first
             return JSONResponse({'code': exc.code, 'message': str(exc)},
                                 status_code=_provider_error_status(exc.code))
+        except ValueError as problem:
+            return JSONResponse({'code': 'validation', 'message': str(problem)}, status_code=422)
 
     @app.post('/api/manuscripts/hooks')
     def manuscript_hooks_route(body: ManuscriptHooks, request: Request):
@@ -322,11 +322,11 @@ def create_app(store=None, *, authentication=True):
                 hooks = generate_hooks(body.title, body.source_text, llm, client,
                                        research=body.research, persona=body.persona, user_id=user_id)
             return {'hooks': hooks}
-        except ValueError as problem:
-            return JSONResponse({'code': 'validation', 'message': str(problem)}, status_code=422)
-        except ProviderError as exc:
+        except ProviderError as exc:  # a ValueError too: catch it first
             return JSONResponse({'code': exc.code, 'message': str(exc)},
                                 status_code=_provider_error_status(exc.code))
+        except ValueError as problem:
+            return JSONResponse({'code': 'validation', 'message': str(problem)}, status_code=422)
 
     @app.post('/api/manuscripts/polish')
     def manuscript_polish_route(body: ManuscriptPolish, request: Request):
@@ -338,11 +338,11 @@ def create_app(store=None, *, authentication=True):
                                          manuscript_format=body.manuscript_format, persona=body.persona,
                                          instruction=body.instruction, user_id=user_id)
             return {'text': text}
-        except ValueError as problem:
-            return JSONResponse({'code': 'validation', 'message': str(problem)}, status_code=422)
-        except ProviderError as exc:
+        except ProviderError as exc:  # a ValueError too: catch it first
             return JSONResponse({'code': exc.code, 'message': str(exc)},
                                 status_code=_provider_error_status(exc.code))
+        except ValueError as problem:
+            return JSONResponse({'code': 'validation', 'message': str(problem)}, status_code=422)
 
     @app.post('/api/manuscripts/rewrite-section')
     def manuscript_rewrite_section_route(body: ManuscriptRewriteSection, request: Request):
@@ -353,11 +353,11 @@ def create_app(store=None, *, authentication=True):
                 text = rewrite_section(body.title, body.source_text, body.section_id, body.instruction, llm, client,
                                        persona=body.persona, research=body.research, user_id=user_id)
             return {'text': text}
-        except ValueError as problem:
-            return JSONResponse({'code': 'validation', 'message': str(problem)}, status_code=422)
-        except ProviderError as exc:
+        except ProviderError as exc:  # a ValueError too: catch it first
             return JSONResponse({'code': exc.code, 'message': str(exc)},
                                 status_code=_provider_error_status(exc.code))
+        except ValueError as problem:
+            return JSONResponse({'code': 'validation', 'message': str(problem)}, status_code=422)
 
     @app.post('/api/manuscripts/critique')
     def manuscript_critique_route(body: ManuscriptCritique, request: Request):
@@ -368,11 +368,11 @@ def create_app(store=None, *, authentication=True):
                 critique = critique_manuscript(body.title, body.source_text, llm, client,
                                                manuscript_format=body.manuscript_format, user_id=user_id)
             return {'critique': critique}
-        except ValueError as problem:
-            return JSONResponse({'code': 'validation', 'message': str(problem)}, status_code=422)
-        except ProviderError as exc:
+        except ProviderError as exc:  # a ValueError too: catch it first
             return JSONResponse({'code': exc.code, 'message': str(exc)},
                                 status_code=_provider_error_status(exc.code))
+        except ValueError as problem:
+            return JSONResponse({'code': 'validation', 'message': str(problem)}, status_code=422)
 
     @app.post('/api/manuscripts/publish-kit')
     def manuscript_publish_kit_route(body: ManuscriptPublishKit, request: Request):
@@ -383,11 +383,11 @@ def create_app(store=None, *, authentication=True):
                 kit = generate_publish_kit(body.title, body.source_text, llm, client,
                                            platform=body.platform, user_id=user_id)
             return {'kit': kit}
-        except ValueError as problem:
-            return JSONResponse({'code': 'validation', 'message': str(problem)}, status_code=422)
-        except ProviderError as exc:
+        except ProviderError as exc:  # a ValueError too: catch it first
             return JSONResponse({'code': exc.code, 'message': str(exc)},
                                 status_code=_provider_error_status(exc.code))
+        except ValueError as problem:
+            return JSONResponse({'code': 'validation', 'message': str(problem)}, status_code=422)
 
     @app.post('/api/manuscripts/from-article')
     def manuscript_from_article_route(body: ManuscriptFromArticle, request: Request):
@@ -401,11 +401,11 @@ def create_app(store=None, *, authentication=True):
                     teaching_style=body.teaching_style, manuscript_format=body.manuscript_format,
                     focus=body.focus, persona=body.persona, user_id=user_id)
             return result
-        except ValueError as problem:
-            return JSONResponse({'code': 'validation', 'message': str(problem)}, status_code=422)
-        except ProviderError as exc:
+        except ProviderError as exc:  # a ValueError too: catch it first
             return JSONResponse({'code': exc.code, 'message': str(exc)},
                                 status_code=_provider_error_status(exc.code))
+        except ValueError as problem:
+            return JSONResponse({'code': 'validation', 'message': str(problem)}, status_code=422)
 
     @app.post('/api/manuscripts/generate')
     def manuscript_generate(body: GenerateManuscript, request: Request):
