@@ -1,10 +1,11 @@
-from datetime import date
+from datetime import date, timedelta
+from services.projects.estimates import PRICES_CHECKED_ON
 import unittest
 from unittest.mock import patch
 import httpx
 from services.projects import usage
 
-NOW=date(2026,10,15)
+NOW=PRICES_CHECKED_ON  # the day prices were checked: the tests do not expire with the calendar
 VOICE={'kind':'voice','protocol_version':'native-voice:1','profile':{'voice':{'resource_id':'seed-tts-2.0','speaker':'public'}}}
 
 class UsageTests(unittest.TestCase):
@@ -16,7 +17,7 @@ class UsageTests(unittest.TestCase):
             self.assertEqual(measured['state'],'submitted');self.assertIsNone(measured['reference']['minimum_cny'])
         local=usage.initial_usage({'kind':'timing'},now=NOW)
         self.assertEqual(local['state'],'local');self.assertEqual(local['reference']['maximum_cny'],0)
-        self.assertIsNone(usage.initial_usage(VOICE,now=date(2026,12,1))['prices']['rates'])
+        self.assertIsNone(usage.initial_usage(VOICE,now=NOW+timedelta(days=31))['prices']['rates'])
         for event in [{'state':'submitted','secret':'private'},{'state':'reported','submitted_characters':0},{'state':'reported','input_tokens':1,'output_tokens':1}]:
             self.assertEqual(usage.apply_event(usage.initial_usage(VOICE,now=NOW),event),usage.initial_usage(VOICE,now=NOW))
 

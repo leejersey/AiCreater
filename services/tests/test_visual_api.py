@@ -98,7 +98,10 @@ class VisualApiTests(unittest.TestCase):
         with self.store.connection() as conn:
             project=self.store._insert_scene(conn,self.store._read(conn,self.pid),chapters.chapter('第二句话。',None),1,'needs_voice')
         second=project['scenes'][1]['id']
-        plan=self.client.get(self.path+'/autopilot').json()
+        from datetime import date
+        from unittest.mock import patch
+        with patch('services.projects.estimates.PRICES_CHECKED_ON',date.today()):  # a quote, whenever the test runs
+            plan=self.client.get(self.path+'/autopilot').json()
         self.assertEqual([c['steps'] for c in plan['chapters']],[['agent'],['voice','agent']])
         self.assertEqual((plan['agent']['chapters'],plan['agent']['max_turns_total']),(2,50))
         self.assertEqual(plan['voice']['quantity']['characters'],len('第二句话。'))

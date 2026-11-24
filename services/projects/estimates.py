@@ -5,7 +5,7 @@ from decimal import Decimal, ROUND_CEILING
 from services.projects.jobs import Jobs
 from services.projects.store import StoreError, identifier, revision
 
-PRICES_CHECKED_ON = date(2026, 10, 15)
+PRICES_CHECKED_ON = date(2026, 11, 23)  # seed-tts-2.0 still 3 元/万字符 on the billing page (updated 2026.11.23)
 TTS_SOURCE = 'https://docs.volcengine.com/docs/DoubaoVoice/Billinginstructions-21?lang=zh'
 DISCLAIMER = '仅公开按量参考价，非供应商账单、非扣费上限；未扣免费额度、套餐或折扣，重试可能再计费。'
 QUANTITIES = ('calls', 'reused_jobs', 'characters', 'input_tokens_min', 'input_tokens_max', 'output_tokens_max')

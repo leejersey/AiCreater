@@ -1,15 +1,15 @@
 import json
 import unittest
-from datetime import date
+from datetime import date, timedelta
 from unittest.mock import MagicMock, patch
 from fastapi.testclient import TestClient
-from services.projects.estimates import estimate_payload, combine_estimates, estimate_project
+from services.projects.estimates import estimate_payload, combine_estimates, estimate_project, PRICES_CHECKED_ON
 from services.projects.store import StoreError
 
 
 def voice(text='中A😀 \n。', resource='seed-tts-2.0'):
     return {'kind':'voice','scene':{'narration':{'text':text}},'profile':{'voice':{'resource_id':resource}},'protocol_version':'native-voice:1'}
-NOW=date(2026,10,15)
+NOW=PRICES_CHECKED_ON  # the day prices were checked: the tests do not expire with the calendar
 
 class CostEstimateTests(unittest.TestCase):
     def test_voice_counts_all_unicode_and_uses_reference_price_not_discount(self):
@@ -28,7 +28,7 @@ class CostEstimateTests(unittest.TestCase):
             self.assertEqual(result['status'],'unknown')
             self.assertIsNone(result['maximum_cny'])
             self.assertNotIn('unverified-private',json.dumps(result))
-        for day in [date(2026,10,14),date(2026,11,15)]:
+        for day in [NOW-timedelta(days=1),NOW+timedelta(days=31)]:  # before the check, or more than 30 days after
             self.assertEqual(estimate_payload(voice(),now=day)['status'],'unknown')
 
     def test_reuse_and_local_operations_do_not_require_current_provider_price(self):
