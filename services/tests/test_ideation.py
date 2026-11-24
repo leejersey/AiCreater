@@ -84,6 +84,18 @@ class IdeationTests(unittest.TestCase):
         self.assertIn('至少要有一个是 howto（实操）、history（演进 / 历史）、story（故事） 之一', first)
         self.assertEqual(ideation.check_angles({'angles': obvious[:3]}, 3)[0]['structure'], 'problem')  # three may stay obvious
 
+    def test_another_batch_reuses_at_most_two_structures_of_the_last_one(self):
+        from services.workflow import ideation
+        last = ['howto', 'history', 'story', 'myth']
+        same = [angle('howto', 'intro', 'a'), angle('history', 'intro', 'b'), angle('story', 'intermediate', 'c'), angle('compare', 'intro', 'd')]
+        fresh = [angle('howto', 'intro', 'e'), angle('problem', 'intro', 'f'), angle('journey', 'intermediate', 'g'), angle('compare', 'intro', 'h')]
+        client = self.client(reply({'angles': same}), reply({'angles': fresh}))
+        self.assertEqual(len(ideation.generate_angles(self.llm(), client, topic='RAG', exclude=['x'], avoid_structures=last)), 4)
+        messages = client.post.call_args.kwargs['json']['messages']
+        self.assertIn('上一批用过的结构：howto（实操）、history（演进 / 历史）、story（故事）、myth（误区纠正）', messages[1]['content'])
+        self.assertIn('reuse at most two structures of the last batch (reused howto, history, story)', messages[3]['content'])
+        self.assertEqual(len(ideation.check_angles({'angles': fresh}, 4, last)), 4)  # one repeat is fine
+
     def test_the_persons_own_direction_and_a_merge_each_make_one_card(self):
         from services.workflow import ideation
         client = self.client(reply({'angles': [angle('howto')]}))

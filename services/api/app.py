@@ -133,6 +133,7 @@ class ManuscriptFromArticle(Body):
 class IdeaAngles(IdeaContext):
     count: int = Field(default=4, ge=3, le=6)
     exclude: list[str] = Field(default_factory=list, max_length=30)
+    avoid_structures: list[Literal['problem', 'journey', 'compare', 'myth', 'howto', 'history', 'story']] = Field(default_factory=list, max_length=7)
     custom: str = Field(default='', max_length=200)
     merge: list[dict] | None = Field(default=None, min_length=2, max_length=2)
     scope: Literal['single'] = 'single'  # a series plugs in here later
@@ -439,7 +440,7 @@ def create_app(store=None, *, authentication=True):
             with httpx.Client(timeout=120, trust_env=False) as client:
                 angles = ideation.generate_angles(llm, client, topic=body.topic.strip(), notes=body.notes.strip(),
                     audience=body.audience.strip(), duration_hint=body.duration_hint.strip(), teaching_style=body.teaching_style,
-                    count=body.count, exclude=exclude, custom=body.custom.strip(), merge=merge,
+                    count=body.count, exclude=exclude, avoid_structures=body.avoid_structures, custom=body.custom.strip(), merge=merge,
                     research=research, persona=body.persona, user_id=user_id)
         except ProviderError as exc:
             return JSONResponse({'code': exc.code, 'message': str(exc)}, status_code=_provider_error_status(exc.code))

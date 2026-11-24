@@ -70,13 +70,16 @@ def check_angle(value):
             'chapters': [_text(c, 24, 'chapter') for c in chapters], 'scope': 'single'}
 
 
-def check_angles(value, count):
+def check_angles(value, count, avoid=()):
     """A batch: `count` angles with distinct structures and at least two depths (when there are three or more)."""
     angles = value.get('angles') if isinstance(value, dict) else None
     if not isinstance(angles, list) or len(angles) != count: raise ValueError(f'angles: exactly {count}')
     angles = [check_angle(a) for a in angles]
     if len({a['structure'] for a in angles}) != len(angles): raise ValueError('angles: structures must differ')
     if count >= 3 and len({a['depth'] for a in angles}) < 2: raise ValueError('angles: use at least two depths')
+    reused = [a['structure'] for a in angles if a['structure'] in set(avoid)]
+    if count >= 4 and len(reused) > 2:
+        raise ValueError('angles: reuse at most two structures of the last batch (reused ' + ', '.join(reused) + ')')
     if count >= 4 and not any(a['structure'] in LESS_OBVIOUS for a in angles):
         raise ValueError('angles: include at least one of ' + ' / '.join(f'{k}（{STRUCTURES[k]}）' for k in LESS_OBVIOUS))
     if len({a['title'] for a in angles}) != len(angles): raise ValueError('angles: titles must differ')
@@ -161,7 +164,7 @@ def _chat(llm, client, system, user, check, kind, user_id=None):
 
 
 def generate_angles(llm, client, *, topic, notes='', audience='', duration_hint='', teaching_style='popular', count=4,
-                    exclude=(), custom='', merge=None, research=None, persona=None, user_id=None):
+                    exclude=(), avoid_structures=(), custom='', merge=None, research=None, persona=None, user_id=None):
     """`count` distinct angles; or one card from the person's own direction (`custom`); or one card merging two (`merge`)."""
     lines = _context(topic, notes, audience, duration_hint, teaching_style)
     if persona is not None:
@@ -180,13 +183,15 @@ def generate_angles(llm, client, *, topic, notes='', audience='', duration_hint=
         check = lambda v: check_angles(v, 1)
     else:
         if exclude: lines.append('已经给过这些方向，新方向必须与它们不同：' + '；'.join(exclude))
+        avoid = [s for s in dict.fromkeys(avoid_structures) if s in STRUCTURES]
+        if avoid: lines.append('上一批用过的结构：' + '、'.join(f'{k}（{STRUCTURES[k]}）' for k in avoid) + '。这一批优先用其余结构，最多重复其中 2 个。')
         # A fresh order each time, in the user message (the system prompt stays the same for the prompt cache).
         order = random.sample(list(STRUCTURES), len(STRUCTURES))
         lines.append('本批可选的结构类型（顺序随机，不代表优先级）：' + '、'.join(f'{k}（{STRUCTURES[k]}）' for k in order) + '。')
         if count >= 4:
             lines.append('其中至少要有一个是 ' + '、'.join(f'{k}（{STRUCTURES[k]}）' for k in LESS_OBVIOUS) + ' 之一；深度尽量拉开，适合时可以有一个 advanced（深入）。')
         lines.append(f'请给出 {count} 个方向。')
-        check = lambda v: check_angles(v, count)
+        check = lambda v: check_angles(v, count, avoid)
     return _chat(llm, client, _ANGLES_SYSTEM, '\n'.join(lines), check, 'ideas_angles', user_id)
 
 

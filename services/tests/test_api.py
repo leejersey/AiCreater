@@ -47,6 +47,9 @@ class ApiTests(ProjectFixture, unittest.TestCase):
             response = self.client.post('/api/ideas/angles',json={**base,'exclude':['什么是 RAG']})
             self.assertEqual((response.status_code,len(response.json()['angles'])),(200,4))
             self.assertEqual((angles.call_args.kwargs['notes'],angles.call_args.kwargs['exclude']),('讲给客服同事',['什么是 RAG']))
+            self.assertEqual(self.client.post('/api/ideas/angles',json={**base,'avoid_structures':['howto','story']}).status_code,200)
+            self.assertEqual(angles.call_args.kwargs['avoid_structures'],['howto','story'])
+            self.assertEqual(self.client.post('/api/ideas/angles',json={**base,'avoid_structures':['poem']}).status_code,422)
             for bad in [{'scope':'series'},{'count':7},{'merge':[FOUR[0]]},{'merge':[FOUR[0],{**FOUR[1],'structure':'poem'}]},
                         {'custom':'x','merge':FOUR[:2]},{'topic':''},{'notes':'x'*301},{'surprise':1}]:
                 self.assertEqual(self.client.post('/api/ideas/angles',json={**base,**bad}).status_code,422,bad)

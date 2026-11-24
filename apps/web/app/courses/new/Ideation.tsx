@@ -4,7 +4,7 @@
 import {useEffect,useState} from 'react';
 import {request} from '../../../lib/editor';
 import {addBatch,addExtra,addSection,angleTags,choose,moveSection,outlineProblems,outlineWarnings,removeSection,
-  sameAngle,setOutline,shownTitles,totalSeconds,undo,updateSection,type Angle,type IdeationDraft,type Outline} from '../../../lib/ideation';
+  sameAngle,setOutline,shownTitles,lastStructures,totalSeconds,undo,updateSection,type Angle,type IdeationDraft,type Outline} from '../../../lib/ideation';
 import type {ResearchBrief} from '../../../lib/research';
 import type {PersonaProfile} from '../../../lib/manuscript-tools';
 import {Sparkles,Spinner,ChevronUp,ChevronDown,X,Plus,RefreshCw,Check} from '../../Icons';
@@ -35,7 +35,7 @@ export function Ideation({state,context,title,disabled,generating,onChange,onTit
   const angles=(extra:object)=>request<{angles:Angle[]}>('/api/ideas/angles',{...body(),...extra}).then(r=>r.angles);
 
   async function explore(){
-    const got=await call('angles',()=>angles(state.batches.length?{exclude:shownTitles(state)}:{}));
+    const got=await call('angles',()=>angles(state.batches.length?{exclude:shownTitles(state),avoid_structures:lastStructures(state)}:{}));
     if(got){onChange(addBatch(state,got));setPicked([]);setShowOthers(true);}
   }
   async function own(){

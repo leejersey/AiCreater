@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {addBatch,addExtra,addSection,angleTags,choose,emptyIdeation,isIdeationDraft,moveSection,outlineProblems,outlineWarnings,
-  removeSection,setOutline,shownTitles,targetSeconds,toOrigin,toPlan,undo,updateSection,type Angle,type Outline} from '../lib/ideation';
+  removeSection,setOutline,shownTitles,lastStructures,targetSeconds,toOrigin,toPlan,undo,updateSection,type Angle,type Outline} from '../lib/ideation';
 import {readDraft,writeDraft} from '../lib/drafts';
 
 const angle=(structure:Angle['structure'],title:string=structure):Angle=>({title,hook:'开场',audience:'开发者',takeaway:'收获',structure,depth:'intro',duration_min:3,chapters:['一','二','三'],scope:'single'});
@@ -11,6 +11,7 @@ test('batches and own cards accumulate, and everything shown is avoided next tim
  let s=addBatch(emptyIdeation(),[angle('problem'),angle('journey')]);
  s=addBatch(s,[angle('myth')]);s=addExtra(s,angle('howto','我的方向'));
  assert.deepEqual(shownTitles(s),['problem','journey','myth','我的方向']);
+ assert.deepEqual(lastStructures(s),['myth']);  // the latest batch only; own cards do not count
  assert.equal(angleTags(angle('myth')),'误区纠正 · 入门 · 约 3 分钟 · 3 章');
 });
 

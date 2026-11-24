@@ -18,6 +18,8 @@ export const angleTags = (a:Angle) => `${STRUCTURES[a.structure]} · ${DEPTHS[a.
 export const sameAngle = (a:Angle|null|undefined,b:Angle|null|undefined) => !!a && !!b && JSON.stringify(a)===JSON.stringify(b);
 /** Every title shown so far: "换一批" asks the model to avoid them. */
 export const shownTitles = (s:IdeationDraft) => [...s.batches.flat(),...s.extras].map(a=>a.title).slice(-30);
+/** The latest batch's structures: "换一批" asks for mostly other ones (at most two repeated). */
+export const lastStructures = (s:IdeationDraft):Structure[] => [...new Set((s.batches[s.batches.length-1]??[]).map(a=>a.structure))];
 
 export const addBatch = (s:IdeationDraft,angles:Angle[]):IdeationDraft => ({...s,batches:[...s.batches,angles]});
 export const addExtra = (s:IdeationDraft,angle:Angle):IdeationDraft => ({...s,extras:[...s.extras,angle]});
