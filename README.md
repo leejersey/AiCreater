@@ -233,6 +233,7 @@ packages/
   custom-scenes/           场景源码约定、cue 解析、类型检查、几何审计、字幕与整课渲染宿主
   scene-themes/            课程主题：主题 JSON、可读性校验（对比度、字体已打包）、注册表
   scene-kit/               画面组件库 kit.tsx：画面可 import './kit' 的预制部件，按 Agent 版本冻结
+  content-skills/          内容 skill：选题、文案与审核的方法（SKILL.md），可替换、可升级、可改编开源 skill；来源与许可证见 NOTICE.md
 
 services/
   api/                     FastAPI 后端（账号、项目、配音、视觉任务路由）

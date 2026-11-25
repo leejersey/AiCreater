@@ -13,6 +13,7 @@ from urllib.parse import urlsplit
 
 import httpx
 
+from services.workflow.content_skills import skill
 from services.accounts.model_settings import DEEPSEEK_BASE_URL
 from services.workflow.destination import pinned_get, pinned_post
 from services.workflow.providers import ProviderError, _status
@@ -43,18 +44,7 @@ VIRAL_STYLES = {
     'myth_bust': {'label': '反常识 / 避坑打假', 'guide': '先抛出大众普遍误区制造认知冲突，再用真实事实与对比逐条纠偏，给出可执行结论。'},
 }
 
-_ANALYZE_SYSTEM = (
-    '你是短视频与知识类爆款内容拆解专家。用户会给你一个选题和 1–5 份来自全网/公众号/短视频/X/小红书等平台的参考资料。'
-    '你的任务不是照抄原文，而是把这些资料提炼成一份可直接指导视频策划与口播撰稿的“爆款参考简报”，严格输出一个 JSON 对象，不要在 JSON 外写任何文字：\n'
-    '{\n'
-    '  "facts": ["具体事实、数据、案例或观点（每条 ≤120 字，标注出处平台/标题，绝不编造资料里没有的数据）"],\n'
-    '  "hooks": ["从资料提炼的高点击开场第一句/钩子模板（每条 ≤80 字）"],\n'
-    '  "pain_points": ["观众最关心的痛点、误区或争议焦点（每条 ≤80 字）"],\n'
-    '  "pacing": "推荐的爆款叙事骨架与节奏安排（≤220 字，说明开场→展开→高潮/反转→收束）"\n'
-    '}\n'
-    '要求：facts 2–8 条；hooks 2–4 条；pain_points 1–5 条；pacing 必填且非空。'
-    '只保留资料中真实出现的事实与观点，不确定处用概括表述，绝不杜撰数字或来源。'
-)
+_ANALYZE_SYSTEM = skill('hotspot-brief').prompt()
 
 
 def _clean_text(value, limit, name, *, allow_empty=False):
@@ -433,17 +423,7 @@ def brief_lines(brief: dict) -> list[str]:
     return lines
 
 
-_PITCHES_SYSTEM = (
-    '你是多平台爆款内容策划总监。根据用户给的热点选题和“爆款参考简报”，一次输出 3 套针对不同平台定位的视频选题方案（一鱼多吃），'
-    '严格输出一个 JSON 对象，不要在 JSON 外写任何文字：\n'
-    '{"pitches":[\n'
-    '  {"platform":"douyin","platform_name":"抖音 / 快手 · 60秒强反转","duration_hint":"1分钟","teaching_style":"popular",'
-    '"title":"爆款标题（≤32字）","cover_text":"封面大字（≤14字）","hook":"前3秒开场第一句（≤70字）","angle_summary":"切入逻辑与节奏（≤100字）","notes":"可直接填入补充想法的写作指令（≤160字）"},\n'
-    '  {"platform":"xiaohongshu","platform_name":"小红书 · 2.5分钟干货避坑","duration_hint":"2.5分钟","teaching_style":"popular","title":"...","cover_text":"...","hook":"...","angle_summary":"...","notes":"..."},\n'
-    '  {"platform":"bilibili","platform_name":"B站 / YouTube · 5分钟深度拆解","duration_hint":"5分钟","teaching_style":"technical","title":"...","cover_text":"...","hook":"...","angle_summary":"...","notes":"..."}\n'
-    ']}\n'
-    '必须正好 3 条，platform 依次为 douyin、xiaohongshu、bilibili；teaching_style 只能是 popular 或 technical；不编造简报之外的数据。'
-)
+_PITCHES_SYSTEM = skill('platform-pitches').prompt()
 
 
 def _check_pitches(value) -> list[dict]:

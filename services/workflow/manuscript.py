@@ -5,6 +5,7 @@ import logging
 
 import httpx
 
+from services.workflow.content_skills import call_json, skill
 from services.accounts.model_settings import DEEPSEEK_BASE_URL
 from services.workflow.destination import pinned_post
 from services.workflow.providers import ProviderError, _status
@@ -15,95 +16,25 @@ from services.workflow.research import brief_lines, check_brief
 
 log = logging.getLogger(__name__)
 
-_DOCUMENT_SYSTEM = (
-    '你是教学与知识类爆款视频编剧。一次联合生成相互配合的口播、画面素材与画面意图，输出 JSON 对象，不要在 JSON 外添加 Markdown。'
-    '结构严格为 {"sections":[{"id":"s1","title":"段落标题","narration":"纯文本口播",'
-    '"materials":"画面素材（视觉弹药），可含带语言的 Markdown 代码围栏","visual_intent":"对应本段口播的展示意图"}]}。'
-    '1–20段，每段ID唯一（s1、s2等），标题1–80字，所有字段非空且无首尾空白。'
-    'narration只写可直接朗读的口语化短句纯文本，不写标题、列表标记、代码或舞台指示；少用“首先、其次、综上所述、总而言之、不仅如此”等AI套话；全部口播含段落分隔共不超过4000字符。'
-    'materials是给动画画面师的“视觉弹药”：除命令与代码外，必须积极提炼本段中的核心数字/指标、A vs B 对比项、步骤/流程节点、时间线、关键概念词或金句卡片；尽量不要留空或偷懒写“无”，仅纯情感过渡/开场寒暄且确实无可视化信息时才填“无”。'
-    'visual_intent必须写明“画面放什么元素 + 说到口播中哪句具体短句时如何出现/高亮/切换/对比”，禁止写“展示标题文字”这类空话，不编造配音时间秒数；代码围栏只允许出现在materials。'
-    '代码围栏必须闭合，素材中的Markdown标题必须放在代码围栏内。整个JSON不超过24000字符。'
-    '命令与代码仅供展示，绝不执行；没有真实执行记录时不编造运行结果，必要时明确标注“示意输出（未经执行验证）”。'
-    '覆盖用户要点，不编造数据、来源、实验结论；技术风格讲清机制与术语，通俗风格用概念与例子。'
-)
+_DOCUMENT_SYSTEM = skill('storyboard-document').prompt()
 
-_HOOKS_SYSTEM = (
-    '你是短视频与知识博主开场钩子专家。根据用户给出的主题、文稿内容和（可选）爆款参考，生成 3 个风格截然不同的前 10–15 秒黄金开场钩子，'
-    '严格输出一个 JSON 对象，不要在 JSON 外写任何文字：\n'
-    '{"hooks":[\n'
-    '  {"type":"contrarian","label":"反常识冲击","cover_line":"封面大字（≤16字）","opening":"可直接替换第一段口播的纯文本开场（40–180字，口语短句，无Markdown符号）","why":"一句话说明为何能留住前3秒（≤60字）"},\n'
-    '  {"type":"pain","label":"痛点扎心","cover_line":"...","opening":"...","why":"..."},\n'
-    '  {"type":"suspense","label":"悬念提问","cover_line":"...","opening":"...","why":"..."}\n'
-    ']}\n'
-    '必须正好 3 条，type 依次覆盖 contrarian、pain、suspense；禁止使用“大家好欢迎来到”“今天我们来聊聊”等平淡开场；不编造文稿与资料中没有的数据。'
-)
+_HOOKS_SYSTEM = skill('opening-hooks').prompt()
 
-_POLISH_MARKDOWN_SYSTEM = (
-    '你是资深知识类短视频口播导演。用户会给你一份严格格式的 Markdown 分镜文稿（已解析为 JSON sections）。'
-    '请对每段的 narration 做“去 AI 味 + 口语化润色”：'
-    '1. 删除“首先、其次、再次、综上所述、总而言之、不仅如此、让我们一起看看”等 AI 套话和书面腔；'
-    '2. 把长难句拆成适合真人配音呼吸节奏的口语短句，适当加入自然的设问、对比转折或口语连接词；'
-    '3. 严格保留所有真实事实、数据、术语、技术步骤和段落数量，不删减核心干货，不编造新数据；'
-    '4. 保持每段 id、title 不变，保留或轻微优化 materials 与 visual_intent 使短句引用与新口播对齐；'
-    '严格输出 JSON 对象 {"sections":[{"id","title","narration","materials","visual_intent"}]}，不要在 JSON 外写任何文字，全部口播合计不超过 4000 字符。'
-)
+_POLISH_MARKDOWN_SYSTEM = skill('polish-storyboard').prompt()
 
-_POLISH_PLAIN_SYSTEM = (
-    '你是资深知识类短视频口播导演。请对用户的口播纯文本做“去 AI 味 + 口语化润色”：'
-    '删除“首先、其次、综上所述、总而言之、不仅如此、让我们一起”等 AI 套话；把长难句拆成适合朗读的口语短句，增强节奏感与对话感；'
-    '严格保留原有的真实事实、数据与段落结构，不编造新信息。只输出润色后的简体中文纯文本，不要标题符号、列表符号或 Markdown，不超过 4000 字符。'
-)
+_POLISH_PLAIN_SYSTEM = skill('polish-plain').prompt()
 
-_SYSTEM_TECHNICAL = (
-    '你是知识讲解视频的口播撰稿人。只输出可直接朗读的简体中文纯文本，不要 JSON、Markdown、代码块、列表符号或标题符号。'
-    '默认结构：问题或场景→机制与关键术语→流程或对比→例子→收束；段落自然连贯，适合旁白。'
-    '若用户给了大纲或要点，必须覆盖其中的术语与步骤，用口播讲清“怎么做/为什么”，'
-    '不要用“这里不展开”“具体细节略过”一类句子跳过要点。'
-    '英文术语可保留常见写法（如 embedding、rerank、topK），并紧跟一句中文解释；不要堆砌公式或伪代码。'
-    '不要编造无法核实的具体数字、榜单分数、出处或实验结论；不确定处用概括性表述。'
-    '全文不超过 4000 个 Unicode 码点。'
-)
+_SYSTEM_TECHNICAL = skill('script-technical').prompt()
 
-_SYSTEM_POPULAR = (
-    '你是知识讲解视频的口播撰稿人。只输出可直接朗读的简体中文纯文本，不要 JSON、Markdown、代码块、列表符号或标题符号。'
-    '用通俗易懂、有画面感的方式讲解：可以用生活比喻、概念拆解和例子帮助理解，段落自然连贯，适合旁白。'
-    '若用户给了大纲或要点，必须覆盖其中的内容与步骤，用口播讲清“是什么/为什么/怎么用”，不要跳过用户给出的要点。'
-    '未给要点时不要强行堆砌专业术语；先把概念讲明白，再适度点到关键名词即可。'
-    '不要编造无法核实的具体数字、榜单分数、出处或实验结论；不确定处用概括性表述。'
-    '全文不超过 4000 个 Unicode 码点。'
-)
+_SYSTEM_POPULAR = skill('script-popular').prompt()
 
 _TEACHING_STYLES = frozenset({'popular', 'technical'})
 
-_REWRITE_SECTION_SYSTEM = (
-    '你是教学与知识类爆款视频编剧。用户会给你整篇视频的大纲脉络、需要局部修改的那一段（JSON 格式）以及具体修改指令。'
-    '请只重写这一段，保持 id 不变，严格输出 JSON 对象：'
-    '{"id":"s1","title":"段落标题（1–80字）","narration":"纯文本口语化短句口播，无Markdown符号",'
-    '"materials":"给动画师的视觉弹药（数字/对比/步骤/代码等，尽量不填无）","visual_intent":"结合本段口播短句说明画面元素如何出现或变化"}。'
-    '不要在 JSON 外写任何文字，所有字段非空且无首尾空白，不编造数据。'
-)
+_REWRITE_SECTION_SYSTEM = skill('rewrite-section').prompt()
 
-_CRITIQUE_SYSTEM = (
-    '你是严苛但专业的百万粉知识类短视频总编。请对用户的视频文稿做“配音前毒舌审稿”，'
-    '从 4 个维度打分（0–100 的整数）：hook（前3秒留存与开场钩子）、density（信息密度与干货价值）、pacing（口播节奏与去AI味程度）、visual（画面素材与视觉可表现性）。'
-    '严格输出一个 JSON 对象，不要在 JSON 外写任何文字：\n'
-    '{"overall_score":82,"scores":{"hook":78,"density":85,"pacing":80,"visual":84},'
-    '"verdict":"一句话犀利总评（≤80字）",'
-    '"issues":[{"section":"定位（如 第1段/全局）","section_id":"若针对Markdown某一段则填其方括号ID如s1，全局问题填空字符串","problem":"具体问题（≤80字）","fix":"可执行改法（≤100字）"}]}\n'
-    'issues 给 3–5 条最值钱的修改建议，禁止空泛表扬。'
-)
+_CRITIQUE_SYSTEM = skill('critique').prompt()
 
-_PUBLISH_KIT_SYSTEM = (
-    '你是爆款短视频与自媒体运营总监。根据用户的视频文稿和目标平台，一键生成可直接复制使用的发布套件，'
-    '严格输出一个 JSON 对象，不要在 JSON 外写任何文字：\n'
-    '{"titles":["5个高点击标题候选，风格各异（反常识/数字/痛点/悬念/干货），每条≤36字"],'
-    '"cover_main":"封面主大字（≤12字，一眼抓人）","cover_sub":"封面副标题（≤18字）",'
-    '"summary":"适合该平台的视频简介/正文摘要（≤280字，带清晰价值点）",'
-    '"tags":["5–8个精准话题标签，不带#号，每条≤18字"],'
-    '"pinned_comment":"放在评论区置顶引导互动与讨论的话术（≤120字）"}\n'
-    '严禁编造文稿里没有的数据或结论。'
-)
+_PUBLISH_KIT_SYSTEM = skill('publish-kit').prompt()
 
 
 def check_persona(value):
@@ -434,41 +365,7 @@ def polish_manuscript(source_text, llm, client, *, manuscript_format='markdown',
 
 
 def _call_json_llm(llm, client, system, user_content, check, kind, *, max_tokens=2500, user_id=None):
-    if not llm.api_key:
-        raise ProviderError('config', 'missing_setting', '请在个人中心配置模型，或在服务端设置 DEEPSEEK_API_KEY')
-    messages = [{'role': 'system', 'content': system}, {'role': 'user', 'content': user_content}]
-    ok = False
-    try:
-        for attempt in range(2):
-            body = {'model': llm.model, 'messages': messages, 'max_tokens': max_tokens, 'response_format': {'type': 'json_object'}}
-            if llm.model in ['deepseek-flash', 'deepseek-v4-flash'] and llm.base_url == DEEPSEEK_BASE_URL:
-                body['thinking'] = {'type': 'disabled'}
-            response = pinned_post(client, llm.base_url.rstrip('/') + '/chat/completions',
-                                   headers={'Authorization': 'Bearer ' + llm.api_key}, json=body)
-            _status(response, 'manuscript')
-            if len(response.content) > 1024 * 1024:
-                raise ProviderError('manuscript', 'response_limit', 'Response exceeds 1 MiB')
-            choice = response.json()['choices'][0]
-            if choice.get('finish_reason') == 'content_filter':
-                raise ProviderError('manuscript', 'response_filtered', 'Generation was filtered')
-            content = choice['message']['content'] if choice.get('finish_reason') == 'stop' else None
-            try:
-                result = check(json.loads(content or ''))
-                ok = True
-                return result
-            except (ValueError, TypeError) as problem:
-                if attempt:
-                    raise ProviderError('manuscript', 'invalid_response', f'模型返回的结果不符合要求：{problem}') from None
-                messages = messages + [
-                    {'role': 'assistant', 'content': content or ''},
-                    {'role': 'user', 'content': f'上面的输出不符合要求（{problem}）。请按要求重新输出完整 JSON。'},
-                ]
-    except httpx.HTTPError:
-        raise ProviderError('manuscript', 'transport_error', 'Provider request failed') from None
-    except (KeyError, IndexError, AttributeError):
-        raise ProviderError('manuscript', 'invalid_response', 'Expected a complete response') from None
-    finally:
-        log.info('event=%s user_id=%s ok=%s', kind, user_id, ok)
+    return call_json(llm, client, system, user_content, check, kind, stage='manuscript', max_tokens=max_tokens, user_id=user_id)
 
 
 def rewrite_section(title, source_text, section_id, instruction, llm, client, *, persona=None, research=None, user_id=None):

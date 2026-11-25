@@ -5,17 +5,10 @@ checked strictly; a reply that fails the check is asked for once more, then the 
 half a result. Only single videos for now: Angle.scope is always 'single' and a project's origin.series_id is None,
 the places a series would plug in later. Never log prompts or secrets."""
 import json
-import logging
 import random
 
-import httpx
-
-from services.accounts.model_settings import DEEPSEEK_BASE_URL
-from services.workflow.destination import pinned_post
-from services.workflow.providers import ProviderError, _status
+from services.workflow.content_skills import call_json, skill
 from services.workflow.research import brief_lines, check_brief
-
-log = logging.getLogger(__name__)
 
 # Batches of four or more must include at least one of these: left to itself the model keeps to problem / journey /
 # compare / myth, the first structures it sees.
@@ -27,25 +20,9 @@ SCOPES = ('single',)  # a series ('series', with episodes) plugs in here later
 MAX_CHAPTER_SECONDS = 110  # the Agent makes chapters of at most 120 s
 MAX_TOTAL_SECONDS = 780    # 4000 code points of narration at about 5 per second
 
-_RULES = ('不编造数据、日期、产品名、出处或实验结论；没有把握的具体信息用概括表述。'
-          '只输出一个 JSON 对象，不要在 JSON 外写任何文字。')
+_ANGLES_SYSTEM = skill('ideation-angles').prompt(structures='、'.join(f'{k}（{v}）' for k, v in STRUCTURES.items()))
 
-_ANGLES_SYSTEM = (
-    '你是教学视频的选题策划。给定一个选题，为它想出几个**真正不同**的视频切入方向（每个都是一支独立的单集视频）。'
-    '每个方向的结构类型必须互不相同，取自：' + '、'.join(f'{k}（{v}）' for k, v in STRUCTURES.items()) + '；'
-    '深度取自 intro（入门）、intermediate（进阶）、advanced（深入），一批里至少用到两种。'
-    '如果用户给了受众或补充想法，所有方向都要服从它，只在切入角度上发散。'
-    '每个方向：title 视频标题（吸引人但不夸张，≤40 字）；hook 开场第一句口播（≤80 字）；audience 适合谁（≤30 字）；'
-    'takeaway 看完能得到什么（≤60 字）；structure；depth；duration_min 建议分钟数（1–10 的整数）；'
-    'chapters 3–8 个章节标题（每个 ≤24 字）。'
-    '输出 {"angles":[{"title","hook","audience","takeaway","structure","depth","duration_min","chapters":[...]}]}。' + _RULES)
-
-_OUTLINE_SYSTEM = (
-    '你是教学视频编剧。按给定的选题和方向写单集视频的大纲。每章：title 章节标题（≤24 字）；points 1–4 个要点（每个 ≤60 字）；'
-    'picture 画面构想（≤80 字）：写一个会变化的物体或过程，比如「答题的模型，答案被划掉、换成知识库里的答案」，'
-    '不要写「展示一张卡片」「出现文字」；seconds 本章预计秒数（10–' + str(MAX_CHAPTER_SECONDS) + ' 的整数）。'
-    '各章秒数合计尽量贴近建议时长。若给了上一版大纲和修改意见：只改意见提到的地方，其余保持原样。'
-    '输出 {"sections":[{"title","points":[...],"picture","seconds"}]}，1–20 章。' + _RULES)
+_OUTLINE_SYSTEM = skill('ideation-outline').prompt(max_chapter_seconds=MAX_CHAPTER_SECONDS)
 
 
 def _text(value, limit, name):
@@ -131,36 +108,8 @@ def _context(topic, notes, audience, duration_hint, teaching_style):
 
 
 def _chat(llm, client, system, user, check, kind, user_id=None):
-    """One JSON call, checked by `check`; asks once more if the reply fails the check."""
-    if not llm.api_key: raise ProviderError('config', 'missing_setting', '请在个人中心配置模型，或在服务端设置 DEEPSEEK_API_KEY')
-    messages = [{'role': 'system', 'content': system}, {'role': 'user', 'content': user}]
-    ok = False
-    try:
-        for attempt in range(2):
-            body = {'model': llm.model, 'messages': messages, 'max_tokens': 4096, 'response_format': {'type': 'json_object'}}
-            if llm.model in ['deepseek-flash', 'deepseek-v4-flash'] and llm.base_url == DEEPSEEK_BASE_URL:
-                body['thinking'] = {'type': 'disabled'}
-            response = pinned_post(client, llm.base_url.rstrip('/') + '/chat/completions',
-                                   headers={'Authorization': 'Bearer ' + llm.api_key}, json=body)
-            _status(response, kind)
-            if len(response.content) > 1024 * 1024: raise ProviderError(kind, 'response_limit', 'Response exceeds 1 MiB')
-            choice = response.json()['choices'][0]
-            if choice.get('finish_reason') == 'content_filter': raise ProviderError(kind, 'response_filtered', 'Generation was filtered')
-            content = choice['message']['content'] if choice.get('finish_reason') == 'stop' else None
-            try:
-                result = check(json.loads(content or ''))
-                ok = True
-                return result
-            except (ValueError, TypeError) as problem:  # json.JSONDecodeError is a ValueError
-                if attempt: raise ProviderError(kind, 'invalid_response', f'模型返回的结果不符合要求：{problem}') from None
-                messages = messages + [{'role': 'assistant', 'content': content or ''},
-                                       {'role': 'user', 'content': f'上面的输出不符合要求（{problem}）。请按要求重新输出完整 JSON。'}]
-    except httpx.HTTPError:
-        raise ProviderError(kind, 'transport_error', 'Provider request failed') from None
-    except (KeyError, IndexError, AttributeError):
-        raise ProviderError(kind, 'invalid_response', 'Expected a complete response') from None
-    finally:
-        log.info('event=%s user_id=%s ok=%s', kind, user_id, ok)
+    """One JSON call, checked by `check`; asks once more if the reply fails the check (content_skills.call_json)."""
+    return call_json(llm, client, system, user, check, kind, max_tokens=4096, user_id=user_id)
 
 
 def generate_angles(llm, client, *, topic, notes='', audience='', duration_hint='', teaching_style='popular', count=4,
