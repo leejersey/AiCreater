@@ -108,6 +108,7 @@ class Store:
             conn.execute((Path(__file__).with_name('schema.sql')).read_text())
             conn.execute((Path(__file__).with_name('jobs.sql')).read_text())
             conn.execute((Path(__file__).parents[1] / 'accounts/schema.sql').read_text())
+            conn.execute((Path(__file__).parents[1] / 'studio/schema.sql').read_text())
             migrate_chapters(conn)
 
     def _asset_path(self, key):

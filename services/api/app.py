@@ -15,6 +15,7 @@ from services.api.accounts import access, router as account_routes
 from services.api.visual import router as visual_routes
 from services.visual.store import VisualJobs
 from services.visual.course_review import CourseReview
+from services.studio.topics import TopicFeeds
 from services.accounts.auth import Accounts
 from services.projects.manage import profile
 from services.projects.jobs import Jobs
@@ -159,6 +160,20 @@ class CreateProject(Body):
     review: bool = False  # require a passed content review even without evidence
 
 
+class StudioProfile(Body):
+    keywords: list[str] = Field(min_length=1, max_length=10)
+    daily_auto: bool = False
+
+
+class TopicRefresh(Body):
+    persona: dict | None = None
+
+
+class TopicStar(Body):
+    index: int = Field(ge=0, le=7)
+    starred: bool
+
+
 class ReviewRun(Body):
     ai: bool = False  # also let the model judge claims the rules could not trace (paid)
 
@@ -234,6 +249,7 @@ def create_app(store=None, *, authentication=True):
         app.state.jobs = Jobs(configured, model=os.getenv('DEEPSEEK_MODEL', 'deepseek-flash'))
         app.state.visual = VisualJobs(configured)
         app.state.reviews = CourseReview(configured)
+        app.state.topics = TopicFeeds(configured)
         yield
 
     app = FastAPI(title='Teaching Projects', lifespan=lifespan, docs_url=None, redoc_url=None,
@@ -528,6 +544,35 @@ def create_app(store=None, *, authentication=True):
     @app.post('/api/projects/{project_id}/review/required')
     def project_review_required(project_id: str, body: ReviewRequired, request: Request):
         return request.app.state.reviews.set_required(project_id, body.required)
+
+    @app.get('/api/studio/profile')
+    def studio_profile(request: Request):
+        return request.app.state.topics.profile(getattr(request.state, 'user', {}).get('id'))
+
+    @app.post('/api/studio/profile')
+    def studio_profile_save(body: StudioProfile, request: Request):
+        return request.app.state.topics.save_profile(getattr(request.state, 'user', {}).get('id'), body.keywords, body.daily_auto)
+
+    @app.get('/api/studio/topics')
+    def studio_topics(request: Request, day: str | None = None):
+        from datetime import date
+        try: chosen = date.fromisoformat(day) if day else None
+        except ValueError: raise StoreError('validation', 'day must be YYYY-MM-DD') from None
+        return request.app.state.topics.feed(getattr(request.state, 'user', {}).get('id'), chosen)
+
+    @app.post('/api/studio/topics/refresh')
+    def studio_topics_refresh(body: TopicRefresh, request: Request):
+        llm, user_id = review_model(request)
+        try:
+            with httpx.Client(timeout=120, trust_env=False) as client:
+                return request.app.state.topics.refresh(user_id, llm, client, persona=body.persona)
+        except ProviderError as exc:
+            return JSONResponse({'code': exc.code, 'message': str(exc)}, status_code=_provider_error_status(exc.code))
+
+    @app.post('/api/studio/topics/{feed_id}/star')
+    def studio_topics_star(feed_id: str, body: TopicStar, request: Request):
+        from services.projects.store import identifier
+        return request.app.state.topics.star(getattr(request.state, 'user', {}).get('id'), identifier(feed_id), body.index, body.starred)
 
     @app.post('/api/studio/review')
     def studio_review(body: StudioReview, request: Request):

@@ -61,6 +61,10 @@ def serve(lane):
                 # A chapter re-voiced under a retimable picture: re-render it on the new recording (free).
                 from services.visual.store import VisualJobs
                 if (retimed := VisualJobs(store).retime_stale()): print(f'runner {lane}: re-render on new voice-over {retimed["id"]}', flush=True)
+                # 每日选题: one paid feed a day for accounts that turned it on (throttled inside).
+                from services.studio.topics import TopicFeeds
+                from services.accounts.model_settings import resolve_llm
+                for feed in TopicFeeds(store).daily(lambda owner: resolve_llm(store, owner)): print(f'runner {lane}: daily topics {feed}', flush=True)
             except Exception as error:
                 print(f'runner {lane}: pipeline step failed ({type(error).__name__}); retrying', file=sys.stderr, flush=True)
         try: result = poll(store, lane)

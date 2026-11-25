@@ -163,6 +163,58 @@ class VisualApiTests(unittest.TestCase):
             conn.execute('UPDATE projects SET config=%s WHERE id=%s',[Jsonb(config),self.pid])
         return project,row,text
 
+    def test_daily_topics_from_profile_to_feed_star_cap_and_the_daily_run(self):
+        from datetime import date, datetime
+        from unittest.mock import patch
+        from services.studio import topics
+        from services.tests.test_topics import reply
+        evidence=[{'id':f'E{i}','text':f'样本{i}','source':{'title':f'样本{i}','url':f'https://x/{i}'}} for i in (1,2,3)]
+        result=topics.check_cards(reply(),{'E1','E2','E3'})
+        self.assertEqual(self.client.get('/api/studio/profile').json(),{'keywords':[],'daily_auto':False})
+        with patch('services.api.app.resolve_llm',return_value=None),patch.object(topics,'collect',return_value=evidence),patch.object(topics,'generate',return_value=result) as made:
+            self.assertEqual(self.client.post('/api/studio/topics/refresh',json={}).status_code,422)   # no keywords yet
+            for bad in [{'keywords':[]},{'keywords':['x'*21]},{'keywords':['a'],'daily_auto':'yes'}]:
+                self.assertEqual(self.client.post('/api/studio/profile',json=bad).status_code,422)
+            self.assertEqual(self.client.post('/api/studio/profile',json={'keywords':['RAG','Agent'],'daily_auto':True}).json(),{'keywords':['RAG','Agent'],'daily_auto':True})
+            feed=self.client.post('/api/studio/topics/refresh',json={'persona':{'name':'老李'}})
+            self.assertEqual(feed.status_code,200,feed.text);feed=feed.json()
+            self.assertEqual((len(feed['cards']),feed['trigger'],feed['keywords'],feed['skill']['name']),(5,'manual',['RAG','Agent'],'daily-topics'))
+            self.assertEqual(made.call_args.args[2:4],(['RAG','Agent'],evidence));self.assertEqual(made.call_args.args[4],{'name':'老李'})
+            got=self.client.get('/api/studio/topics').json()
+            self.assertEqual((got['feed']['id'],got['days'],got['manual_left']),(feed['id'],[date.today().isoformat()],9))
+            starred=self.client.post('/api/studio/topics/'+feed['id']+'/star',json={'index':0,'starred':True}).json()
+            self.assertTrue(starred['cards'][0]['starred']);self.assertTrue(self.client.get('/api/studio/topics').json()['feed']['cards'][0]['starred'])
+            self.assertEqual(self.client.post('/api/studio/topics/'+str(uuid.uuid4())+'/star',json={'index':0,'starred':True}).status_code,404)
+            with patch.object(topics,'MANUAL_PER_DAY',1):
+                self.assertEqual(self.client.post('/api/studio/topics/refresh',json={}).status_code,429)
+            with patch.object(topics,'collect',return_value=evidence[:2]):
+                self.assertEqual(self.client.post('/api/studio/topics/refresh',json={}).json()['code'],'not_ready')
+            # The runner's daily step: once a day for accounts that turned it on, after 7:00.
+            feeds=self.client.app.state.topics
+            topics._attempts.clear();topics._last_check[0]=None
+            self.assertEqual(feeds.daily(lambda owner:None,now=datetime.combine(date.today(),datetime.min.time()).replace(hour=6)),[])
+            first=feeds.daily(lambda owner:None,now=datetime.combine(date.today(),datetime.min.time()).replace(hour=8))
+            self.assertEqual(len(first),1)
+            topics._attempts.clear();topics._last_check[0]=None
+            self.assertEqual(feeds.daily(lambda owner:None,now=datetime.combine(date.today(),datetime.min.time()).replace(hour=9)),[])  # not twice
+            self.assertEqual(self.client.get('/api/studio/topics').json()['feed']['trigger'],'daily')
+            # A failed daily feed (paid) is not retried within the hour.
+            from datetime import timedelta
+            tomorrow=datetime.combine(date.today()+timedelta(days=1),datetime.min.time()).replace(hour=8)
+            topics._attempts.clear();topics._last_check[0]=None
+            with patch.object(feeds,'refresh',side_effect=RuntimeError('provider down')) as failing:
+                self.assertEqual(feeds.daily(lambda owner:None,now=tomorrow),[])
+                topics._last_check[0]=None
+                self.assertEqual(feeds.daily(lambda owner:None,now=tomorrow+timedelta(minutes=30)),[])
+                self.assertEqual(failing.call_count,1)
+                topics._last_check[0]=None
+                feeds.daily(lambda owner:None,now=tomorrow+timedelta(minutes=61))
+                self.assertEqual(failing.call_count,2)
+            self.client.post('/api/studio/profile',json={'keywords':['RAG'],'daily_auto':False})
+        self.assertEqual(self.client.get('/api/studio/topics?day=bad').status_code,422)
+        self.client.post('/api/auth/logout',json={})
+        self.assertEqual(self.client.get('/api/studio/topics').status_code,401)
+
     def test_a_course_with_evidence_is_voiced_and_generated_only_after_its_content_review_passes(self):
         from services.tests.test_review import BRIEF
         text='公开研究显示，RAG对幻觉的抑制幅度大约在30%到50%。\n\n据统计，九成企业已经上线RAG。'
