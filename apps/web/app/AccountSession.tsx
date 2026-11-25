@@ -4,7 +4,7 @@ import Link from 'next/link';
 import {usePathname,useRouter} from 'next/navigation';
 import {API,request} from '../lib/editor';
 import {AUTH_REQUIRED,safeReturn,parseAccount,type Account} from '../lib/accounts';
-import {User,Key,LogOut,BookOpen,Spinner,AlertCircle,RefreshCw,Lock,Home} from './Icons';
+import {User,Key,LogOut,BookOpen,Spinner,AlertCircle,RefreshCw,Lock,Home, Zap} from './Icons';
 import {useConfirm} from './ConfirmContext';
 
 type Session={user:Account|null;ready:boolean;error:string;reload:()=>void;accept:(user:Account|null)=>void};
@@ -65,6 +65,7 @@ export function AccountNav(){
       </Link>
       <span className="account-nav-divider">/</span>
       <Link href="/" className="account-nav-link"><Home size={14} /> 首页</Link>
+      <Link href="/studio" className="account-nav-link"><Zap size={14} /> 选题台</Link>
       <Link href="/courses" className="account-nav-link"><BookOpen size={14} /> 我的视频</Link>
     </div>
     <div className="account-nav-right">

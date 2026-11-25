@@ -12,6 +12,8 @@ import {useAccount} from '../../AccountSession';
 import {Modal} from '../../Modal';
 import {ReviewReport} from '../../ReviewPanel';
 import type {ReviewResult} from '../../../lib/review';
+import {HANDOFF_KEY} from '../../../lib/studio';
+import {isResearchBrief} from '../../../lib/research';
 import {outlinePlaceholder, isTeachingStyle, type TeachingStyle} from '../../../lib/teaching-style';
 import {parseThemes,suggestTheme,type ThemeSummary} from '../../../lib/themes';
 import {ThemePicker} from '../../ThemePicker';
@@ -81,6 +83,15 @@ export default function NewCourse(){
     setPersonas(loadPersonas(userId));
     setActivePersonaId(loadActivePersonaId(userId));
   },[userId]);
+  // A topic card taken from 选题台: its title, notes and evidence (as a research brief) start this draft.
+  useEffect(()=>{
+    if(draft.blocked)return;
+    const raw=sessionStorage.getItem(HANDOFF_KEY);if(!raw)return;
+    sessionStorage.removeItem(HANDOFF_KEY);
+    try{const v=JSON.parse(raw) as {topic?:string;title?:string;notes?:string;research?:unknown};
+      draft.change({topic:String(v.topic??''),title:String(v.title??''),notes:String(v.notes??''),...(isResearchBrief(v.research)?{research:v.research}:{})});
+      toast('已带入选题与证据，可以发散方向或直接写稿',{variant:'success'});}catch{/* a broken handoff is ignored */}
+  },[draft.blocked]);
   const activePersona=personas.find(p=>p.id===activePersonaId)??null;
   const personaPayload=activePersona?{name:activePersona.name,audience_call:activePersona.audience_call,tone:activePersona.tone,catchphrases:activePersona.catchphrases,banned_words:activePersona.banned_words,ending_cta:activePersona.ending_cta,sample:activePersona.sample}:undefined;
   const blocked=busy||generating||draft.blocked;
