@@ -14,6 +14,7 @@ from services.api.local import LocalRequestsMiddleware, ORIGINS
 from services.api.accounts import access, router as account_routes
 from services.api.visual import router as visual_routes
 from services.visual.store import VisualJobs
+from services.visual.course_review import CourseReview
 from services.accounts.auth import Accounts
 from services.projects.manage import profile
 from services.projects.jobs import Jobs
@@ -153,6 +154,30 @@ class CreateProject(Body):
     teaching_style: Literal['popular', 'technical'] = 'popular'
     theme_id: str | None = Field(default=None, max_length=40)
     origin: dict | None = None  # how the video was conceived (ideation); checked by services.workflow.ideation
+    research: dict | None = None  # the research brief: its facts become the course's evidence pack
+    evidence: list[dict] | None = Field(default=None, max_length=40)  # further evidence {text, source?}
+    review: bool = False  # require a passed content review even without evidence
+
+
+class ReviewRun(Body):
+    ai: bool = False  # also let the model judge claims the rules could not trace (paid)
+
+
+class ReviewOverride(Body):
+    item_id: str = Field(min_length=6, max_length=40)
+    note: str = Field(min_length=1, max_length=300)
+
+
+class ReviewRequired(Body):
+    required: bool
+
+
+class StudioReview(Body):
+    source_text: str = Field(min_length=1, max_length=24000)
+    manuscript_format: Literal['plain', 'markdown'] = 'markdown'
+    research: dict | None = None
+    evidence: list[dict] | None = Field(default=None, max_length=40)
+    ai: bool = False
 
 
 class Revision(Body):
@@ -208,6 +233,7 @@ def create_app(store=None, *, authentication=True):
         app.state.accounts = Accounts(configured)
         app.state.jobs = Jobs(configured, model=os.getenv('DEEPSEEK_MODEL', 'deepseek-flash'))
         app.state.visual = VisualJobs(configured)
+        app.state.reviews = CourseReview(configured)
         yield
 
     app = FastAPI(title='Teaching Projects', lifespan=lifespan, docs_url=None, redoc_url=None,
@@ -223,7 +249,7 @@ def create_app(store=None, *, authentication=True):
     async def store_error(request, error):
         status = {'not_found': 404, 'conflict': 409, 'not_ready': 409, 'validation': 422,
                   'assets': 422, 'timing_cache': 422, 'database': 503, 'storage': 503, 'invalid_profile': 503,
-                  'unauthorized': 401, 'rate_limit': 429, 'content_type': 415}.get(error.code, 400)
+                  'unauthorized': 401, 'rate_limit': 429, 'content_type': 415, 'review_required': 409}.get(error.code, 400)
         response = {'code': error.code, 'message': str(error)}
         if error.code == 'validation':
             response['validation_errors'] = [
@@ -467,10 +493,56 @@ def create_app(store=None, *, authentication=True):
             return JSONResponse({'code': exc.code, 'message': str(exc)}, status_code=_provider_error_status(exc.code))
         return {'outline': outline}
 
+    def evidence_pack(research, evidence):
+        """The research brief's facts, then any further evidence, numbered E1, E2… together."""
+        from services.workflow.research import check_brief
+        from services.workflow.review import check_evidence, evidence_from_brief
+        try:
+            items = [{k: v for k, v in e.items() if k != 'id'} for e in evidence_from_brief(check_brief(research))] if research else []
+            return check_evidence(items + list(evidence or []))
+        except ValueError as problem:
+            raise StoreError('validation', str(problem)) from None
+
+    def review_model(request):
+        user_id = getattr(request.state, 'user', {}).get('id')
+        return resolve_llm(request.app.state.store, user_id), user_id
+
+    @app.post('/api/projects/{project_id}/review')
+    def project_review(project_id: str, body: ReviewRun, request: Request):
+        llm, user_id = review_model(request) if body.ai else (None, None)
+        try:
+            with httpx.Client(timeout=120, trust_env=False) as client:
+                return request.app.state.reviews.run(project_id, ai=body.ai, llm=llm, client=client, user_id=user_id)
+        except ProviderError as exc:
+            return JSONResponse({'code': exc.code, 'message': str(exc)}, status_code=_provider_error_status(exc.code))
+
+    @app.post('/api/projects/{project_id}/review/override')
+    def project_review_override(project_id: str, body: ReviewOverride, request: Request):
+        return request.app.state.reviews.override(project_id, body.item_id, body.note, getattr(request.state, 'user', {}).get('id'))
+
+    @app.post('/api/projects/{project_id}/review/required')
+    def project_review_required(project_id: str, body: ReviewRequired, request: Request):
+        return request.app.state.reviews.set_required(project_id, body.required)
+
+    @app.post('/api/studio/review')
+    def studio_review(body: StudioReview, request: Request):
+        from services.workflow import review as rv
+        evidence = evidence_pack(body.research, body.evidence)
+        llm, user_id = review_model(request) if body.ai else (None, None)
+        try:
+            with httpx.Client(timeout=120, trust_env=False) as client:
+                return {'evidence': evidence, **rv.review(body.source_text, body.manuscript_format, evidence, llm=llm, client=client, ai=body.ai, user_id=user_id)}
+        except ProviderError as exc:  # a ValueError too: catch it first
+            return JSONResponse({'code': exc.code, 'message': str(exc)}, status_code=_provider_error_status(exc.code))
+        except ValueError as problem:
+            return JSONResponse({'code': 'validation', 'message': str(problem)}, status_code=422)
+
     @app.post('/api/projects', status_code=201)
     def create(body: CreateProject, request: Request):
+        evidence = evidence_pack(body.research, body.evidence)
         project = request.app.state.store.create_project(body.title, body.source_text,
             getattr(request.state, 'user', {}).get('id'), teaching_style=body.teaching_style, theme_id=body.theme_id, origin=body.origin,
+            evidence=evidence, review_required=body.review,
             **({'manuscript_format': 'markdown'} if body.manuscript_format == 'markdown' else {}))
         # Chapters right away (free, local): the workbench opens ready to voice.
         return request.app.state.visual.prepare(project['id'], project['revision'])

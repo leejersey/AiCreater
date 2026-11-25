@@ -98,6 +98,8 @@ class Jobs:
             return self._voice(conn, project, row)
 
     def _voice(self, conn, project, row):
+        from services.visual.course_review import gate
+        gate(project)  # a course under content review is voiced only after it passes
         payload = {'kind': 'voice', 'scene_id': row['id'], 'base_revision': row['revision'],
                    'scene': self._draft_scene(row['scene']), 'profile': self.store.profile_for(project),
                    'protocol_version': 'native-voice:1'}

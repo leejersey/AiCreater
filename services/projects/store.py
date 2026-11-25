@@ -191,7 +191,8 @@ class Store:
             raise StoreError('assets', 'Media asset verification failed')
         return file
 
-    def create_project(self, title, source_text, owner_id=None, teaching_style=None, manuscript_format='plain', theme_id=None, origin=None):
+    def create_project(self, title, source_text, owner_id=None, teaching_style=None, manuscript_format='plain', theme_id=None, origin=None,
+                       evidence=None, review_required=False):
         document = None
         if manuscript_format == 'markdown':
             from services.workflow.manuscript_document import parse_document, narration_text
@@ -216,6 +217,12 @@ class Store:
         config = {'assets': [], 'teaching_style': style, 'theme_id': theme}
         if origin is not None:
             config['origin'] = origin  # how the video was conceived; a series would set origin.series_id
+        from services.workflow.review import check_evidence
+        try: evidence = check_evidence(evidence)
+        except ValueError as problem: raise StoreError('validation', str(problem)) from None
+        if evidence: config['evidence'] = evidence  # the facts this course may use, each with its source
+        if evidence or review_required is True:
+            config['review'] = {'required': True}  # voicing and generation wait for a passed content review
         if document is not None:
             config['manuscript'] = document
         with self.connection() as conn:

@@ -280,6 +280,8 @@ class VisualJobs:
             project = self.store._read(conn, project_id, lock=True)
             scene = self.store._scene(project, scene_id)
             if project['revision'] != expected_revision: raise StoreError('conflict', 'Project revision changed')
+            from services.visual.course_review import gate
+            gate(project)  # a course under content review is generated only after it passes
             data = measured_input(project, scene)
             # The model is fixed when the person confirms; a later change to their settings makes this job stale, never
             # silently switches who runs or pays for it.

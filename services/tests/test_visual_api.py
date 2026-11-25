@@ -163,6 +163,52 @@ class VisualApiTests(unittest.TestCase):
             conn.execute('UPDATE projects SET config=%s WHERE id=%s',[Jsonb(config),self.pid])
         return project,row,text
 
+    def test_a_course_with_evidence_is_voiced_and_generated_only_after_its_content_review_passes(self):
+        from services.tests.test_review import BRIEF
+        text='公开研究显示，RAG对幻觉的抑制幅度大约在30%到50%。\n\n据统计，九成企业已经上线RAG。'
+        project=self.client.post('/api/projects',json={'title':'审核','source_text':text,'research':BRIEF}).json()
+        pid=project['id'];base='/api/projects/'+pid
+        self.assertEqual((len(project['config']['evidence']),project['config']['review']),(2,{'required':True}))
+        self.assertEqual(project['config']['evidence'][0]['source']['url'],'https://example.com/a')
+        scene=project['scenes'][0]
+        voice=lambda: self.client.post('/api/scenes/'+scene['id']+'/voice',json={'expected_revision':scene['revision']})
+        refused=voice();self.assertEqual((refused.status_code,refused.json()['code']),(409,'review_required'));self.assertIn('先通过内容审核',refused.json()['message'])
+        pilot=self.client.post(base+'/visual/autopilot',json={'expected_revision':project['revision'],'confirmed':True,'max_turns':5})
+        self.assertEqual(pilot.json()['code'],'review_required')
+        agent=self.client.post(base+'/visual/agent',json={'scene_id':scene['id'],'expected_revision':project['revision'],'confirmed':True,'max_turns':5})
+        self.assertEqual(agent.json()['code'],'review_required')
+        # The review: the 30–50% figure is secondhand (a warning), the invented 「九成」 has no source (blocking).
+        state=self.client.post(base+'/review',json={}).json()
+        self.assertEqual((state['required'],state['current'],state['level']),(True,True,'block'))
+        self.assertEqual(state['result']['counts']['secondhand'],1);self.assertEqual(state['result']['counts']['unsourced'],1)
+        block=next(i for i in state['result']['items'] if i['severity']=='block')
+        self.assertIn('九成企业',block['text'])
+        self.assertIn('还有 1 条阻断项',voice().json()['message'])
+        warn=next(i for i in state['result']['items'] if i['severity']=='warn' and i['kind']=='claim')
+        self.assertEqual(self.client.post(base+'/review/override',json={'item_id':warn['id'],'note':'x'}).status_code,404)  # only blocking items
+        self.assertEqual(self.client.post(base+'/review/override',json={'item_id':block['id'],'note':''}).status_code,422)
+        state=self.client.post(base+'/review/override',json={'item_id':block['id'],'note':'已在行业报告第 3 页核实'}).json()
+        self.assertEqual((state['level'],state['overrides'][block['id']]['note']),('warn','已在行业报告第 3 页核实'))
+        self.assertEqual(voice().status_code,202)
+        self.assertEqual(self.client.get(base).json()['revision'],project['revision'])  # review state is not a content change
+        # Editing the narration makes the review stale; turning review off lifts the gate.
+        with self.store.connection() as conn:conn.execute("UPDATE jobs SET state='cancelled' WHERE project_id=%s AND state IN ('queued','running')",[pid])
+        current=self.client.get(base).json();first=current['scenes'][0]
+        edited=self.client.patch(base+'/visual/chapters/'+first['id'],json={'expected_revision':current['revision'],'narration':'据统计，九成企业已经上线了RAG系统。'})
+        self.assertEqual(edited.status_code,200,edited.text)
+        first=edited.json()['scenes'][0]
+        stale=self.client.post('/api/scenes/'+first['id']+'/voice',json={'expected_revision':first['revision']})
+        self.assertIn('请重新运行内容审核',stale.json()['message'])
+        self.assertFalse(self.client.get(base).json()['config']['review'].get('result') is None)
+        self.assertFalse(self.client.post(base+'/review/required',json={'required':False}).json()['required'])
+        self.assertEqual(self.client.post('/api/scenes/'+first['id']+'/voice',json={'expected_revision':first['revision']}).status_code,202)
+        # A course created without evidence is not gated; the standalone review needs no course.
+        plain=self.client.get('/api/projects/'+self.pid).json()
+        self.assertNotIn('review',plain['config'])
+        alone=self.client.post('/api/studio/review',json={'source_text':text,'manuscript_format':'plain','research':BRIEF})
+        self.assertEqual((alone.status_code,alone.json()['level'],len(alone.json()['evidence'])),(200,'block',2))
+        self.assertEqual(self.client.post('/api/studio/review',json={'source_text':text,'research':{'facts':[]}}).status_code,422)
+
     def test_chapters_can_be_edited_split_merged_and_deleted_and_lose_their_voice(self):
         project,row,text=self.ready_scene()  # '先读代码。再修改文件。' as one voiced chapter
         base=self.path+'/chapters/'+row['id']

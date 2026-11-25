@@ -61,6 +61,9 @@ class Autopilot:
         if confirmed is not True or type(max_turns) is not int or not 1 <= max_turns <= AGENT_MAX_TURNS:
             raise StoreError('validation', f'必须明确确认整课流水线与每章 Agent 轮数上限（1–{AGENT_MAX_TURNS}）')
         revision(expected_revision)
+        from services.visual.course_review import gate
+        with self.store.connection() as conn:
+            gate(self.store._read(conn, project_id))  # refuse before anything is queued
         plan = self.plan(project_id)
         if not plan['chapters']: raise StoreError('not_ready', '没有需要配音或生成的章节')
         with self.store.connection() as conn:
