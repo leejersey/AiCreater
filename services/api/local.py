@@ -1,10 +1,12 @@
 """Loopback-only HTTP boundary, including bounded streamed request bodies."""
 import asyncio
+import os
 from starlette.responses import JSONResponse
 
-HOSTS = {'localhost:8000', '127.0.0.1:8000', '[::1]:8000'}
+API_PORT = int(os.environ.get('AICREATER_API_PORT') or 8000)  # see services/workbench.py
+HOSTS = {f'localhost:{API_PORT}', f'127.0.0.1:{API_PORT}', f'[::1]:{API_PORT}'}
 ORIGINS = {'http://localhost:3000', 'http://127.0.0.1:3000',
-           'http://localhost:8000', 'http://127.0.0.1:8000'}
+           f'http://localhost:{API_PORT}', f'http://127.0.0.1:{API_PORT}'}
 MAX_BODY = 512 * 1024
 BODY_TIMEOUT = 15
 

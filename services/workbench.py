@@ -18,9 +18,11 @@ import psycopg
 from dotenv import dotenv_values
 
 ROOT = Path(__file__).resolve().parents[1]
-PORTS = {'api': 8000, 'web': 3000}
+# AICREATER_API_PORT moves the API off 8000 when another local service holds it (the web proxy follows).
+API_PORT = int(os.environ.get('AICREATER_API_PORT') or 8000)
+PORTS = {'api': API_PORT, 'web': 3000}
 COMMANDS = {
-    'api': [sys.executable, '-m', 'uvicorn', 'services.api.app:app', '--host', '127.0.0.1', '--port', '8000', '--no-proxy-headers'],
+    'api': [sys.executable, '-m', 'uvicorn', 'services.api.app:app', '--host', '127.0.0.1', '--port', str(API_PORT), '--no-proxy-headers'],
     'web': ['npm', 'run', 'web'],
     'runner': [sys.executable, '-m', 'services.runner'],
 }

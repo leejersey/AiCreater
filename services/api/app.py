@@ -507,6 +507,11 @@ def create_app(store=None, *, authentication=True):
         user_id = getattr(request.state, 'user', {}).get('id')
         return resolve_llm(request.app.state.store, user_id), user_id
 
+    @app.get('/api/projects/{project_id}/review')
+    def project_review_state(project_id: str, request: Request):
+        from services.visual.course_review import state
+        return state(request.app.state.store.get_project(project_id))
+
     @app.post('/api/projects/{project_id}/review')
     def project_review(project_id: str, body: ReviewRun, request: Request):
         llm, user_id = review_model(request) if body.ai else (None, None)

@@ -14,6 +14,8 @@ import {Modal} from './Modal';
 import {VoiceSettings} from './VoiceSettings';
 import {ThemeSettings} from './ThemeSettings';
 import {PublishKitModal} from './courses/new/CreatorToolsModals';
+import {ReviewReport} from './ReviewPanel';
+import {reviewSummary,type ReviewState} from '../lib/review';
 import {parseThemes,themeName,type ThemeSummary} from '../lib/themes';
 import {ArrowLeft,RefreshCw,Check,Film,Mic,X} from './Icons';
 
@@ -278,6 +280,7 @@ export default function VisualWorkbench({routeProjectId}:{routeProjectId:string}
   const [voiceJobs,setVoiceJobs]=useState<Job[]>([]);
   const [themes,setThemes]=useState<ThemeSummary[]>([]);
   const [settingsOpen,setSettingsOpen]=useState(false),[reviewing,setReviewing]=useState(false),[publishKitOpen,setPublishKitOpen]=useState(false);
+  const [contentReview,setContentReview]=useState<ReviewState|null>(null),[contentReviewOpen,setContentReviewOpen]=useState(false),[reviewWithAi,setReviewWithAi]=useState(false);
   const [undo,setUndo]=useState<{sceneId:string;at:number;label:string;until:number}|null>(null);
   useEffect(()=>{if(!undo)return;const timer=setTimeout(()=>setUndo(null),Math.max(0,undo.until-Date.now()));return()=>clearTimeout(timer);},[undo]);
   const [llmSettings,setLlm]=useState<AgentModel|undefined>();
@@ -319,6 +322,10 @@ export default function VisualWorkbench({routeProjectId}:{routeProjectId:string}
       if(!stopped)timer=setTimeout(()=>void poll(),pushed?15000:3000);};
     void poll();return()=>{stopped=true;alive.current=false;clearTimeout(timer);events?.close();};
   },[refresh,base]);
+  // The content review follows the narration: refetched whenever the course text or revision changes.
+  const narrationKey=project?project.revision+':'+project.scenes.map(s=>s.scene.narration.text).join('|'):'';
+  useEffect(()=>{if(!narrationKey)return;let live=true;
+    request<ReviewState>(base+'/review').then(s=>{if(live)setContentReview(s);}).catch(()=>{});return()=>{live=false;};},[narrationKey,base]);
   async function act(fn:()=>Promise<unknown>){
     if(lock.current)return;lock.current=true;setBusy(true);setError('');
     try{await fn();await refresh();}catch(e){if(alive.current)setError(visualError(e));}
@@ -414,7 +421,7 @@ export default function VisualWorkbench({routeProjectId}:{routeProjectId:string}
     setProject(restored);setSelected(sceneId);});
   return <main className="visual-workbench">
     <header className="vw-header"><div><Link href="/courses" className="studio-back-link"><ArrowLeft size={14}/> 我的视频</Link><h1>{project?.title??'视觉工作台'}</h1><span>{project?`${project.scenes.length} 章 · 已确认 ${confirmedCount}/${project.scenes.length}`:''}</span>{costs&&<small className="vw-costs" title={costs.prices.deepseek_configured?'DeepSeek 按 .env 配置的价格换算':'在 .env 配置 DEEPSEEK_PRICE_* 可把 DeepSeek token 换算成元'}>{costSummary(costs)}</small>}</div>
-      <nav>{reviewItems.length>0&&<button className="vw-next-button" onClick={()=>setReviewing(true)}>连续审片（{reviewItems.length}）</button>}{project&&project.scenes.length>0&&<button onClick={()=>setPublishKitOpen(true)}>发布套件</button>}{project&&<button aria-expanded={settingsOpen} onClick={()=>setSettingsOpen(open=>!open)}>课程设置</button>}<button title="刷新项目与任务" aria-label="刷新项目与任务" disabled={busy} onClick={()=>void act(async()=>{await refresh();toast('已刷新状态',{variant:'info',duration:1800});})}><RefreshCw size={16}/></button></nav>
+      <nav>{reviewItems.length>0&&<button className="vw-next-button" onClick={()=>setReviewing(true)}>连续审片（{reviewItems.length}）</button>}{project&&project.scenes.length>0&&<button className={`review-button tone-${reviewSummary(contentReview).tone}`} onClick={()=>setContentReviewOpen(true)}>{reviewSummary(contentReview).label}</button>}{project&&project.scenes.length>0&&<button onClick={()=>setPublishKitOpen(true)}>发布套件</button>}{project&&<button aria-expanded={settingsOpen} onClick={()=>setSettingsOpen(open=>!open)}>课程设置</button>}<button title="刷新项目与任务" aria-label="刷新项目与任务" disabled={busy} onClick={()=>void act(async()=>{await refresh();toast('已刷新状态',{variant:'info',duration:1800});})}><RefreshCw size={16}/></button></nav>
     </header>
     {error&&<p role="alert" className="vw-error">{error}</p>}
     {reviewing&&project&&<ReviewMode projectId={project.id} items={reviewItems} disabled={busy} onAccept={acceptInReview} onRevise={reviseInReview} onClose={()=>setReviewing(false)}/>}
@@ -425,6 +432,22 @@ export default function VisualWorkbench({routeProjectId}:{routeProjectId:string}
     </div>}
     {undo&&<div className="vw-undo" role="status">已删除{undo.label}<button disabled={busy} onClick={restoreChapter}>撤销</button></div>}
     {project&&<PublishKitModal open={publishKitOpen} title={project.title} source={project.scenes.map((s,i)=>`第${i+1}章：${s.scene.narration.text}`).join('\n\n')} onClose={()=>setPublishKitOpen(false)}/>}
+    {project&&<Modal open={contentReviewOpen} onClose={()=>setContentReviewOpen(false)} title="内容审核" maxWidth="760px"
+      footer={<button type="button" className="btn-modal-confirm primary" onClick={()=>setContentReviewOpen(false)}>关闭</button>}>
+      <div className="review-actions">
+        <label className="review-toggle"><input type="checkbox" checked={!!contentReview?.required} disabled={busy}
+          onChange={e=>{const required=e.target.checked;void act(async()=>{setContentReview(await request<ReviewState>(base+'/review/required',{required}));});}}/>
+          配音和生成画面前必须通过审核</label>
+        <p className="hint" style={{margin:0}}>证据包 {contentReview?.evidence??0} 条：口播里的数字、百分比、年份和「研究显示」一类说法都要能在证据里找到出处。</p>
+        <div className="review-run">
+          <button type="button" disabled={busy} onClick={()=>void act(async()=>{setContentReview(await request<ReviewState>(base+'/review',{ai:reviewWithAi}));toast('内容审核已完成',{variant:'success'});})}>{contentReview?.result?'重新审核':'运行审核'}{reviewWithAi?'（含 AI 判断，计费）':'（免费）'}</button>
+          <label className="review-toggle"><input type="checkbox" checked={reviewWithAi} disabled={busy} onChange={e=>setReviewWithAi(e.target.checked)}/>同时让 AI 判断规则对不上的断言（计费）</label>
+        </div>
+      </div>
+      {contentReview?.result?<ReviewReport result={contentReview.result} overrides={contentReview.overrides} evidence={project.config?.evidence??[]} stale={!contentReview.current} disabled={busy}
+        onOverride={(item,note)=>void act(async()=>{setContentReview(await request<ReviewState>(base+'/review/override',{item_id:item.id,note}));})}/>
+        :<p className="hint">还没有审核结果。</p>}
+    </Modal>}
     {project&&<Modal open={settingsOpen} onClose={()=>setSettingsOpen(false)} title="课程设置" maxWidth="720px"
       footer={<button type="button" className="btn-modal-confirm primary" onClick={()=>setSettingsOpen(false)}>关闭</button>}>
       <div className="vw-settings-modal">

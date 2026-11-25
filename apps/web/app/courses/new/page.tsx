@@ -10,6 +10,8 @@ import {useConfirm} from '../../ConfirmContext';
 import {useToast} from '../../ToastContext';
 import {useAccount} from '../../AccountSession';
 import {Modal} from '../../Modal';
+import {ReviewReport} from '../../ReviewPanel';
+import type {ReviewResult} from '../../../lib/review';
 import {outlinePlaceholder, isTeachingStyle, type TeachingStyle} from '../../../lib/teaching-style';
 import {parseThemes,suggestTheme,type ThemeSummary} from '../../../lib/themes';
 import {ThemePicker} from '../../ThemePicker';
@@ -72,6 +74,7 @@ export default function NewCourse(){
   const [activePersonaId,setActivePersonaId]=useState('');
   const [personaOpen,setPersonaOpen]=useState(false);
   const [critiqueOpen,setCritiqueOpen]=useState(false);
+  const [contentReview,setContentReview]=useState<ReviewResult|null>(null),[contentReviewing,setContentReviewing]=useState(false);
   const [publishOpen,setPublishOpen]=useState(false);
   const [articleOpen,setArticleOpen]=useState(false);
   useEffect(()=>{
@@ -95,6 +98,14 @@ export default function NewCourse(){
   const courseTitle=(draft.value.title||topic).trim();
 
   /** withPlan: follow the chosen direction's outline; otherwise the one-step generation from the topic. */
+  /** A free pre-review of the manuscript against the injected research (the same rules the course gate uses). */
+  async function onContentReview(){
+    setContentReviewing(true);setError('');
+    try{setContentReview(await request<ReviewResult>('/api/studio/review',{source_text:draft.value.source,manuscript_format:manuscriptFormat,...(draft.value.research?{research:draft.value.research}:{})}));}
+    catch(e){setError(e instanceof Error?e.message:'内容审核失败，可稍后重试。');}
+    finally{setContentReviewing(false);}
+  }
+
   async function onGenerate(withPlan=false){
     const plan=withPlan?toPlan(ideation):null;
     if(!canGenerate({title:courseTitle,source:draft.value.source})||generating||draft.blocked||(withPlan&&!plan))return;
@@ -218,7 +229,7 @@ export default function NewCourse(){
     <form id="new-course-form" onSubmit={async e=>{e.preventDefault();if(blocked)return;setBusy(true);setError('');
       try{const style=isTeachingStyle(draft.value.teaching_style)?draft.value.teaching_style:'popular';
       const origin=toOrigin(topic,draft.value.notes??'',ideation);
-      const project=await request<Project>('/api/projects',{title:courseTitle,source_text:draft.value.source,mode:'script',teaching_style:style,manuscript_format:manuscriptFormat,...(themeId?{theme_id:themeId}:{}),...(origin?{origin}:{})});draft.clear();router.replace('/courses/'+project.id);}
+      const project=await request<Project>('/api/projects',{title:courseTitle,source_text:draft.value.source,mode:'script',teaching_style:style,manuscript_format:manuscriptFormat,...(themeId?{theme_id:themeId}:{}),...(origin?{origin}:{}),...(draft.value.research?{research:draft.value.research}:{})});draft.clear();router.replace('/courses/'+project.id);}
       catch(e){setError(e instanceof Error?e.message:'创建失败，输入已保留。请先检查课程列表，不要重复提交。');setBusy(false);}
     }}>
       <fieldset disabled={blocked} style={{border:0,padding:0,margin:0,minWidth:0}}>
@@ -333,6 +344,9 @@ export default function NewCourse(){
               </button>
               <button type="button" className="research-mini-btn" disabled={blocked||polishing||hooksLoading} onClick={()=>void onPolishDeAi()}>
                 {polishing?<><Spinner size={12} className="icon-spin"/> 去 AI 味润色中…</>:'✨ 一键去 AI 味'}
+              </button>
+              <button type="button" className="research-mini-btn" disabled={blocked||contentReviewing||!draft.value.source.trim()} onClick={()=>void onContentReview()}>
+                {contentReviewing?'审核中…':'🔎 内容审核（免费）'}
               </button>
               <button type="button" className={`research-mini-btn${auditWarnCount>0?' audit-btn-warn':''}`} disabled={blocked} onClick={()=>setCritiqueOpen(true)}>
                 🩺 文稿体检 ({audit.score}分{auditWarnCount>0?` · ${auditWarnCount}预警`:''})
@@ -458,6 +472,12 @@ export default function NewCourse(){
       onSelect={id=>{setActivePersonaId(id);saveActivePersonaId(id,userId);}}
       onSaveList={next=>{setPersonas(next);savePersonas(next,userId);}}
     />
+
+    <Modal open={!!contentReview} onClose={()=>setContentReview(null)} title="内容审核（预审）" maxWidth="760px"
+      footer={<button type="button" className="btn-modal-confirm primary" onClick={()=>setContentReview(null)}>关闭</button>}>
+      <p className="hint" style={{marginTop:0}}>{draft.value.research?'按已注入的爆款参考（证据包）溯源口播里的断言。创建课程后会保存证据包，配音前需要通过审核。':'当前没有注入爆款参考，带数字或「研究显示」的断言都无法溯源。'}</p>
+      {contentReview&&<ReviewReport result={contentReview} evidence={contentReview.evidence??[]}/>}
+    </Modal>
 
     <CritiqueModal
       open={critiqueOpen}

@@ -178,6 +178,7 @@ class VisualApiTests(unittest.TestCase):
         agent=self.client.post(base+'/visual/agent',json={'scene_id':scene['id'],'expected_revision':project['revision'],'confirmed':True,'max_turns':5})
         self.assertEqual(agent.json()['code'],'review_required')
         # The review: the 30–50% figure is secondhand (a warning), the invented 「九成」 has no source (blocking).
+        self.assertEqual(self.client.get(base+'/review').json(),{'required':True,'result':None,'overrides':{},'current':False,'level':None,'evidence':2})
         state=self.client.post(base+'/review',json={}).json()
         self.assertEqual((state['required'],state['current'],state['level']),(True,True,'block'))
         self.assertEqual(state['result']['counts']['secondhand'],1);self.assertEqual(state['result']['counts']['unsourced'],1)

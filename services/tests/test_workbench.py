@@ -266,3 +266,20 @@ class WorkbenchTests(unittest.TestCase):
 
 
 if __name__=='__main__': unittest.main()
+
+
+class ApiPortTests(unittest.TestCase):
+    def test_the_api_port_can_move_off_8000_and_the_loopback_checks_follow(self):
+        import importlib, os
+        from unittest.mock import patch
+        import services.workbench as workbench
+        import services.api.local as local
+        try:
+            with patch.dict(os.environ, {'AICREATER_API_PORT': '8010'}):
+                importlib.reload(workbench); importlib.reload(local)
+                self.assertEqual(workbench.PORTS['api'], 8010)
+                self.assertIn('8010', workbench.COMMANDS['api'])
+                self.assertIn('127.0.0.1:8010', local.HOSTS); self.assertNotIn('127.0.0.1:8000', local.HOSTS)
+        finally:
+            importlib.reload(workbench); importlib.reload(local)
+        self.assertEqual(workbench.PORTS['api'], 8000)

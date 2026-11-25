@@ -5,7 +5,8 @@ export type DraftScene = {narration: {text: string; audio_asset_id?: string}; du
 export type SceneRow = {id: string; revision: number; state: string; scene: DraftScene};
 export type Project = {id: string; title: string; revision: number; source_text: string; scenes: SceneRow[];
   voice?: {resource_id: string; speaker: string}; voice_configured?: boolean; theme_id?: string; theme_accent?: string|null;
-  autopilot?: {state:'running'|'done'|'stopped';reason?:string;scene_ids:string[];max_turns:number;started_at:string}|null};
+  autopilot?: {state:'running'|'done'|'stopped';reason?:string;scene_ids:string[];max_turns:number;started_at:string}|null;
+  config?: {evidence?: {id:string;text:string;source?:{title?:string;platform_label?:string;url?:string}}[]; review?: {required?: boolean}}};
 export type ProjectSummary = Pick<Project,'id'|'title'> & {revision?:number;updated_at?:string|null;scene_count?:number;needs_voice?:number;needs_timing?:number;confirmed_count?:number;active_jobs?:boolean;
   active_job_kind?:string|null;active_job_state?:string|null;theme_id?:string;thumbnail?:{job_id:string;file:string}|null};
 const JOB_KIND_LABELS: Record<string, string> = {voice:'配音',timing:'本地对齐',agent:'Agent 生成',export:'整课导出'};
