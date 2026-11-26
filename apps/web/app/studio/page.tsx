@@ -8,6 +8,7 @@ import {useAccount} from '../AccountSession';
 import {useToast} from '../ToastContext';
 import {useConfirm} from '../ConfirmContext';
 import {ReviewReport} from '../ReviewPanel';
+import {Breakdowns} from './Breakdowns';
 import type {ReviewResult} from '../../lib/review';
 import {loadActivePersonaId,loadPersonas} from '../../lib/manuscript-tools';
 import {HANDOFF_KEY,PLATFORM_LABELS,SCORE_LABELS,cardToDraft,parseKeywords,rankedCards,totalScore,type CreatorProfile,type FeedResponse,type ScoreKey,type TopicCard} from '../../lib/studio';
@@ -26,8 +27,7 @@ export default function Studio(){
       {TABS.map(t=><button key={t.id} role="tab" aria-selected={tab===t.id} className={`studio-tab${tab===t.id?' active':''}`} onClick={()=>setTab(t.id)}>{t.label}</button>)}
     </div>
     {tab==='topics'&&<Topics/>}
-    {tab==='breakdowns'&&<section className="studio-panel"><p>爆款视频解析（上传视频、口播转写、关键帧看图、带时间轴的拆解卡和爆款公式）在下一期开发。</p>
-      <p className="hint">现在可以在「新建视频」的「热点与爆款参考」里检索热点、导入链接并做文字拆解。</p></section>}
+    {tab==='breakdowns'&&<Breakdowns/>}
     {tab==='copy'&&<section className="studio-panel"><p>文案在「新建视频」里写：选题发散、卡片内大纲、按大纲生成分镜文稿、开场钩子与去 AI 味。</p>
       <p className="hint">在「今日选题」里点「用这个选题做视频」，会带着选题、补充想法和证据进入新建页。</p>
       <Link href="/courses/new" className="primary-link">打开新建视频 →</Link></section>}

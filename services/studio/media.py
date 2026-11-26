@@ -39,7 +39,8 @@ def _run(args, timeout):
 
 def probe(path):
     """{duration, width, height} of a video with a video stream, or MediaError."""
-    out = _run(['ffprobe', '-v', 'error', '-print_format', 'json', '-show_format', '-show_streams', str(path)], 60).stdout
+    try: out = _run(['ffprobe', '-v', 'error', '-print_format', 'json', '-show_format', '-show_streams', str(path)], 60).stdout
+    except MediaError: raise MediaError('无法读取这个视频文件（格式不支持或文件已损坏）') from None
     info = json.loads(out or '{}')
     video = next((s for s in info.get('streams', []) if s.get('codec_type') == 'video'), None)
     if not video: raise MediaError('文件里没有视频画面')

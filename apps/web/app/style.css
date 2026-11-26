@@ -3918,3 +3918,28 @@ input:focus, textarea:focus, select:focus {
 .topics-toolbar > button:not(.topics-refresh) { width: auto; padding: 8px 10px; }
 .topics-refresh { background: var(--accent); color: #0b0f17; font-weight: 600; border: 0; padding: 9px 16px; display: inline-flex; align-items: center; gap: 6px; width: auto; }
 .topics-refresh:disabled { background: rgba(16,185,129,0.25); color: var(--text-secondary); }
+
+/* 拆解库 */
+.bd-add { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; }
+.bd-add-col { border: 1px solid var(--line); border-radius: var(--radius-md); padding: 12px; display: flex; flex-direction: column; gap: 8px; background: var(--panel-glass); }
+.bd-add-col .hint { margin: 0; font-size: 12px; }
+.bd-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 8px; }
+.bd-item { border: 1px solid var(--line); border-radius: var(--radius-md); padding: 10px 12px; }
+.bd-item.open { border-color: var(--line-accent); }
+.bd-row { display: flex; align-items: center; gap: 10px; }
+.bd-row input[type=checkbox] { width: auto; margin: 0; flex: none; }
+.bd-title { flex: 1; min-width: 0; background: none; border: 0; box-shadow: none; padding: 0; text-align: left; display: flex; flex-direction: column; gap: 2px; cursor: pointer; }
+.bd-title:hover { transform: none; }
+.bd-title .hint { margin: 0; font-size: 12px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.bd-detail { margin-top: 10px; display: flex; flex-direction: column; gap: 6px; }
+.bd-timeline { position: relative; height: 26px; border-radius: 6px; background: rgba(255,255,255,0.04); margin: 4px 0; }
+.bd-seg { position: absolute; top: 2px; bottom: 2px; border-radius: 4px; background: var(--accent-light); border: 1px solid var(--line-accent); font-size: 11px; color: var(--accent); display: flex; align-items: center; justify-content: center; overflow: hidden; white-space: nowrap; }
+.bd-segments { margin: 0; padding-left: 18px; font-size: 12.5px; color: var(--text-secondary); display: flex; flex-direction: column; gap: 2px; }
+.bd-frames { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 8px; }
+.bd-frames figure { margin: 0; display: flex; flex-direction: column; gap: 4px; }
+.bd-frames img { width: 100%; border-radius: 6px; border: 1px solid var(--line); }
+.bd-frames figcaption { font-size: 11.5px; color: var(--text-secondary); line-height: 1.4; }
+.bd-formula label { display: flex; flex-direction: column; gap: 4px; font-size: 12.5px; }
+a.more-settings-trigger { text-decoration: none; }
+.bd-row button.bd-title { background: none; border: 0; box-shadow: none; align-items: flex-start; text-align: left; color: var(--text-main); padding: 2px 0; }
+.bd-row button.bd-title:hover { background: none; }

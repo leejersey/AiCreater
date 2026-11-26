@@ -28,3 +28,22 @@ test('a card becomes a research brief the new-video page and the API accept, wit
  const draft=cardToDraft(card('标题',4),evidence);
  assert.equal(draft.topic,'标题');assert.match(draft.notes,/面向开发者/);
 });
+
+import {formulaSeconds,formulaToNotes,pending,segmentBars,type Formula} from '../lib/studio';
+const formula:Formula={name:'误区反转三段式',fits:'有常见误解的概念',hook_pattern:'你以为【A】，其实是【B】',rhythm:'每 10 秒一个小反转',ending:'引导收藏',variations:'无',
+ steps:[{role:'钩子',seconds:5,does:'抛出误区',technique:'大字打叉'},{role:'机制',seconds:40,does:'讲清原理',technique:'流程图逐步点亮'},{role:'总结',seconds:10,does:'一句话结论',technique:'镜头推进'}],
+ visual_rules:['每段一个图示','关键词大字'],avoid:['照搬原视频的例子']};
+
+test('a confirmed formula becomes notes for the new-video page, within 300 characters',()=>{
+ const notes=formulaToNotes(formula);
+ assert.match(notes,/按爆款公式「误区反转三段式」写：开场句式「你以为【A】，其实是【B】」；1\.钩子5秒：抛出误区（大字打叉）/);
+ assert.equal(formulaSeconds(formula),55);
+ assert.ok(Array.from(formulaToNotes({...formula,steps:Array(8).fill(formula.steps[1])})).length<=300);
+});
+
+test('segments sit on the timeline by their times; untimed ones are left out',()=>{
+ const bars=segmentBars([{start:0,end:3,role:'钩子',summary:''},{start:3,end:30,role:'机制',summary:''},{start:null,end:null,role:'总结',summary:''}],30);
+ assert.deepEqual(bars.map(b=>[b.role,Math.round(b.left),Math.round(b.width)]),[['钩子',0,10],['机制',10,90]]);
+ assert.deepEqual(segmentBars([{start:null,end:null,role:'钩子',summary:''}]),[]);
+ assert.equal(pending([{state:'succeeded'} as never,{state:'running'} as never]),true);
+});

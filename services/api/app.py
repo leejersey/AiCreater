@@ -606,6 +606,7 @@ def create_app(store=None, *, authentication=True):
         target = bd.WORK / 'uploads'; target.mkdir(parents=True, exist_ok=True)
         path = target / f'{uuidlib.uuid4()}{ext}'
         size, deadline = 0, asyncio.get_running_loop().time() + 600
+        from starlette.requests import ClientDisconnect
         try:
             with path.open('xb') as out:
                 async for chunk in request.stream():
@@ -615,6 +616,9 @@ def create_app(store=None, *, authentication=True):
                     out.write(chunk)
             if size == 0: raise StoreError('validation', '没有收到视频内容')
             return await run_in_threadpool(request.app.state.breakdowns.from_upload, getattr(request.state, 'user', {}).get('id'), path, filename)
+        except ClientDisconnect:  # the upload was cut off: nothing to keep, nobody to answer
+            path.unlink(missing_ok=True)
+            return JSONResponse({'code': 'validation', 'message': '上传中断'}, status_code=400)
         except BaseException:
             path.unlink(missing_ok=True)
             raise

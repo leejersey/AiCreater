@@ -40,3 +40,40 @@ export function cardToDraft(card:TopicCard,evidence:Evidence[]){
 }
 
 export const HANDOFF_KEY = 'aicreater:studio:handoff:v1';
+
+// 拆解库 (services/studio/breakdowns.py) ----------------------------------------------------------------------------
+export type BreakdownSegment = {start:number|null;end:number|null;role:string;summary:string};
+export type BreakdownCard = {summary:string;hook:{copy_type:string;opening:string;visual_type:string;alignment:string;strength:number;reason:string};
+  segments:BreakdownSegment[];rhythm:{model:string;beats:{t:number|null;what:string}[]};visuals:string;conversion:string;compliance:string;
+  transferable:string[];not_transferable:string[]};
+export type Breakdown = {id:string;state:'queued'|'running'|'succeeded'|'failed';card:BreakdownCard|null;error:string|null;created_at:string;
+  video_kept_until:string|null;source:{kind:'upload'|'link'|'text';title?:string;platform?:string;url?:string;duration?:number;frames_note?:string};
+  transcript?:{start:number;end:number;text:string}[];frames?:{t:number;file:string;description:string}[]};
+export type FormulaStep = {role:string;seconds:number;does:string;technique:string};
+export type Formula = {name:string;fits:string;hook_pattern:string;steps:FormulaStep[];rhythm:string;visual_rules:string[];ending:string;variations:string;avoid:string[]};
+export type SavedFormula = {id:string;breakdown_ids:string[];formula:Formula;confirmed:boolean;created_at:string};
+export const BREAKDOWN_STATE = {queued:'排队中',running:'拆解中',succeeded:'已完成',failed:'失败'} as const;
+
+export const pending = (list:Breakdown[]) => list.some(b=>b.state==='queued'||b.state==='running');
+export const formulaSeconds = (f:Formula) => f.steps.reduce((n,s)=>n+s.seconds,0);
+
+/** The confirmed formula as the new-video page's notes (≤300): structure and rules, no content of the reference videos. */
+export function formulaToNotes(f:Formula):string {
+  const steps=f.steps.map((s,i)=>`${i+1}.${s.role}${s.seconds}秒：${s.does}（${s.technique}）`).join('；');
+  return cut(`按爆款公式「${f.name}」写：开场句式「${f.hook_pattern}」；${steps}；节奏：${f.rhythm}；结尾：${f.ending}`,300);
+}
+
+/** Where each segment sits on the video's timeline, in percent; segments without times are left out. */
+export function segmentBars(segments:BreakdownSegment[],duration?:number){
+  const end=duration||Math.max(0,...segments.map(s=>s.end??0));
+  if(!end)return [];
+  return segments.filter(s=>s.start!==null&&s.end!==null&&s.end>s.start).map(s=>({...s,left:(s.start!/end)*100,width:((s.end!-s.start!)/end)*100}));
+}
+
+/** Upload a video as the raw body (the route streams it to disk). */
+export async function uploadVideo(file:File):Promise<Breakdown>{
+  const response=await fetch('/api/studio/breakdowns/upload',{method:'POST',body:file,headers:{'Content-Type':file.type||'application/octet-stream','X-Filename':encodeURIComponent(file.name)}});
+  const value=await response.json();
+  if(!response.ok)throw new Error(value.message||'上传失败',{cause:response.status});
+  return value as Breakdown;
+}

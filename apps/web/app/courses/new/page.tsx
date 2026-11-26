@@ -18,7 +18,6 @@ import {outlinePlaceholder, isTeachingStyle, type TeachingStyle} from '../../../
 import {parseThemes,suggestTheme,type ThemeSummary} from '../../../lib/themes';
 import {ThemePicker} from '../../ThemePicker';
 import {Ideation} from './Ideation';
-import {ResearchModal} from './ResearchModal';
 import {StoryboardEditor} from './StoryboardEditor';
 import {ArticleConvertModal,CritiqueModal,PersonaModal,PublishKitModal} from './CreatorToolsModals';
 import {emptyIdeation,toOrigin,toPlan} from '../../../lib/ideation';
@@ -65,7 +64,6 @@ export default function NewCourse(){
   const [busy,setBusy]=useState(false),[generating,setGenerating]=useState(false),[error,setError]=useState('');
   const [focusPane,setFocusPane]=useState<'split'|'ideate'|'write'>('split');
   const [settingsOpen,setSettingsOpen]=useState(false);
-  const [researchOpen,setResearchOpen]=useState(false);
   const [hooksOpen,setHooksOpen]=useState(false);
   const [hooksLoading,setHooksLoading]=useState(false);
   const [hooksList,setHooksList]=useState<ManuscriptHook[]>([]);
@@ -88,8 +86,9 @@ export default function NewCourse(){
     if(draft.blocked)return;
     const raw=sessionStorage.getItem(HANDOFF_KEY);if(!raw)return;
     sessionStorage.removeItem(HANDOFF_KEY);
-    try{const v=JSON.parse(raw) as {topic?:string;title?:string;notes?:string;research?:unknown};
-      draft.change({topic:String(v.topic??''),title:String(v.title??''),notes:String(v.notes??''),...(isResearchBrief(v.research)?{research:v.research}:{})});
+    try{const v=JSON.parse(raw) as {topic?:string;title?:string;notes?:string;research?:unknown;duration_hint?:string;teaching_style?:string};
+      const keep=(k:'topic'|'title'|'notes'|'duration_hint')=>typeof v[k]==='string'&&v[k]?{[k]:String(v[k]).slice(0,k==='notes'?300:80)}:{};
+      draft.change({...keep('topic'),...keep('title'),...keep('notes'),...keep('duration_hint'),...(isTeachingStyle(v.teaching_style)?{teaching_style:v.teaching_style}:{}),...(isResearchBrief(v.research)?{research:v.research}:{})});
       toast('已带入选题与证据，可以发散方向或直接写稿',{variant:'success'});}catch{/* a broken handoff is ignored */}
   },[draft.blocked]);
   const activePersona=personas.find(p=>p.id===activePersonaId)??null;
@@ -277,19 +276,12 @@ export default function NewCourse(){
               <ChevronRight size={15}/>
             </button>
 
-            <button
-              type="button"
-              className={`more-settings-trigger research-trigger${draft.value.research?' active':''}`}
-              disabled={blocked}
-              onClick={()=>setResearchOpen(true)}
-            >
-              <span>
-                {draft.value.research
-                  ? `已注入爆款参考 · ${viralStyleLabel(draft.value.research.viral_style)}（${draft.value.research.facts.length} 事实 / ${draft.value.research.hooks.length} 钩子）`
-                  : '热点与爆款参考 · 搜公众号 / 抖音 / 小红书 / X / 热榜'}
-              </span>
-              <ChevronRight size={15}/>
-            </button>
+            {draft.value.research
+              ?<div className="more-settings-trigger research-trigger active">
+                <span>已注入爆款参考 · {viralStyleLabel(draft.value.research.viral_style)}（{draft.value.research.facts.length} 事实 / {draft.value.research.hooks.length} 钩子）</span>
+                <button type="button" className="link-button" disabled={blocked} onClick={()=>draft.change({research:null})}>清除</button>
+              </div>
+              :<a className="more-settings-trigger research-trigger" href="/studio"><span>找选题、拆解爆款、检索热点 → 去选题台</span><ChevronRight size={15}/></a>}
 
             <button
               type="button"
@@ -434,23 +426,7 @@ export default function NewCourse(){
       </fieldset>
     </Modal>
 
-    <ResearchModal
-      open={researchOpen}
-      topic={topic}
-      currentBrief={draft.value.research}
-      disabled={blocked}
-      onClose={()=>setResearchOpen(false)}
-      onApplyBrief={brief=>draft.change({research:brief})}
-      onApplyPitch={(pitch,brief)=>draft.change({
-        topic:pitch.title,
-        title:pitch.title,
-        duration_hint:pitch.duration_hint,
-        teaching_style:pitch.teaching_style,
-        notes:`【${pitch.platform_name}】封面大字：${pitch.cover_text}；开场可参考：「${pitch.hook}」；${pitch.notes}`.slice(0,300),
-        research:brief,
-      })}
-      onUseTopic={nextTopic=>draft.change({topic:nextTopic})}
-    />
+
 
     <Modal
       open={hooksOpen}

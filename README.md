@@ -37,7 +37,8 @@ AI Creater 是一个面向**中文知识教学**的 AI 视频生成系统。输�
 ### 🧭 选题台（`/studio`）
 - **今日选题**：手填领域关键词（存服务端），点「刷新今日选题」采集公开热榜并按前 3 个关键词检索（Tavily），由 `daily-topics` skill（改编自 yanhua1010 trend-radar，MIT）生成 5–8 张原创选题卡：核心判断、受众、平台、时效窗口、开场、痛点、差异化角度、证据（样本编号与来源链接）、仍缺的证据、风险，以及热度 / 匹配 / 可视化 / 时效四项评分与理由。可收藏、按日期回看；手动刷新每天最多 10 次，可开启每天 7 点后自动生成一次（计费，失败最多每小时重试一次）。
 - **用这个选题做视频**：带着标题、补充想法和证据（作为爆款参考）进入新建页，后续的文稿、建课和内容审核都能溯源到这些样本。
-- 「审核」标签可单独审一份文稿；「拆解库」（爆款视频解析）在下一期。
+- **拆解库（爆款视频解析）**：上传对标视频（mp4 / mov / webm，10 分钟、200MB 以内）、贴链接（B站 / YouTube 公开字幕、文章正文）或粘贴文案。上传的视频在本机用 whisper.cpp 转写口播（简体、带时间），抽关键帧（前 3 秒每秒一张，再取变化最大的镜头）交给看图模型描述画面，再由 `video-breakdown` skill（改编自花叔 huashu-douyin-script，MIT）出拆解卡：前 3 秒文案 / 视觉钩子与强度、带时间的分镜段落、节奏、画面手法、转化、合规、可复制与不可复制要素。勾选 1–5 张提炼「爆款公式」（可修改，确认后「带到文案」）。原视频保留 7 天，转写、关键帧和拆解卡长期保留。原「热点与爆款参考」（检索热点、今日热榜、文字拆解、三平台方案）也移到这里。
+- 「审核」标签可单独审一份文稿。
 
 ### 📝 新建视频与爆款文稿工作流
 - **热点与爆款参考（弹窗）**：
@@ -135,6 +136,8 @@ python3 -m venv .venv && .venv/bin/pip install -r requirements.txt   # 首次安
 npm run workbench          # 启动 API + 网页 + 任务执行器；Ctrl+C 一起停止
 npm run workbench:status   # 只查看状态
 ```
+
+拆解库转写口播需要 whisper.cpp（`brew install whisper-cpp`）和中文模型：`mkdir -p ~/.cache/aicreater/whisper && curl -L -o ~/.cache/aicreater/whisper/ggml-small.bin https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-small.bin`（约 466MB，也可用 `WHISPER_MODEL` 指定路径）。
 
 本机 8000 端口被其他服务占用时，用 `AICREATER_API_PORT=8010 npm run workbench` 换端口启动（网页代理会跟着改）。
 
