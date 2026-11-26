@@ -49,7 +49,7 @@ function Topics(){
   const parsed=parseKeywords(keywords),dirty=!!profile&&(parsed.join('|')!==profile.keywords.join('|')||auto!==profile.daily_auto);
   const save=()=>run('save',async()=>{const p=await request<CreatorProfile>('/api/studio/profile',{keywords:parsed,daily_auto:auto});setProfile(p);toast('已保存领域关键词',{variant:'success'});});
   const refresh=()=>run('refresh',async()=>{
-    if(!await confirm({title:'刷新今日选题',message:`会采集热榜并按前 ${Math.min(3,profile?.keywords.length??0)} 个关键词检索（Tavily），再调用一次模型生成 5–8 张选题卡（计费，约十几秒到半分钟）。今天还可手动刷新 ${data?.manual_left??0} 次。`,confirmText:'开始生成'}))return;
+    if(!await confirm({title:'刷新今日选题',message:`会采集热榜并按前 ${Math.min(3,profile?.keywords.length??0)} 个关键词检索（Tavily），再调用一次模型生成 5–8 张选题卡（计费，约一分钟）。今天还可手动刷新 ${data?.manual_left??0} 次。`,confirmText:'开始生成'}))return;
     const personas=loadPersonas(userId),active=personas.find(p=>p.id===loadActivePersonaId(userId));
     const persona=active?{name:active.name,audience_call:active.audience_call,tone:active.tone}:undefined;
     await request('/api/studio/topics/refresh',persona?{persona}:{});setDay('');await load('');toast('今日选题已生成',{variant:'success'});

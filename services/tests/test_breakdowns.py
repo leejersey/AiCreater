@@ -22,16 +22,18 @@ class BreakdownCheckTests(unittest.TestCase):
         from services.studio.breakdowns import check_card
         self.assertEqual(check_card(card())['hook']['strength'], 8)
         self.assertIsNone(check_card(card(segments=[{'start': None, 'end': None, 'role': '钩子', 'summary': 's'}] * 3))['segments'][0]['start'])
+        long = check_card(card(summary='长' * 90, segments=[{'start': 0, 'end': 3, 'role': '钩子', 'summary': 'x' * 70}] * 3))   # too long: cut, not refused
+        self.assertEqual((len(long['summary']), long['summary'][-1], len(long['segments'][0]['summary'])), (60, '…', 50))
         for bad in (card(hook={**card()['hook'], 'copy_type': '标题党'}), card(hook={**card()['hook'], 'strength': 11}),
                     card(segments=card()['segments'][:2]), card(segments=[{'start': 0, 'end': 3, 'role': '花絮', 'summary': 's'}] * 3),
-                    card(rhythm={'model': '随意', 'beats': []}), card(transferable=['只有一条']), card(summary='')):
+                    card(rhythm={'model': '随意', 'beats': []}), card(transferable=['只有一条']), card(summary=''), card(visuals=None)):
             with self.assertRaises(ValueError): check_card(bad)
 
     def test_formulas_are_checked_strictly(self):
         from services.studio.breakdowns import check_formula
         self.assertEqual(len(check_formula(formula())['steps']), 3)
         for bad in (formula(steps=formula()['steps'][:2]), formula(steps=[{**formula()['steps'][0], 'seconds': 90}] * 3),
-                    formula(visual_rules=['一条']), formula(name='x' * 21)):
+                    formula(visual_rules=['一条']), formula(name='x' * 21), formula(steps=[{**formula()['steps'][0], 'role': '花絮'}] * 3)):
             with self.assertRaises(ValueError): check_formula(bad)
 
     def test_keyframes_cover_the_hook_then_shot_changes_then_evenly(self):

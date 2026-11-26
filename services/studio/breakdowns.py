@@ -37,9 +37,16 @@ def _text(value, limit, name):
     return value.strip()
 
 
+def _fit(value, limit, name):
+    """A descriptive text: required, and cut to `limit` with … instead of failing the whole (paid) card over its length."""
+    if not isinstance(value, str) or not value.strip(): raise ValueError(f'{name}: required')
+    text = value.strip()
+    return text if len(text) <= limit else text[:limit - 1] + '…'
+
+
 def _texts(value, low, high, limit, name):
     if not isinstance(value, list) or not low <= len(value) <= high: raise ValueError(f'{name}: {low}–{high} items')
-    return [_text(v, limit, name) for v in value]
+    return [_fit(v, limit, name) for v in value]
 
 
 def _seconds(value, name):
@@ -61,18 +68,18 @@ def check_card(value):
     for s in segments:
         if not isinstance(s, dict) or s.get('role') not in ROLES: raise ValueError('segment.role: one of ' + '、'.join(ROLES))
         segs.append({'start': _seconds(s.get('start'), 'segment.start'), 'end': _seconds(s.get('end'), 'segment.end'),
-                     'role': s['role'], 'summary': _text(s.get('summary'), 50, 'segment.summary')})
+                     'role': s['role'], 'summary': _fit(s.get('summary'), 50, 'segment.summary')})
     rhythm = value.get('rhythm')
     if not isinstance(rhythm, dict) or rhythm.get('model') not in RHYTHMS: raise ValueError('rhythm.model: one of ' + '、'.join(RHYTHMS))
     beats = rhythm.get('beats') or []
     if not isinstance(beats, list) or len(beats) > 8: raise ValueError('rhythm.beats: at most 8')
-    return {'summary': _text(value.get('summary'), 60, 'summary'),
-            'hook': {'copy_type': hook['copy_type'], 'opening': _text(hook.get('opening'), 120, 'hook.opening'), 'visual_type': hook['visual_type'],
-                     'alignment': _text(hook.get('alignment'), 60, 'hook.alignment'), 'strength': hook['strength'], 'reason': _text(hook.get('reason'), 60, 'hook.reason')},
+    return {'summary': _fit(value.get('summary'), 60, 'summary'),
+            'hook': {'copy_type': hook['copy_type'], 'opening': _fit(hook.get('opening'), 120, 'hook.opening'), 'visual_type': hook['visual_type'],
+                     'alignment': _fit(hook.get('alignment'), 60, 'hook.alignment'), 'strength': hook['strength'], 'reason': _fit(hook.get('reason'), 60, 'hook.reason')},
             'segments': segs,
-            'rhythm': {'model': rhythm['model'], 'beats': [{'t': _seconds(b.get('t') if isinstance(b, dict) else None, 'beat.t'), 'what': _text(b.get('what') if isinstance(b, dict) else None, 30, 'beat.what')} for b in beats]},
-            'visuals': _text(value.get('visuals'), 120, 'visuals'), 'conversion': _text(value.get('conversion'), 80, 'conversion'),
-            'compliance': _text(value.get('compliance'), 80, 'compliance'),
+            'rhythm': {'model': rhythm['model'], 'beats': [{'t': _seconds(b.get('t') if isinstance(b, dict) else None, 'beat.t'), 'what': _fit(b.get('what') if isinstance(b, dict) else None, 30, 'beat.what')} for b in beats]},
+            'visuals': _fit(value.get('visuals'), 120, 'visuals'), 'conversion': _fit(value.get('conversion'), 80, 'conversion'),
+            'compliance': _fit(value.get('compliance'), 80, 'compliance'),
             'transferable': _texts(value.get('transferable'), 2, 6, 40, 'transferable'),
             'not_transferable': _texts(value.get('not_transferable'), 1, 4, 40, 'not_transferable')}
 
@@ -85,10 +92,10 @@ def check_formula(value):
     for s in steps:
         if not isinstance(s, dict) or s.get('role') not in ROLES: raise ValueError('step.role: one of ' + '、'.join(ROLES))
         if type(s.get('seconds')) is not int or not 3 <= s['seconds'] <= 60: raise ValueError('step.seconds: 3–60')
-        out.append({'role': s['role'], 'seconds': s['seconds'], 'does': _text(s.get('does'), 50, 'step.does'), 'technique': _text(s.get('technique'), 40, 'step.technique')})
-    return {'name': _text(value.get('name'), 20, 'name'), 'fits': _text(value.get('fits'), 60, 'fits'), 'hook_pattern': _text(value.get('hook_pattern'), 60, 'hook_pattern'),
-            'steps': out, 'rhythm': _text(value.get('rhythm'), 60, 'rhythm'), 'visual_rules': _texts(value.get('visual_rules'), 2, 5, 40, 'visual_rules'),
-            'ending': _text(value.get('ending'), 40, 'ending'), 'variations': _text(value.get('variations'), 80, 'variations'),
+        out.append({'role': s['role'], 'seconds': s['seconds'], 'does': _fit(s.get('does'), 50, 'step.does'), 'technique': _fit(s.get('technique'), 40, 'step.technique')})
+    return {'name': _text(value.get('name'), 20, 'name'), 'fits': _fit(value.get('fits'), 60, 'fits'), 'hook_pattern': _fit(value.get('hook_pattern'), 60, 'hook_pattern'),
+            'steps': out, 'rhythm': _fit(value.get('rhythm'), 60, 'rhythm'), 'visual_rules': _texts(value.get('visual_rules'), 2, 5, 40, 'visual_rules'),
+            'ending': _fit(value.get('ending'), 40, 'ending'), 'variations': _fit(value.get('variations'), 80, 'variations'),
             'avoid': _texts(value.get('avoid'), 1, 4, 40, 'avoid')}
 
 
