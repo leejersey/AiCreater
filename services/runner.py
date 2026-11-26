@@ -52,6 +52,7 @@ def serve(lane):
     store = open_store()
     print(f'runner {lane}: ready', flush=True)
     retried = 0.0
+    cleaned = 0.0
     while not stopping:
         if lane == 'workflow':
             # Course pipelines the person confirmed: submit their next step when nothing of theirs is running.
@@ -65,6 +66,13 @@ def serve(lane):
                 from services.studio.topics import TopicFeeds
                 from services.accounts.model_settings import resolve_llm
                 for feed in TopicFeeds(store).daily(lambda owner: resolve_llm(store, owner)): print(f'runner {lane}: daily topics {feed}', flush=True)
+                # 拆解库: one queued breakdown per pass (the person asked for it), and uploaded videos past their keep date.
+                from services.studio.breakdowns import Breakdowns
+                breakdowns = Breakdowns(store)
+                if (done := breakdowns.process_next(lambda owner: resolve_llm(store, owner))): print(f'runner {lane}: breakdown {done}', flush=True)
+                if time.monotonic() - cleaned > 3600:
+                    cleaned = time.monotonic()
+                    if (removed := breakdowns.cleanup()): print(f'runner {lane}: removed {removed} expired upload(s)', flush=True)
             except Exception as error:
                 print(f'runner {lane}: pipeline step failed ({type(error).__name__}); retrying', file=sys.stderr, flush=True)
         try: result = poll(store, lane)

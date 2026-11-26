@@ -1,6 +1,7 @@
 """Local teaching API: accounts, projects, voice and timing jobs, and the visual (Scene Agent) routes."""
 from contextlib import asynccontextmanager
 import os
+import re
 from typing import Literal
 
 import httpx
@@ -16,6 +17,7 @@ from services.api.visual import router as visual_routes
 from services.visual.store import VisualJobs
 from services.visual.course_review import CourseReview
 from services.studio.topics import TopicFeeds
+from services.studio.breakdowns import Breakdowns
 from services.accounts.auth import Accounts
 from services.projects.manage import profile
 from services.projects.jobs import Jobs
@@ -174,6 +176,21 @@ class TopicStar(Body):
     starred: bool
 
 
+class BreakdownCreate(Body):
+    kind: Literal['link', 'text']
+    url: str = Field(default='', max_length=500)
+    title: str = Field(default='', max_length=120)
+    text: str = Field(default='', max_length=8000)
+
+
+class FormulaCreate(Body):
+    breakdown_ids: list[str] = Field(min_length=1, max_length=5)
+
+
+class FormulaConfirm(Body):
+    formula: dict
+
+
 class ReviewRun(Body):
     ai: bool = False  # also let the model judge claims the rules could not trace (paid)
 
@@ -250,6 +267,7 @@ def create_app(store=None, *, authentication=True):
         app.state.visual = VisualJobs(configured)
         app.state.reviews = CourseReview(configured)
         app.state.topics = TopicFeeds(configured)
+        app.state.breakdowns = Breakdowns(configured)
         yield
 
     app = FastAPI(title='Teaching Projects', lifespan=lifespan, docs_url=None, redoc_url=None,
@@ -573,6 +591,71 @@ def create_app(store=None, *, authentication=True):
     def studio_topics_star(feed_id: str, body: TopicStar, request: Request):
         from services.projects.store import identifier
         return request.app.state.topics.star(getattr(request.state, 'user', {}).get('id'), identifier(feed_id), body.index, body.starred)
+
+    @app.post('/api/studio/breakdowns/upload', status_code=201)
+    async def studio_breakdown_upload(request: Request):
+        """A video as the raw request body (Content-Type video/*, X-Filename URL-encoded), streamed to disk."""
+        import asyncio, uuid as uuidlib
+        from urllib.parse import unquote
+        from starlette.concurrency import run_in_threadpool
+        from services.studio import breakdowns as bd
+        kind = request.headers.get('content-type', '').split(';')[0]
+        filename = unquote(request.headers.get('x-filename', ''))[:160] or '上传的视频'
+        ext = bd.VIDEO_TYPES.get(kind) or next((e for e in bd.VIDEO_TYPES.values() if filename.lower().endswith(e)), None)
+        if not ext: raise StoreError('content_type', '只支持 mp4、mov、webm、mkv 视频')
+        target = bd.WORK / 'uploads'; target.mkdir(parents=True, exist_ok=True)
+        path = target / f'{uuidlib.uuid4()}{ext}'
+        size, deadline = 0, asyncio.get_running_loop().time() + 600
+        try:
+            with path.open('xb') as out:
+                async for chunk in request.stream():
+                    size += len(chunk)
+                    if size > bd.MAX_UPLOAD: raise StoreError('validation', '视频不能超过 200MB')
+                    if asyncio.get_running_loop().time() > deadline: raise StoreError('validation', '上传超时')
+                    out.write(chunk)
+            if size == 0: raise StoreError('validation', '没有收到视频内容')
+            return await run_in_threadpool(request.app.state.breakdowns.from_upload, getattr(request.state, 'user', {}).get('id'), path, filename)
+        except BaseException:
+            path.unlink(missing_ok=True)
+            raise
+
+    @app.post('/api/studio/breakdowns', status_code=201)
+    def studio_breakdown_create(body: BreakdownCreate, request: Request):
+        owner = getattr(request.state, 'user', {}).get('id')
+        if body.kind == 'text': return request.app.state.breakdowns.from_text(owner, body.title, body.text)
+        with httpx.Client(timeout=60, trust_env=False) as client:
+            return request.app.state.breakdowns.from_link(owner, body.url.strip(), client)
+
+    @app.get('/api/studio/breakdowns')
+    def studio_breakdowns(request: Request):
+        return request.app.state.breakdowns.list(getattr(request.state, 'user', {}).get('id'))
+
+    @app.get('/api/studio/breakdowns/{breakdown_id}')
+    def studio_breakdown(breakdown_id: str, request: Request):
+        from services.projects.store import identifier
+        return request.app.state.breakdowns.get(getattr(request.state, 'user', {}).get('id'), identifier(breakdown_id))
+
+    @app.get('/api/studio/breakdowns/{breakdown_id}/frames/{name}')
+    def studio_breakdown_frame(breakdown_id: str, name: str, request: Request):
+        from services.projects.store import identifier
+        if not re.fullmatch(r'frame-[0-9.]+\.jpg', name): raise StoreError('not_found', '没有这张关键帧')
+        path = request.app.state.breakdowns.frame_file(getattr(request.state, 'user', {}).get('id'), identifier(breakdown_id), name)
+        return FileResponse(path, media_type='image/jpeg', headers={'X-Content-Type-Options': 'nosniff'})
+
+    @app.post('/api/studio/formulas', status_code=201)
+    def studio_formula(body: FormulaCreate, request: Request):
+        from services.projects.store import identifier
+        llm, user_id = review_model(request)
+        try:
+            with httpx.Client(timeout=120, trust_env=False) as client:
+                return request.app.state.breakdowns.formula(user_id, [identifier(i) for i in body.breakdown_ids], llm, client)
+        except ProviderError as exc:
+            return JSONResponse({'code': exc.code, 'message': str(exc)}, status_code=_provider_error_status(exc.code))
+
+    @app.post('/api/studio/formulas/{formula_id}/confirm')
+    def studio_formula_confirm(formula_id: str, body: FormulaConfirm, request: Request):
+        from services.projects.store import identifier
+        return request.app.state.breakdowns.confirm_formula(getattr(request.state, 'user', {}).get('id'), identifier(formula_id), body.formula)
 
     @app.post('/api/studio/review')
     def studio_review(body: StudioReview, request: Request):

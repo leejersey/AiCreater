@@ -163,6 +163,82 @@ class VisualApiTests(unittest.TestCase):
             conn.execute('UPDATE projects SET config=%s WHERE id=%s',[Jsonb(config),self.pid])
         return project,row,text
 
+    def test_breakdowns_from_text_link_and_upload_then_a_confirmed_formula(self):
+        import subprocess,tempfile as tf
+        from pathlib import Path
+        from unittest.mock import patch
+        from services.studio import breakdowns as bd, media
+        from services.workflow.providers import ProviderError
+        from services.tests.test_breakdowns import card, formula
+        work=Path(tf.mkdtemp());self.addCleanup(lambda:subprocess.run(['rm','-rf',str(work)]))
+        feeds=self.client.app.state.breakdowns
+        with patch.object(bd,'WORK',work):
+            # Pasted copy: queued, then the runner makes its card.
+            made=self.client.post('/api/studio/breakdowns',json={'kind':'text','title':'对标文案','text':'你以为 RAG 答非所问是模型笨？其实是检索没找对。'})
+            self.assertEqual((made.status_code,made.json()['state'],made.json()['source']['kind']),(201,'queued','text'))
+            self.assertNotIn('text',made.json()['source'])                 # the pasted text is not echoed back
+            with patch.object(bd,'call_json',return_value=bd.check_card(card())) as run:
+                self.assertEqual(feeds.process_next(lambda owner:None),made.json()['id'])
+            self.assertIn('只有文字资料',run.call_args.args[3]);self.assertEqual(run.call_args.args[5] if len(run.call_args.args)>5 else run.call_args.kwargs.get('kind','studio_breakdown'),'studio_breakdown')
+            got=self.client.get('/api/studio/breakdowns/'+made.json()['id']).json()
+            self.assertEqual((got['state'],got['card']['hook']['copy_type'],got['skill'][0]['name']),('succeeded','反常识','video-breakdown'))
+            self.assertIsNone(feeds.process_next(lambda owner:None))       # nothing left
+            # A link whose page has no usable text is refused; one with text is queued.
+            with patch('services.workflow.research.extract_url_content',return_value={'title':'空页','content':''}):
+                self.assertEqual(self.client.post('/api/studio/breakdowns',json={'kind':'link','url':'https://example.com/a'}).json()['code'],'not_ready')
+            with patch('services.workflow.research.extract_url_content',return_value={'title':'B站视频','content':'字幕：'+'讲清楚检索增强生成的流程'*3,'platform_label':'B站'}):
+                link=self.client.post('/api/studio/breakdowns',json={'kind':'link','url':'https://www.bilibili.com/video/BV1'}).json()
+            self.assertEqual((link['source']['platform'],link['state']),('B站','queued'))
+            with patch.object(bd,'call_json',side_effect=ProviderError('studio_breakdown','invalid_response','模型返回的结果不符合要求')):
+                feeds.process_next(lambda owner:None)
+            failed=self.client.get('/api/studio/breakdowns/'+link['id']).json()
+            self.assertEqual(failed['state'],'failed');self.assertIn('不符合要求',failed['error'])
+            # A real (tiny) video: streamed upload, probed, keyframes taken here; transcription and the models are stubbed.
+            video=work/'clip.mp4'
+            subprocess.run(['ffmpeg','-v','error','-y','-f','lavfi','-i','testsrc=size=320x240:rate=10:duration=6','-f','lavfi','-i','sine=frequency=440:duration=6',
+                            '-shortest','-pix_fmt','yuv420p',str(video)],check=True)
+            up=self.client.post('/api/studio/breakdowns/upload',content=video.read_bytes(),headers={'Content-Type':'video/mp4','X-Filename':'%E5%AF%B9%E6%A0%87.mp4'})
+            self.assertEqual(up.status_code,201,up.text);up=up.json()
+            self.assertEqual((up['source']['title'],up['source']['audio'],round(up['source']['duration'])),('对标.mp4',True,6))
+            self.assertTrue(up['video_kept_until'])
+            with patch.object(media,'transcribe',return_value=[{'start':0,'end':2.5,'text':'你以为'}]), \
+                 patch.object(media,'describe_frames',side_effect=lambda llm,client,shots,owner:{t:f'第{t}秒画面' for t,_ in shots}), \
+                 patch.object(bd,'call_json',return_value=bd.check_card(card())) as run:
+                feeds.process_next(lambda owner:None)
+            done=self.client.get('/api/studio/breakdowns/'+up['id']).json()
+            self.assertEqual(done['state'],'succeeded',done['error'])
+            self.assertEqual([f['t'] for f in done['frames']][:4],[0,1,2,3]);self.assertEqual(done['frames'][0]['description'],'第0秒画面')
+            self.assertIn('0-2.5 你以为',run.call_args.args[3])
+            frame=self.client.get('/api/studio/breakdowns/'+up['id']+'/frames/'+done['frames'][0]['file'])
+            self.assertEqual((frame.status_code,frame.headers['content-type']),(200,'image/jpeg'))
+            self.assertEqual(self.client.get('/api/studio/breakdowns/'+up['id']+'/frames/frame-0099.00.jpg').status_code,404)
+            self.assertEqual(self.client.get('/api/studio/breakdowns/'+str(uuid.uuid4())).status_code,404)
+            # Not a video, or not a video type: refused, nothing left on disk.
+            bad=self.client.post('/api/studio/breakdowns/upload',content=b'not a video',headers={'Content-Type':'video/mp4','X-Filename':'x.mp4'})
+            self.assertEqual(bad.status_code,422)
+            self.assertEqual(len(list((work/'uploads').iterdir())),1)
+            self.assertEqual(self.client.post('/api/studio/breakdowns/upload',content=b'x',headers={'Content-Type':'text/plain'}).status_code,415)
+            # A run that died is failed; the formula needs finished cards and is confirmed after editing.
+            with self.store.connection() as conn:conn.execute("UPDATE breakdowns SET state='running',started_at=now()-interval '1 hour' WHERE id=%s",[link['id']])
+            feeds.process_next(lambda owner:None)
+            self.assertIn('处理超时',self.client.get('/api/studio/breakdowns/'+link['id']).json()['error'])
+            with patch('services.api.app.resolve_llm',return_value=None),patch.object(bd,'call_json',return_value=bd.check_formula(formula())) as run:
+                self.assertEqual(self.client.post('/api/studio/formulas',json={'breakdown_ids':[made.json()['id'],link['id']]}).json()['code'],'not_ready')
+                f=self.client.post('/api/studio/formulas',json={'breakdown_ids':[made.json()['id'],up['id']]})
+            self.assertEqual(f.status_code,201,f.text);f=f.json()
+            self.assertIn('【拆解卡 2】对标.mp4',run.call_args.args[3]);self.assertFalse(f['confirmed'])
+            self.assertEqual(self.client.post('/api/studio/formulas/'+f['id']+'/confirm',json={'formula':{**f['formula'],'steps':[]}}).status_code,422)
+            confirmed=self.client.post('/api/studio/formulas/'+f['id']+'/confirm',json={'formula':{**f['formula'],'name':'我的三段式'}}).json()
+            self.assertEqual((confirmed['confirmed'],confirmed['formula']['name']),(True,'我的三段式'))
+            listed=self.client.get('/api/studio/breakdowns').json()
+            self.assertEqual((len(listed['breakdowns']),listed['formulas'][0]['id']),(3,f['id']))
+            self.assertNotIn('transcript',listed['breakdowns'][0])
+            # Uploaded videos are deleted after their keep date; the card stays.
+            with self.store.connection() as conn:conn.execute("UPDATE breakdowns SET video_expires_at=now()-interval '1 minute' WHERE id=%s",[up['id']])
+            self.assertEqual(feeds.cleanup(),1);self.assertEqual(list((work/'uploads').iterdir()),[])
+            after=self.client.get('/api/studio/breakdowns/'+up['id']).json()
+            self.assertEqual((after['video_kept_until'],after['state']),(None,'succeeded'))
+
     def test_daily_topics_from_profile_to_feed_star_cap_and_the_daily_run(self):
         from datetime import date, datetime
         from unittest.mock import patch

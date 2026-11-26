@@ -8,6 +8,8 @@ HOSTS = {f'localhost:{API_PORT}', f'127.0.0.1:{API_PORT}', f'[::1]:{API_PORT}'}
 ORIGINS = {'http://localhost:3000', 'http://127.0.0.1:3000',
            f'http://localhost:{API_PORT}', f'http://127.0.0.1:{API_PORT}'}
 MAX_BODY = 512 * 1024
+# Video uploads stream straight to the route, which writes them to disk with its own size and time limits.
+STREAMED = {('POST', '/api/studio/breakdowns/upload')}
 BODY_TIMEOUT = 15
 
 
@@ -26,6 +28,8 @@ class LocalRequestsMiddleware:
         if (not peer or peer[0] not in {'127.0.0.1', '::1'} or host not in HOSTS or
                 (origin is not None and origin.decode('latin-1') not in ORIGINS)):
             return await reject(403, 'local_only')
+        if (scope.get('method'), scope.get('path')) in STREAMED:
+            return await self.app(scope, receive, send)
         deadline = asyncio.get_running_loop().time() + BODY_TIMEOUT
         chunks, size = [], 0
         while True:

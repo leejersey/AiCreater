@@ -10,6 +10,8 @@
 | skill | 改编自 | 提交 | 许可证 |
 | --- | --- | --- | --- |
 | `daily-topics` | yanhua1010/self-media-content-workflow · skills/self-media-trend-radar | `1cdc2465c853d35ce2cfcf6826c5de872fa484cf` | MIT |
+| `video-breakdown` | alchaincyf/huashu-skills · huashu-douyin-script/references/analysis-dimensions.md | `cb7f7c65436dcfae58a35fd43df7e885d4f1909e` | MIT |
+| `viral-formula` | alchaincyf/huashu-skills · huashu-douyin-script（Step 4 爆款公式提炼） | `cb7f7c65436dcfae58a35fd43df7e885d4f1909e` | MIT |
 
 ## 已确认的上游（将在 P1–P4 改编）
 

@@ -32,7 +32,9 @@ class Empty(BaseModel):
 def access(request:Request):
     if not request.app.state.authentication: return
     if request.url.path=='/health': return
-    if request.method not in ('GET','HEAD','OPTIONS') and request.headers.get('content-type','').split(';')[0]!='application/json':
+    kind=request.headers.get('content-type','').split(';')[0]
+    upload=request.method=='POST' and request.url.path=='/api/studio/breakdowns/upload' and (kind.startswith('video/') or kind=='application/octet-stream')
+    if request.method not in ('GET','HEAD','OPTIONS') and kind!='application/json' and not upload:
         raise StoreError('content_type','写入请求必须为JSON')
     if request.url.path in ('/api/auth/register','/api/auth/login'): return
     user=request.app.state.accounts.current(request.cookies.get(COOKIE))
