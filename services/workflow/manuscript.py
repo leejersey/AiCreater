@@ -134,7 +134,8 @@ def _user_message(title, audience, duration_hint, outline, teaching_style, plan=
         lines += formula_lines(formula, markdown)
     if plan:
         lines += plan_lines(plan)
-        lines.append('每章写成一段：段落标题用章节标题，visual_intent 以该章的画面构想为基础并引用本段口播短句。' if markdown
+        lines.append('每章写成一段：段落标题用章节标题，visual_intent 以该章的画面构想为基础并引用本段口播短句；'
+                     '每段口播的字数约为该章预计秒数 × 5（例如 30 秒约 150 字），不要只写提纲式的短句。' if markdown
                      else '口播按大纲顺序展开，每章一个自然段，各章篇幅与预计秒数相称（约每秒 5 字）。')
     return '\n'.join(lines)
 
@@ -219,7 +220,8 @@ def generate_manuscript(title, llm, client, *, audience='', duration_hint='', ou
     chars, ok = 0, False
     try:
         if manuscript_format == 'markdown':
-            text, _ = _document(llm, client, body)
+            target = sum(sec['seconds'] for sec in plan['outline']['sections']) * 5 if plan else 0
+            text, _ = _document(llm, client, body, advise=(lambda doc: _too_short(doc, target)) if target else None)
         elif len(text := _complete(llm, client, body)) > 4000:
             raise ProviderError('manuscript', 'output_limit', 'Manuscript exceeds 4000 code points')
         chars, ok = len(text), True
@@ -510,6 +512,14 @@ def _budget_seconds(duration_hint):
     m = re.search(r'(\d+(?:\.\d+)?)\s*(分钟|分|min|m|秒|s)?', duration_hint or '', re.I)
     seconds = 180 if not m else float(m.group(1)) * (1 if (m.group(2) or '分钟').lower() in ('秒', 's') else 60)
     return max(30, min(int(seconds), 780))
+
+
+def _too_short(document, target_chars):
+    """Advice when a storyboard written from an outline has well under its planned narration; None when it is close."""
+    chars = len(narration_text(document))
+    if chars >= target_chars * 0.8: return None  # the model leans short: under 80% of the plan is asked once to expand
+    return (f'口播合计只有 {chars} 字，约 {chars // 5} 秒，大纲规划约 {target_chars // 5} 秒（约 {target_chars} 字）。'
+            f'请按每章预计秒数 × 5 字扩写每段口播：讲清机制、补上例子和过渡，不要只写提纲式短句，事实仍只能来自编号的 E 条目。')
 
 
 def _too_long(document, duration_hint):

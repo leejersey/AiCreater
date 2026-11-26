@@ -83,9 +83,19 @@ class TraceableCopyTests(unittest.TestCase):
         text = '2020年提出。'
         row = {'id': 's1', 'state': 'ready', 'revision': 1, 'scene': {'narration': {'text': text, 'audio_asset_id': 'v'}, 'duration_frames': 60,
                'captions': [{'text': text, 'start_frame': 0, 'end_frame': 60}]}}
-        section = {'id': 's1', 'title': '开场', 'narration': text, 'materials': '时间线：2020[E1]\n依据：[E1][E3]', 'visual_intent': 'v'}
+        section = {'id': 's1', 'title': '开场', 'narration': text, 'materials': '时间线：2020[E1]。依据：[E1][E3]', 'visual_intent': 'v'}
         project = {'title': 't', 'config': {'assets': [{'id': 'v', 'checksum': 'c'}], 'manuscript': {'sections': [section]}}}
-        self.assertEqual(measured_input(project, row)['brief']['materials'], ['时间线：2020'])
+        self.assertEqual(measured_input(project, row)['brief']['materials'], ['时间线：2020。'])  # inline 「依据」 too
+
+    def test_a_storyboard_far_shorter_than_its_outline_is_asked_once_to_expand(self):
+        from services.workflow import manuscript as m
+        from services.tests.test_ideation import FOUR, outline
+        short = {'sections': [{'id': 's1', 'title': '第1章', 'narration': '短。', 'materials': '图', 'visual_intent': '画面'}]}
+        full = {'sections': [{'id': 's1', 'title': '第1章', 'narration': '讲清楚' * 70, 'materials': '图', 'visual_intent': '画面'}]}
+        client = MagicMock(); client.post.side_effect = [self.reply(short), self.reply(full)]
+        m.generate_manuscript('RAG', self.llm(), client, manuscript_format='markdown', plan={'angle': FOUR[0], 'outline': outline(40, 50)})
+        self.assertIn('大纲规划约 90 秒', client.post.call_args.kwargs['json']['messages'][-1]['content'])
+        self.assertIn('预计秒数 × 5', client.post.call_args_list[0].kwargs['json']['messages'][1]['content'])
 
 
 if __name__ == '__main__':

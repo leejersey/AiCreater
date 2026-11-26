@@ -64,7 +64,7 @@ def measured_input(project,row):
     materials=[]
     if matched:
         # 「依据：[E1][E3]」 is for the content review; the picture must not show evidence ids.
-        material=re.sub(r'\s*\[E\d+\]','',re.sub(r'(?m)^\s*依据[:：][^\n]*\n?','',matched.get('materials',''))).strip() or '无'
+        material=re.sub(r'\s*\[E\d+\]','',re.sub(r'\s*依据[:：]\s*(?:\[E\d+\][、，,\s]*)+','',matched.get('materials',''))).strip() or '无'
         materials=[material[i:i+2000] for i in range(0,len(material),2000)][:20]
     title=(matched or {}).get('title') or project['title']
     goal=(matched or {}).get('visual_intent') or '用具体对象的状态变化、路线与遮挡讲清本章机制；不要生成文字卡片切换。'
