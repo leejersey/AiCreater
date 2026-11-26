@@ -47,3 +47,21 @@ test('segments sit on the timeline by their times; untimed ones are left out',()
  assert.deepEqual(segmentBars([{start:null,end:null,role:'钩子',summary:''}]),[]);
  assert.equal(pending([{state:'succeeded'} as never,{state:'running'} as never]),true);
 });
+
+import {isFormula} from '../lib/studio';
+import {readDraft,writeDraft} from '../lib/drafts';
+import {toOrigin,emptyIdeation,choose,setOutline} from '../lib/ideation';
+
+test('a confirmed formula survives the local draft and reaches the course origin',()=>{
+ assert.ok(isFormula(formula));
+ assert.ok(!isFormula({...formula,steps:formula.steps.slice(0,2)}));
+ const store=new Map<string,string>(),storage={getItem:(k:string)=>store.get(k)??null,setItem:(k:string,v:string)=>{store.set(k,v);},removeItem:(k:string)=>{store.delete(k);}};
+ const scope={kind:'course' as const,projectId:'',sceneId:''};
+ const raw=writeDraft(storage,scope,0,{title:'t',source:'',formula},null);
+ assert.equal(readDraft(raw,scope)!.data.formula!.name,'误区反转三段式');
+ assert.equal(readDraft(raw.replace('"误区反转三段式"','""'),scope),null);
+ const angle={title:'a',hook:'h',audience:'u',takeaway:'t',structure:'problem' as const,depth:'intro' as const,duration_min:3,chapters:['1','2','3'],scope:'single' as const};
+ const s=setOutline(choose(emptyIdeation(),angle),{sections:[{title:'一',points:['p'],picture:'变化的图',seconds:30}]});
+ assert.equal(toOrigin('RAG','',s,formula)!.formula,formula);
+ assert.equal('formula' in toOrigin('RAG','',s)!,false);
+});

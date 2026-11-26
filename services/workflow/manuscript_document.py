@@ -30,6 +30,8 @@ def validate_document(document):
         seen.add(section['id'])
         if any(any((ord(c) < 32 and c not in '\n\t') or ord(c) == 127 or 0xD800 <= ord(c) <= 0xDFFF for c in v) for v in section.values()):
             invalid(f"段 {section['id']} 含控制字符")
+        if re.search(r'\[E\d+\]', section['narration']):
+            invalid(f"段 {section['id']} 的口播里有证据编号 [E…]，编号只能写在画面素材里")
         if re.search(r'(?m)^\s*(?:#{1,6}\s|[-*+]\s|\d+[.)]\s|```|~~~)', section['narration']) or '`' in section['narration']:
             invalid(f"段 {section['id']} 的口播含标题、列表、编号或代码标记")
     if len(narration_text(document)) > 4000:

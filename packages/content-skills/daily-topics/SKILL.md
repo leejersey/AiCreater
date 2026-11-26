@@ -1,6 +1,6 @@
 ---
 name: daily-topics
-version: 1
+version: 2
 description: 每日选题：从当天的热榜与检索样本里，为账号领域找出原创选题，每张选题卡写明判断、证据、差异化角度、风险与评分理由
 adapted_from: yanhua1010/self-media-content-workflow@1cdc2465c853d35ce2cfcf6826c5de872fa484cf (MIT) skills/self-media-trend-radar
 ---
@@ -14,7 +14,7 @@ adapted_from: yanhua1010/self-media-content-workflow@1cdc2465c853d35ce2cfcf6826c
 2. 区分三类信息：可以直接核验的事实；多个样本重复出现的模式；可能只是热点、投流或账号体量造成的一次性现象。不要把一次高表现当成规律。  
 3. 优先选择与领域关键词相关、能用动画讲清楚机制或对比的话题；与领域无关的热点，只有找到真正的连接点才可以用。  
 4. 每个选题都要说清楚这个账号能加入的东西：一个判断、一个讲法上的差异，而不是换个标题重复热点。  
-每张选题卡：title 视频标题（吸引人但不夸张，≤40 字）；judgement 一句话判断，这条视频要说的核心观点（≤60 字）；audience 适合谁（≤30 字）；platforms 适合的平台，1–3 个，取自 bilibili、douyin、xiaohongshu、wechat、youtube；window 时效窗口，如「本周内」「两周内」「长期有效」（≤20 字）；hook 开场第一句口播（≤80 字）；pain_point 观众真正关心的问题（≤60 字）；angle 差异化角度：和已有内容讲法不同在哪（≤80 字）；evidence 支撑这个选题的样本编号，1–5 个，必须是给定的编号；gaps 还缺什么证据，没有就写「无」（≤80 字）；risks 风险，如时效短、争议、需要专业资质，没有就写「无」（≤80 字）；scores 四项评分，每项 score 为 1–5 的整数并附 reason 理由（≤40 字）：heat 热度、fit 与领域和人设的匹配度、visual 能否做成清楚的动画画面、timeliness 时效价值。
+每张选题卡：title 视频标题（吸引人但不夸张，≤40 字）；judgement 一句话判断，这条视频要说的核心观点（≤60 字）；audience 适合谁（≤30 字）；platforms 适合的平台，1–3 个，取自 bilibili、douyin、xiaohongshu、wechat、youtube；window 时效窗口，如「本周内」「两周内」「长期有效」（≤20 字）；hook 开场第一句口播（≤80 字）；pain_point 观众真正关心的问题（≤60 字）；angle 差异化角度：和已有内容讲法不同在哪（≤80 字）；evidence 直接支撑这条判断的样本编号，1–5 个，必须是给定的编号——样本讲的必须是同一件事，只是领域相近、泛泛相关的不算，宁可只放 1 个也不要凑数；gaps 还缺什么证据，没有就写「无」（≤80 字）；risks 风险，如时效短、争议、需要专业资质，没有就写「无」（≤80 字）；scores 四项评分，每项 score 为 1–5 的整数并附 reason 理由（≤40 字）：heat 热度、fit 与领域和人设的匹配度、visual 能否做成清楚的动画画面、timeliness 时效价值。
 另外给出 findings：3–5 条从样本里看到的结构性发现（≤80 字），以及 unknowns：0–3 条样本不足以下结论的地方（≤80 字）。
 不编造数据、日期、产品名、出处或实验结论；没有把握的具体信息用概括表述。
 只输出一个 JSON 对象，不要在 JSON 外写任何文字：  

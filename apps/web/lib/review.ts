@@ -2,7 +2,7 @@
 
 export type ReviewSeverity = 'block' | 'warn' | 'info';
 export type ReviewItem = {id:string;kind:string;severity:ReviewSeverity;section_id:string;section:string;text:string;detail:string;claim_id?:string;evidence_id?:string};
-export type ReviewClaim = {id:string;section_id:string;section:string;text:string;evidence_id:string|null;status:'sourced'|'secondhand'|'unsourced';judged_by?:'ai';reason?:string};
+export type ReviewClaim = {id:string;section_id:string;section:string;text:string;evidence_id:string|null;status:'sourced'|'secondhand'|'unsourced';judged_by?:'ai';reason?:string;cited_by_section?:boolean};
 export type Evidence = {id:string;text:string;source?:{title?:string;platform_label?:string;url?:string}};
 export type ReviewResult = {level:'pass'|'warn'|'block';hash:string;items:ReviewItem[];claims:ReviewClaim[];
   counts:{claims:number;sourced:number;secondhand:number;unsourced:number;evidence:number};at:string;evidence?:Evidence[]};
@@ -12,7 +12,7 @@ export type ReviewState = {required:boolean;result:ReviewResult|null;overrides:R
 
 export const LEVEL_LABELS = {pass:'通过',warn:'有提醒，可以继续',block:'有阻断项'} as const;
 export const SEVERITY_LABELS: Record<ReviewSeverity,string> = {block:'阻断',warn:'提醒',info:'建议'};
-export const KIND_LABELS: Record<string,string> = {claim:'事实溯源',ad_law:'广告法用语',sensitive:'敏感类目',cliche:'AI 套话',length:'时长',long_sentence:'长句',empty_materials:'画面素材'};
+export const KIND_LABELS: Record<string,string> = {claim:'事实溯源',bad_ref:'证据编号',ad_law:'广告法用语',sensitive:'敏感类目',cliche:'AI 套话',length:'时长',long_sentence:'长句',empty_materials:'画面素材'};
 export const CLAIM_LABELS = {sourced:'有来源',secondhand:'二手来源',unsourced:'找不到来源'} as const;
 
 /** Items in reading order: blocking first, then reminders, then suggestions; confirmed blocks after open ones. */

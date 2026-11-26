@@ -52,6 +52,14 @@ export type Breakdown = {id:string;state:'queued'|'running'|'succeeded'|'failed'
 export type FormulaStep = {role:string;seconds:number;does:string;technique:string};
 export type Formula = {name:string;fits:string;hook_pattern:string;steps:FormulaStep[];rhythm:string;visual_rules:string[];ending:string;variations:string;avoid:string[]};
 export type SavedFormula = {id:string;breakdown_ids:string[];formula:Formula;confirmed:boolean;created_at:string};
+/** A confirmed formula kept in the new-video draft (the API checks it again: services/studio/breakdowns.check_formula). */
+export function isFormula(v:unknown):v is Formula {
+  const f=v as Formula,str=(x:unknown,max:number)=>typeof x==='string'&&x.trim().length>0&&x.length<=max;
+  return !!f&&typeof f==='object'&&str(f.name,40)&&str(f.hook_pattern,120)&&Array.isArray(f.steps)&&f.steps.length>=3&&f.steps.length<=8&&
+    f.steps.every(s=>!!s&&str(s.role,10)&&Number.isInteger(s.seconds)&&str(s.does,100)&&str(s.technique,80))&&str(f.rhythm,120)&&str(f.ending,80)&&
+    Array.isArray(f.visual_rules)&&Array.isArray(f.avoid)&&typeof f.fits==='string'&&typeof f.variations==='string';
+}
+
 export const BREAKDOWN_STATE = {queued:'排队中',running:'拆解中',succeeded:'已完成',failed:'失败'} as const;
 
 export const pending = (list:Breakdown[]) => list.some(b=>b.state==='queued'||b.state==='running');

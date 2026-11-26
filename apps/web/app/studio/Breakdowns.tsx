@@ -91,7 +91,7 @@ export function Breakdowns(){
       {draft.formula.variations!=='无'&&<p className="idea-line"><span>差异</span>{draft.formula.variations}</p>}
       <div className="idea-card-foot">
         <button type="button" disabled={!!busy} onClick={()=>void run('confirm',async()=>{setDraft(await request<SavedFormula>('/api/studio/formulas/'+draft.id+'/confirm',{formula:draft.formula}));await load();toast('公式已确认',{variant:'success'});})}>确认公式</button>
-        <button type="button" className="idea-use" disabled={!draft.confirmed} title={draft.confirmed?'':'先确认公式'} onClick={()=>handoff(router,{notes:formulaToNotes(draft.formula)})}>带到文案</button>
+        <button type="button" className="idea-use" disabled={!draft.confirmed} title={draft.confirmed?'':'先确认公式'} onClick={()=>handoff(router,{notes:formulaToNotes(draft.formula),formula:draft.formula})}>带到文案</button>
       </div>
     </div>}
 

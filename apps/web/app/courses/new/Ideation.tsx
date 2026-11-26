@@ -5,11 +5,12 @@ import {useEffect,useState} from 'react';
 import {request} from '../../../lib/editor';
 import {addBatch,addExtra,addSection,angleTags,choose,moveSection,outlineProblems,outlineWarnings,removeSection,
   sameAngle,setOutline,shownTitles,lastStructures,totalSeconds,undo,updateSection,type Angle,type IdeationDraft,type Outline} from '../../../lib/ideation';
+import type {Formula} from '../../../lib/studio';
 import type {ResearchBrief} from '../../../lib/research';
 import type {PersonaProfile} from '../../../lib/manuscript-tools';
 import {Sparkles,Spinner,ChevronUp,ChevronDown,X,Plus,RefreshCw,Check} from '../../Icons';
 
-export type IdeaContext = {topic:string;notes:string;audience:string;duration_hint:string;teaching_style:'popular'|'technical';research?:ResearchBrief|null;persona?:PersonaProfile|null};
+export type IdeaContext = {topic:string;notes:string;audience:string;duration_hint:string;teaching_style:'popular'|'technical';research?:ResearchBrief|null;persona?:PersonaProfile|null;formula?:Formula|null};
 type Busy = ''|'angles'|'custom'|'merge'|'outline'|'refine';
 
 export function Ideation({state,context,title,disabled,generating,onChange,onTitle,onGenerate}:{
@@ -24,7 +25,8 @@ export function Ideation({state,context,title,disabled,generating,onChange,onTit
   const body=()=>({topic:context.topic.trim(),notes:context.notes.trim(),audience:context.audience.trim(),
     duration_hint:context.duration_hint.trim(),teaching_style:context.teaching_style,
     ...(context.research?{research:context.research}:{}),
-    ...(context.persona?{persona:context.persona}:{})});
+    ...(context.persona?{persona:context.persona}:{}),
+    ...(context.formula?{formula:context.formula}:{})});
 
   async function call<T>(kind:Busy,run:()=>Promise<T>):Promise<T|undefined>{
     setBusy(kind);setError('');

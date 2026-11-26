@@ -412,8 +412,8 @@ def brief_lines(brief: dict) -> list[str]:
     lines = [
         '【热点与爆款参考简报（已核实参考素材，请优先吸收其真实事实与爆款节奏，禁止照抄原文，不要编造简报之外的具体数字）】',
         f'爆款节奏偏好：{style["label"]}（{style["guide"]}）',
-        '真实事实与案例弹药：',
-        *[f'- {f}' for f in brief['facts']],
+        '真实事实与案例弹药（编号与课程证据包一致）：',
+        *[f'- E{i} {f}' for i, f in enumerate(brief['facts'], 1)],
         '可借鉴的高点击开场钩子：',
         *[f'- {h}' for h in brief['hooks']],
         '观众痛点与争议焦点：',

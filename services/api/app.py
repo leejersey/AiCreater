@@ -55,6 +55,7 @@ class GenerateManuscript(Body):
     plan: dict | None = None  # {angle, outline} from ideation; checked by services.workflow.ideation
     research: dict | None = None  # validated ResearchBrief from hotspot deconstruction
     persona: dict | None = None  # optional creator voice/persona profile
+    formula: dict | None = None  # a confirmed viral formula from the breakdown library
 
 
 class IdeaContext(Body):
@@ -65,6 +66,7 @@ class IdeaContext(Body):
     teaching_style: Literal['popular', 'technical'] = 'popular'
     research: dict | None = None
     persona: dict | None = None
+    formula: dict | None = None
 
 
 class ResearchSearch(Body):
@@ -478,7 +480,7 @@ def create_app(store=None, *, authentication=True):
                     duration_hint=body.duration_hint, outline=body.outline,
                     user_id=getattr(request.state, 'user', {}).get('id'),
                     teaching_style=body.teaching_style, manuscript_format=body.manuscript_format,
-                    plan=body.plan, research=body.research, persona=body.persona)
+                    plan=body.plan, research=body.research, persona=body.persona, formula=body.formula)
         except ProviderError as exc:
             return JSONResponse({'code': exc.code, 'message': str(exc)},
                                 status_code=_provider_error_status(exc.code))
@@ -513,6 +515,9 @@ def create_app(store=None, *, authentication=True):
             angle = ideation.check_angle(body.angle)
             previous = ideation.check_outline(body.previous) if body.previous is not None else None
             research = hotspot_research.check_brief(body.research) if body.research is not None else None
+            if body.formula is not None:
+                from services.studio.breakdowns import check_formula
+                check_formula(body.formula)
         except ValueError as problem:
             return JSONResponse({'code': 'validation', 'message': str(problem)}, status_code=422)
         if (previous is None) != (not body.feedback.strip()):
@@ -522,7 +527,7 @@ def create_app(store=None, *, authentication=True):
             with httpx.Client(timeout=120, trust_env=False) as client:
                 outline = ideation.generate_outline(llm, client, topic=body.topic.strip(), angle=angle, notes=body.notes.strip(),
                     audience=body.audience.strip(), duration_hint=body.duration_hint.strip(), teaching_style=body.teaching_style,
-                    previous=previous, feedback=body.feedback.strip(), research=research, persona=body.persona, user_id=user_id)
+                    previous=previous, feedback=body.feedback.strip(), research=research, persona=body.persona, user_id=user_id, formula=body.formula)
         except ProviderError as exc:
             return JSONResponse({'code': exc.code, 'message': str(exc)}, status_code=_provider_error_status(exc.code))
         return {'outline': outline}

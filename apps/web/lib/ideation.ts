@@ -84,9 +84,9 @@ export function toPlan(s:IdeationDraft):{angle:Angle;outline:Outline}|null {
   return s.chosen&&s.outline&&!outlineProblems(s.outline).length?{angle:s.chosen,outline:clean(s.outline)}:null;
 }
 /** What the project keeps about how it was conceived (a series would set scope / series_id). */
-export function toOrigin(topic:string,notes:string,s:IdeationDraft) {
+export function toOrigin(topic:string,notes:string,s:IdeationDraft,formula?:unknown) {
   const plan=toPlan(s);
-  return plan&&topic.trim()?{topic:topic.trim(),notes:notes.trim(),...plan,scope:'single' as const,series_id:null}:undefined;
+  return plan&&topic.trim()?{topic:topic.trim(),notes:notes.trim(),...plan,scope:'single' as const,series_id:null,...(formula?{formula}:{})}:undefined;
 }
 
 // Local-draft check --------------------------------------------------------------------------------------------------

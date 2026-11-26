@@ -41,7 +41,7 @@ export function ReviewReport({result,overrides={},evidence=[],stale=false,disabl
       })}
     </ul>
     {result.claims.length>0&&<details className="review-claims"><summary>全部断言（{result.claims.length}）</summary>
-      <ul>{result.claims.map(cl=><li key={cl.id}><span className={`review-tag review-${cl.status==='sourced'?'pass':cl.status==='secondhand'?'warn':'block'}`}>{CLAIM_LABELS[cl.status]}</span> {cl.section} · 「{cl.text}」{cl.evidence_id?` → ${cl.evidence_id}`:''}{cl.judged_by==='ai'?'（AI 判断）':''}</li>)}</ul>
+      <ul>{result.claims.map(cl=><li key={cl.id}><span className={`review-tag review-${cl.status==='sourced'?'pass':cl.status==='secondhand'?'warn':'block'}`}>{CLAIM_LABELS[cl.status]}</span> {cl.section} · 「{cl.text}」{cl.evidence_id?` → ${cl.evidence_id}`:''}{cl.cited_by_section?'（本段已标注依据）':''}{cl.judged_by==='ai'?'（AI 判断）':''}</li>)}</ul>
     </details>}
   </div>;
 }

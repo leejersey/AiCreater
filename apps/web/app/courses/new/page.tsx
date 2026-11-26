@@ -12,7 +12,7 @@ import {useAccount} from '../../AccountSession';
 import {Modal} from '../../Modal';
 import {ReviewReport} from '../../ReviewPanel';
 import type {ReviewResult} from '../../../lib/review';
-import {HANDOFF_KEY} from '../../../lib/studio';
+import {HANDOFF_KEY,isFormula} from '../../../lib/studio';
 import {isResearchBrief} from '../../../lib/research';
 import {outlinePlaceholder, isTeachingStyle, type TeachingStyle} from '../../../lib/teaching-style';
 import {parseThemes,suggestTheme,type ThemeSummary} from '../../../lib/themes';
@@ -86,9 +86,9 @@ export default function NewCourse(){
     if(draft.blocked)return;
     const raw=sessionStorage.getItem(HANDOFF_KEY);if(!raw)return;
     sessionStorage.removeItem(HANDOFF_KEY);
-    try{const v=JSON.parse(raw) as {topic?:string;title?:string;notes?:string;research?:unknown;duration_hint?:string;teaching_style?:string};
+    try{const v=JSON.parse(raw) as {topic?:string;title?:string;notes?:string;research?:unknown;duration_hint?:string;teaching_style?:string;formula?:unknown};
       const keep=(k:'topic'|'title'|'notes'|'duration_hint')=>typeof v[k]==='string'&&v[k]?{[k]:String(v[k]).slice(0,k==='notes'?300:80)}:{};
-      draft.change({...keep('topic'),...keep('title'),...keep('notes'),...keep('duration_hint'),...(isTeachingStyle(v.teaching_style)?{teaching_style:v.teaching_style}:{}),...(isResearchBrief(v.research)?{research:v.research}:{})});
+      draft.change({...keep('topic'),...keep('title'),...keep('notes'),...keep('duration_hint'),...(isTeachingStyle(v.teaching_style)?{teaching_style:v.teaching_style}:{}),...(isResearchBrief(v.research)?{research:v.research}:{}),...(isFormula(v.formula)?{formula:v.formula}:{})});
       toast('已带入选题与证据，可以发散方向或直接写稿',{variant:'success'});}catch{/* a broken handoff is ignored */}
   },[draft.blocked]);
   const activePersona=personas.find(p=>p.id===activePersonaId)??null;
@@ -132,7 +132,7 @@ export default function NewCourse(){
     setGenerating(true);setError('');
     try{
       const style=isTeachingStyle(draft.value.teaching_style)?draft.value.teaching_style:'popular';
-      const body:{title:string;audience?:string;duration_hint?:string;outline?:string;teaching_style:TeachingStyle;manuscript_format:'plain'|'markdown';plan?:unknown;research?:unknown;persona?:unknown}={title:courseTitle,teaching_style:style,manuscript_format:manuscriptFormat,...(plan?{plan}:{}),...(draft.value.research?{research:draft.value.research}:{}),...(personaPayload?{persona:personaPayload}:{})};
+      const body:{title:string;audience?:string;duration_hint?:string;outline?:string;teaching_style:TeachingStyle;manuscript_format:'plain'|'markdown';plan?:unknown;research?:unknown;persona?:unknown;formula?:unknown}={title:courseTitle,teaching_style:style,manuscript_format:manuscriptFormat,...(plan?{plan}:{}),...(draft.value.research?{research:draft.value.research}:{}),...(personaPayload?{persona:personaPayload}:{}),...(draft.value.formula?{formula:draft.value.formula}:{})};
       const audience=draft.value.audience?.trim();if(audience)body.audience=audience;
       const duration_hint=draft.value.duration_hint?.trim();if(duration_hint)body.duration_hint=duration_hint;
       const outline=draft.value.outline?.trim();if(outline&&!plan)body.outline=outline;
@@ -238,7 +238,7 @@ export default function NewCourse(){
 
     <form id="new-course-form" onSubmit={async e=>{e.preventDefault();if(blocked)return;setBusy(true);setError('');
       try{const style=isTeachingStyle(draft.value.teaching_style)?draft.value.teaching_style:'popular';
-      const origin=toOrigin(topic,draft.value.notes??'',ideation);
+      const origin=toOrigin(topic,draft.value.notes??'',ideation,draft.value.formula??undefined);
       const project=await request<Project>('/api/projects',{title:courseTitle,source_text:draft.value.source,mode:'script',teaching_style:style,manuscript_format:manuscriptFormat,...(themeId?{theme_id:themeId}:{}),...(origin?{origin}:{}),...(draft.value.research?{research:draft.value.research}:{})});draft.clear();router.replace('/courses/'+project.id);}
       catch(e){setError(e instanceof Error?e.message:'创建失败，输入已保留。请先检查课程列表，不要重复提交。');setBusy(false);}
     }}>
@@ -282,6 +282,10 @@ export default function NewCourse(){
                 <button type="button" className="link-button" disabled={blocked} onClick={()=>draft.change({research:null})}>清除</button>
               </div>
               :<a className="more-settings-trigger research-trigger" href="/studio"><span>找选题、拆解爆款、检索热点 → 去选题台</span><ChevronRight size={15}/></a>}
+            {draft.value.formula&&<div className="more-settings-trigger research-trigger active">
+              <span>已套用爆款公式「{draft.value.formula.name}」· {draft.value.formula.steps.length} 步（大纲与文稿按它的结构写）</span>
+              <button type="button" className="link-button" disabled={blocked} onClick={()=>draft.change({formula:null})}>清除</button>
+            </div>}
 
             <button
               type="button"
@@ -308,7 +312,7 @@ export default function NewCourse(){
             </button>
 
             <Ideation state={ideation} title={courseTitle} disabled={blocked} generating={generating}
-              context={{topic,notes:draft.value.notes??'',audience:draft.value.audience??'',duration_hint:draft.value.duration_hint??'',teaching_style:style,research:draft.value.research,persona:activePersona}}
+              context={{topic,notes:draft.value.notes??'',audience:draft.value.audience??'',duration_hint:draft.value.duration_hint??'',teaching_style:style,research:draft.value.research,persona:activePersona,formula:draft.value.formula}}
               onChange={next=>draft.change({ideation:next})} onTitle={title=>draft.change({title})} onGenerate={()=>void onGenerate(true)}/>
 
             {!ideation.chosen&&<button type="button" className="link-skip" disabled={!courseTitle||blocked} onClick={()=>void onGenerate(false)}>

@@ -214,10 +214,17 @@ def review_units(sections, evidence=(), *, materials=True, llm=None, client=None
             items.append(_item('long_sentence', 'info', unit, long[0][:40], f'有 {len(long)} 句超过 {MAX_SENTENCE} 字，配音容易喘不过气，建议拆成短句'))
         if materials and unit['materials'].strip() in ('', '无'):
             items.append(_item('empty_materials', 'info', unit, '画面素材为「无」', '补充数据、对比项或步骤节点，画面会更丰富'))
+        # A storyboard section names the evidence it uses (「依据：[E1][E3]」 in its materials): try those first.
+        cited = list(dict.fromkeys('E' + n for n in re.findall(r'\[E(\d+)\]', unit.get('materials') or '')))
+        known = {e['id'] for e in evidence}
+        missing = [c for c in cited if c not in known]
+        if missing:
+            items.append(_item('bad_ref', 'warn', unit, '、'.join(missing), f'画面素材引用了证据包里没有的编号 {"、".join(missing)}，请改成实际用到的证据'))
+        own = [e for e in evidence if e['id'] in cited]
         for claim in extract_claims(text):
-            found = match(claim, evidence)
+            found = (match(claim, own) if own else None) or match(claim, evidence)
             claims.append({'id': f'C{len(claims) + 1}', 'section_id': unit['id'], 'section': unit['label'], 'text': claim['text'],
-                           'evidence_id': found['id'] if found else None,
+                           'evidence_id': found['id'] if found else None, 'cited_by_section': bool(found and found['id'] in cited),
                            'status': ('secondhand' if (claim['hedged'] and not claim['cited']) or _secondhand(found['text'], claim['values']) else 'sourced') if found else 'unsourced'})
     stamps = []
     unsourced = [c for c in claims if c['status'] == 'unsourced']

@@ -87,8 +87,12 @@ def check_origin(value):
         raise ValueError('origin: only single videos for now')
     notes = value.get('notes') or ''
     if not isinstance(notes, str) or len(notes) > 300: raise ValueError('notes: at most 300 characters')
+    formula = value.get('formula')
+    if formula is not None:
+        from services.studio.breakdowns import check_formula
+        formula = check_formula(formula)
     return {'topic': _text(value.get('topic'), 80, 'topic'), 'notes': notes.strip(), 'angle': check_angle(value.get('angle')),
-            'outline': check_outline(value.get('outline')), 'scope': 'single', 'series_id': None}
+            'outline': check_outline(value.get('outline')), 'scope': 'single', 'series_id': None, **({'formula': formula} if formula else {})}
 
 
 def direction_line(origin):
@@ -145,7 +149,7 @@ def generate_angles(llm, client, *, topic, notes='', audience='', duration_hint=
 
 
 def generate_outline(llm, client, *, topic, angle, notes='', audience='', duration_hint='', teaching_style='popular',
-                     previous=None, feedback='', research=None, persona=None, user_id=None):
+                     previous=None, feedback='', research=None, persona=None, formula=None, user_id=None):
     lines = _context(topic, notes, audience, duration_hint, teaching_style)
     if persona is not None:
         from services.workflow.manuscript import check_persona, persona_lines
@@ -155,6 +159,10 @@ def generate_outline(llm, client, *, topic, angle, notes='', audience='', durati
     if research is not None:
         lines += brief_lines(check_brief(research))
     lines.append('选定的方向：' + json.dumps(angle, ensure_ascii=False))
+    if formula is not None:
+        from services.studio.breakdowns import check_formula, formula_lines
+        lines += formula_lines(check_formula(formula), markdown=False)
+        lines.append('章节按公式的步骤安排：每步一章（或相邻几章），各章秒数参考公式的时长。')
     if previous is not None:
         lines.append('上一版大纲：' + json.dumps(previous, ensure_ascii=False))
         lines.append(f'修改意见：{feedback}')

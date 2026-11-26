@@ -105,7 +105,7 @@ def _validate(title, audience, duration_hint, outline):
     return title
 
 
-def _user_message(title, audience, duration_hint, outline, teaching_style, plan=None, markdown=False, research=None, persona=None):
+def _user_message(title, audience, duration_hint, outline, teaching_style, plan=None, markdown=False, research=None, persona=None, formula=None):
     lines = [f'主题：{title}']
     if audience:
         lines.append(f'受众：{audience}')
@@ -117,6 +117,8 @@ def _user_message(title, audience, duration_hint, outline, teaching_style, plan=
         lines += brief_lines(research)
         if markdown:
             lines.append('请将简报中的真实数据、对比项、流程步骤和金句优先沉淀到各段的 materials（画面素材）中，供后续动画直接绘制，不要偷懒填“无”。')
+            lines.append('事实只能来自上面编号的 E 条目：用到事实的段落，在 materials 最后单独一行写「依据：[E1][E3]」（写实际用到的编号）；'
+                         '没用到事实的段落不写。narration 里绝不出现 [E…] 编号。简报里没有的数字、研究结论和机构不要写。')
     if outline:
         lines.append(f'必须覆盖的要点：{outline}')
         if teaching_style == 'technical':
@@ -127,6 +129,9 @@ def _user_message(title, audience, duration_hint, outline, teaching_style, plan=
         lines.append('未提供要点时，请从标题提炼可操作的机制与常用术语，避免只有比喻没有步骤。')
     else:
         lines.append('未提供要点时，可按概念与生活例子展开，先把主题讲清楚，不必强行堆砌术语。')
+    if formula:
+        from services.studio.breakdowns import formula_lines
+        lines += formula_lines(formula, markdown)
     if plan:
         lines += plan_lines(plan)
         lines.append('每章写成一段：段落标题用章节标题，visual_intent 以该章的画面构想为基础并引用本段口播短句。' if markdown
@@ -179,9 +184,13 @@ def _document(llm, client, body, advise=None):
                                    {'role': 'user', 'content': f'上面的输出不符合要求：{reason}。请按要求重新输出完整 JSON。'}]
 
 def generate_manuscript(title, llm, client, *, audience='', duration_hint='', outline='', user_id=None,
-                      teaching_style='popular', manuscript_format='plain', plan=None, research=None, persona=None):
+                      teaching_style='popular', manuscript_format='plain', plan=None, research=None, persona=None, formula=None):
     """llm: services.accounts.model_settings.LLM (the account's model or the server's DeepSeek).
     plan: {angle, outline} chosen in ideation; the manuscript follows that outline chapter by chapter."""
+    if formula is not None:
+        from services.studio.breakdowns import check_formula
+        try: formula = check_formula(formula)
+        except (ValueError, AttributeError) as problem: raise ProviderError('manuscript', 'input_limit', f'Invalid formula: {problem}') from None
     if plan is not None:
         try: plan = {'angle': check_angle(plan.get('angle')), 'outline': check_outline(plan.get('outline'))}
         except (ValueError, AttributeError) as problem: raise ProviderError('manuscript', 'input_limit', f'Invalid plan: {problem}') from None
@@ -200,7 +209,7 @@ def generate_manuscript(title, llm, client, *, audience='', duration_hint='', ou
     if not llm.api_key: raise ProviderError('config', 'missing_setting', '请在个人中心配置模型，或在服务端设置 DEEPSEEK_API_KEY')
     body = {'model': llm.model, 'messages': [
         {'role': 'system', 'content': system},
-        {'role': 'user', 'content': _user_message(title, audience, duration_hint, outline, teaching_style, plan, manuscript_format == 'markdown', research=research, persona=persona)}],
+        {'role': 'user', 'content': _user_message(title, audience, duration_hint, outline, teaching_style, plan, manuscript_format == 'markdown', research=research, persona=persona, formula=formula)}],
         'max_tokens': 8192}
     if manuscript_format == 'markdown':
         body['response_format'] = {'type': 'json_object'}
