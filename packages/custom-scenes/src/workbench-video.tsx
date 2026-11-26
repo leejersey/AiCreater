@@ -1,5 +1,5 @@
 import React,{useEffect,useState} from 'react';
-import {AbsoluteFill,Audio,Sequence,staticFile,useCurrentFrame,delayRender,continueRender,cancelRender} from 'remotion';
+import {AbsoluteFill,Audio,Easing,Sequence,interpolate,staticFile,useCurrentFrame,delayRender,continueRender,cancelRender} from 'remotion';
 import type {Decoration,SceneThemeProps} from '../../scene-themes/src/index';
 import {workbenchCaptionLines,workbenchDisplayCaptions} from './workbench-captions';
 import type {FrozenChapter,WorkbenchManifest} from './workbench';
@@ -30,8 +30,20 @@ function Chapter({chapter,Scene,theme}:{chapter:FrozenChapter;Scene:SceneCompone
   {cue&&<div data-workbench-caption style={{position:'absolute',left:80,right:80,bottom:4,height:96,display:'flex',alignItems:'center',justifyContent:'center',textAlign:'center',fontSize:30,lineHeight:'45px',color:theme.caption.foreground,background:theme.caption.background,fontFamily:theme.props.fontBody}}><div>{workbenchCaptionLines(cue.text).map((line,i)=><div key={i} style={{whiteSpace:'pre'}}>{line}</div>)}</div></div>}
  </AbsoluteFill>;
 }
+/** Scenes start from an empty stage and build up, so a hard cut from a full last frame to the next chapter's first frame
+ * flashes an empty canvas (about half a second, measured on an exported course). The previous chapter's last frame
+ * stays under the new chapter and fades out over HANDOVER frames while the new one builds up on top. */
+export const HANDOVER=18;
+function Handover({chapter,Scene,theme}:{chapter:FrozenChapter;Scene:SceneComponent;theme:HostTheme}){
+ const frame=useCurrentFrame(),last=chapter.scene.duration_frames-1;
+ const opacity=interpolate(frame,[0,HANDOVER],[1,0],{extrapolateLeft:'clamp',extrapolateRight:'clamp',easing:Easing.inOut(Easing.sin)});
+ return <AbsoluteFill style={{opacity}}><Scene frame={last} fps={30} width={1920} height={1080} theme={theme.props} timing={chapter.timing??{durationInFrames:chapter.scene.duration_frames,cues:[]}}/></AbsoluteFill>;
+}
 export function WorkbenchVideo({manifest,scenes,fontText,theme}:{manifest:WorkbenchManifest;scenes:SceneComponent[];fontText:string;theme:HostTheme}){
  const [handle]=useState(()=>delayRender('Workbench host fonts'));
  useEffect(()=>{let live=true;Promise.all([...theme.faces.map(face=>document.fonts.load(face,fontText)),document.fonts.ready]).then(()=>{if(live)continueRender(handle);}).catch(cancelRender);return()=>{live=false;};},[handle,fontText,theme]);
- return <AbsoluteFill style={{background:theme.props.background,fontFamily:theme.props.fontBody,overflow:'hidden'}}>{theme.fontCss&&<style>{theme.fontCss}</style>}{manifest.chapters.map((chapter,i)=><Sequence key={i} from={chapter.from} durationInFrames={chapter.scene.duration_frames}><Chapter chapter={chapter} Scene={scenes[i]} theme={theme}/></Sequence>)}</AbsoluteFill>;
+ return <AbsoluteFill style={{background:theme.props.background,fontFamily:theme.props.fontBody,overflow:'hidden'}}>{theme.fontCss&&<style>{theme.fontCss}</style>}{manifest.chapters.map((chapter,i)=><React.Fragment key={i}>
+  {i>0&&<Sequence from={chapter.from} durationInFrames={Math.min(HANDOVER,chapter.scene.duration_frames)} layout="none"><Handover chapter={manifest.chapters[i-1]} Scene={scenes[i-1]} theme={theme}/></Sequence>}
+  <Sequence from={chapter.from} durationInFrames={chapter.scene.duration_frames}><Chapter chapter={chapter} Scene={scenes[i]} theme={theme}/></Sequence>
+ </React.Fragment>)}</AbsoluteFill>;
 }
