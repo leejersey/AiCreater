@@ -8,7 +8,7 @@ export type Project = {id: string; title: string; revision: number; source_text:
   autopilot?: {state:'running'|'done'|'stopped';reason?:string;scene_ids:string[];max_turns:number;started_at:string}|null;
   config?: {evidence?: {id:string;text:string;source?:{title?:string;platform_label?:string;url?:string}}[]; review?: {required?: boolean}}};
 export type ProjectSummary = Pick<Project,'id'|'title'> & {revision?:number;updated_at?:string|null;scene_count?:number;needs_voice?:number;needs_timing?:number;confirmed_count?:number;active_jobs?:boolean;
-  active_job_kind?:string|null;active_job_state?:string|null;theme_id?:string;thumbnail?:{job_id:string;file:string}|null};
+  active_job_kind?:string|null;active_job_state?:string|null;theme_id?:string;thumbnail?:{job_id:string;file:string}|null;exported?:boolean};
 const JOB_KIND_LABELS: Record<string, string> = {voice:'配音',timing:'本地对齐',agent:'Agent 生成',export:'整课导出'};
 const JOB_STATE_LABELS: Record<string, string> = {queued:'排队中',running:'执行中'};
 export function activeJobLabel(summary: Pick<ProjectSummary,'active_jobs'|'active_job_kind'|'active_job_state'>): string | null {
@@ -26,7 +26,7 @@ export function parseProjectSummaries(value:unknown):ProjectSummary[] {
     if(!item||typeof item!=='object'||Array.isArray(item)||typeof item.id!=='string'||!item.id.trim()||ids.has(item.id)||typeof item.title!=='string'||!item.title.trim())
       throw new Error('项目列表格式错误，已有列表未更新；请重试读取。');
     if(['revision','scene_count','needs_voice','needs_timing','confirmed_count'].some(key=>item[key]!==undefined&&(!Number.isSafeInteger(item[key])||item[key]<(key==='revision'?1:0)))||
-      (item.active_jobs!==undefined&&typeof item.active_jobs!=='boolean')||
+      (item.active_jobs!==undefined&&typeof item.active_jobs!=='boolean')||(item.exported!==undefined&&typeof item.exported!=='boolean')||
       (item.active_job_kind!=null&&(typeof item.active_job_kind!=='string'||!item.active_job_kind.trim()))||
       (item.active_job_state!=null&&(typeof item.active_job_state!=='string'||!['queued','running'].includes(item.active_job_state)))||
       (item.updated_at!=null&&(typeof item.updated_at!=='string'||!Number.isFinite(Date.parse(item.updated_at))))||

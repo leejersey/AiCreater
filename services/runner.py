@@ -28,6 +28,8 @@ def open_store():
     if not dsn: raise SystemExit('Configure DATABASE_URL in .env.local-services')
     store = Store(dsn, ROOT / 'apps/renderer/public', profile(), objects=ObjectStore.from_env())
     store.initialize()
+    from services.workflow import usage_log
+    usage_log.install(store)  # daily topics and breakdowns run here
     return store
 
 

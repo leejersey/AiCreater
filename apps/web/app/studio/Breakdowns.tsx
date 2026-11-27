@@ -8,10 +8,11 @@ import {useConfirm} from '../ConfirmContext';
 import {useToast} from '../ToastContext';
 import {BREAKDOWN_STATE,HANDOFF_PATH,breakdownError,formulaSeconds,pending,segmentBars,storeHandoff,unseen,uploadVideo,type Breakdown,type Formula,type SavedFormula} from '../../lib/studio';
 import {Spinner,Sparkles,RefreshCw,AlertCircle,Trash2} from '../Icons';
+import {costHint} from '../../lib/tasks';
 
 type Listing={breakdowns:Breakdown[];formulas:SavedFormula[]};
 const COST='生成拆解卡会调用一次模型（计费）；上传的视频在本机转写口播、抽关键帧并交给看图模型描述画面（计费），原视频保留 7 天。';
-const MAX_PICK=5;
+const MAX_PICK=5,UNDO_MS=6000;
 /** A formula being looked at: `edited` once changed since it was loaded or confirmed (it then needs confirming again). */
 type Draft=SavedFormula&{edited?:boolean};
 
@@ -30,7 +31,8 @@ export function Breakdowns(){
   const openState=data?.breakdowns.find(b=>b.id===open)?.state;
   useEffect(()=>{if(!open){setDetail(null);return;}void request<Breakdown>('/api/studio/breakdowns/'+open).then(setDetail).catch(()=>{});},[open,openState]);
   async function run(kind:string,fn:()=>Promise<void>){setBusy(kind);setError('');try{await fn();}catch(e){setError(e instanceof Error?e.message:'操作失败');}finally{setBusy('');}}
-  const ask=(message:string)=>confirm({title:'开始拆解',message:message+'\n\n'+COST,confirmText:'开始'});
+  const ask=async(message:string,video=false)=>{const hint=await costHint(request,video?['studio_frames','studio_breakdown']:['studio_breakdown']);
+    return confirm({title:'开始拆解',message:message+'\n\n'+COST+(hint?'\n\n'+hint:''),confirmText:'开始'});};
   const add=(kind:string,make:()=>Promise<unknown>)=>run(kind,async()=>{await make();await load();toast('已加入拆解队列，完成后会出现在列表里',{variant:'success'});});
   const upload=(f:File)=>add('upload',async()=>{setProgress(0);try{await uploadVideo(f,setProgress);}finally{setProgress(null);}});
 
@@ -46,19 +48,28 @@ export function Breakdowns(){
     setDraft(next);
   }
   const retry=(b:Breakdown)=>run('retry',async()=>{
-    if(!await confirm({title:'重新拆解',message:`重新拆解「${b.source.title||'未命名'}」。\n\n${COST}`,confirmText:'重新拆解'}))return;
+    const hint=await costHint(request,b.source.kind==='upload'?['studio_frames','studio_breakdown']:['studio_breakdown']);
+    if(!await confirm({title:'重新拆解',message:`重新拆解「${b.source.title||'未命名'}」。\n\n${COST}${hint?'\n\n'+hint:''}`,confirmText:'重新拆解'}))return;
     await request('/api/studio/breakdowns/'+b.id+'/retry',{});await load();toast('已重新加入拆解队列',{variant:'success'});
   });
-  const remove=(b:Breakdown)=>run('delete',async()=>{
-    if(!await confirm({title:'删除拆解',message:`删除「${b.source.title||'未命名'}」的拆解卡、转写和关键帧${b.video_kept_until?'，以及保留在本机的原视频':''}。已提炼的公式不受影响。`,confirmText:'删除',variant:'danger'}))return;
-    await request('/api/studio/breakdowns/'+b.id+'/delete',{});setPicked(p=>p.filter(x=>x!==b.id));if(open===b.id)setOpen(null);await load();
-  });
-  const removeFormula=(f:SavedFormula)=>run('delete',async()=>{
-    if(!await confirm({title:'删除公式',message:`删除爆款公式「${f.formula.name}」。已经带到文案或建好的课程不受影响。`,confirmText:'删除',variant:'danger'}))return;
-    await request('/api/studio/formulas/'+f.id+'/delete',{});if(draft?.id===f.id)setDraft(null);await load();
-  });
+  // Deleting is reversible for a few seconds: the item disappears at once and is deleted when the 「撤销」 notice ends
+  // (or right away when the page is left).
+  const [hidden,setHidden]=useState<string[]>([]);
+  const later=useRef(new Map<string,{timer:ReturnType<typeof setTimeout>;run:()=>Promise<void>}>());
+  useEffect(()=>()=>{for(const {timer,run} of later.current.values()){clearTimeout(timer);void run().catch(()=>{});}later.current.clear();},[]);
+  function deferDelete(id:string,path:string,label:string){
+    setHidden(h=>[...h,id]);
+    const run=async()=>{later.current.delete(id);await request(path,{});};
+    const timer=setTimeout(()=>void run().then(load).catch(e=>{setHidden(h=>h.filter(x=>x!==id));setError(e instanceof Error?e.message:'删除失败');}),UNDO_MS);
+    later.current.set(id,{timer,run});
+    toast(`已删除${label}`,{variant:'info',duration:UNDO_MS,action:{label:'撤销',onClick:()=>{const p=later.current.get(id);if(!p)return;clearTimeout(p.timer);later.current.delete(id);setHidden(h=>h.filter(x=>x!==id));}}});
+  }
+  const remove=(b:Breakdown)=>{setPicked(p=>p.filter(x=>x!==b.id));if(open===b.id)setOpen(null);
+    deferDelete(b.id,'/api/studio/breakdowns/'+b.id+'/delete',`「${b.source.title||'未命名'}」的拆解`);};
+  const removeFormula=(f:SavedFormula)=>{if(draft?.id===f.id)setDraft(null);deferDelete(f.id,'/api/studio/formulas/'+f.id+'/delete',`公式「${f.formula.name}」`);};
 
-  const list=data?.breakdowns??[];
+  const list=(data?.breakdowns??[]).filter(b=>!hidden.includes(b.id));
+  const formulas=(data?.formulas??[]).filter(f=>!hidden.includes(f.id));
   return <section className="studio-panel">
     {error&&<p role="alert" className="error"><AlertCircle size={14}/> {error}</p>}
     <div className="bd-add">
@@ -66,7 +77,7 @@ export function Breakdowns(){
         <b>上传对标视频</b>
         <p className="hint">mp4 / mov / webm，10 分钟、200MB 以内。在本机转写口播并抽关键帧。</p>
         <input ref={file} type="file" hidden accept="video/mp4,video/quicktime,video/webm,.mkv"
-          onChange={async e=>{const f=e.target.files?.[0];e.target.value='';if(!f)return;if(await ask(`上传「${f.name}」并拆解。`))await upload(f);}}/>
+          onChange={async e=>{const f=e.target.files?.[0];e.target.value='';if(!f)return;if(await ask(`上传「${f.name}」并拆解。`,true))await upload(f);}}/>
         {progress!==null?<div className="bd-progress" role="progressbar" aria-valuenow={Math.round(progress*100)} aria-valuemin={0} aria-valuemax={100}>
             <i style={{width:`${Math.round(progress*100)}%`}}/><span>{progress<1?`上传中 ${Math.round(progress*100)}%`:'上传完成，正在读取视频…'}</span></div>
           :<button type="button" className="bd-add-action" disabled={!!busy} onClick={()=>file.current?.click()}>选择视频文件</button>}
@@ -113,7 +124,8 @@ export function Breakdowns(){
       <b>拆解记录{data?`（${list.length}）`:''}</b>
       <span className="hint">{picked.length?`已选 ${picked.length} / ${MAX_PICK} 张`:`勾选 1–${MAX_PICK} 张已完成的拆解卡，可以提炼一条爆款公式`}</span>
       {picked.length>0&&<button type="button" className="bd-formula-btn" disabled={!!busy} onClick={()=>void run('formula',async()=>{
-        if(!await confirm({title:'提炼爆款公式',message:'用选中的拆解卡提炼一条可复用的结构公式（一次模型调用，计费）。提炼后可以修改，确认后再带到文案。',confirmText:'提炼'}))return;
+        const hint=await costHint(request,['studio_formula']);
+        if(!await confirm({title:'提炼爆款公式',message:'用选中的拆解卡提炼一条可复用的结构公式（一次模型调用，计费）。提炼后可以修改，确认后再带到文案。'+(hint?'\n\n'+hint:''),confirmText:'提炼'}))return;
         const made=await request<SavedFormula>('/api/studio/formulas',{breakdown_ids:picked});await show(made);setPicked([]);await load();})}>
         {busy==='formula'?<Spinner size={12} className="icon-spin"/>:<Sparkles size={12}/>} 提炼爆款公式（计费）</button>}
       <button type="button" className="bd-reload" title="重新读取" aria-label="重新读取" disabled={!!busy} onClick={()=>void run('load',load)}><RefreshCw size={14}/></button>
@@ -135,8 +147,8 @@ export function Breakdowns(){
         {open===b.id&&detail?.id===b.id&&detail.card&&<BreakdownDetail b={detail}/>}
       </li>)}
     </ul>}
-    {data&&data.formulas.length>0&&<details className="topics-findings"><summary>已有公式（{data.formulas.length}）</summary>
-      <ul>{data.formulas.map(f=><li key={f.id} className="bd-formula-item"><button type="button" className="link-button" onClick={()=>void show(f)}>{f.formula.name}{f.confirmed?' ✓':''}</button> · {f.breakdown_ids.length} 张卡 · {formulaSeconds(f.formula)} 秒
+    {formulas.length>0&&<details className="topics-findings"><summary>已有公式（{formulas.length}）</summary>
+      <ul>{formulas.map(f=><li key={f.id} className="bd-formula-item"><button type="button" className="link-button" onClick={()=>void show(f)}>{f.formula.name}{f.confirmed?' ✓':''}</button> · {f.breakdown_ids.length} 张卡 · {formulaSeconds(f.formula)} 秒
         <button type="button" className="bd-row-action" title="删除公式" aria-label="删除公式" disabled={!!busy} onClick={()=>void removeFormula(f)}><Trash2 size={12}/></button></li>)}</ul></details>}
   </section>;
 }

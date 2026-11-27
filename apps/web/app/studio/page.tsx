@@ -10,9 +10,12 @@ import {useToast} from '../ToastContext';
 import {useConfirm} from '../ConfirmContext';
 import {Breakdowns} from './Breakdowns';
 import {ResearchModal} from './ResearchModal';
+import {Modal} from '../Modal';
 import type {ResearchBrief} from '../../lib/research';
 import {loadActivePersonaId,loadPersonas} from '../../lib/manuscript-tools';
-import {HANDOFF_PATH,PLATFORM_LABELS,SCORE_LABELS,cardToDraft,parseKeywords,rankedCards,storeHandoff,totalScore,type CreatorProfile,type FeedResponse,type ScoreKey,type TopicCard} from '../../lib/studio';
+import {costHint} from '../../lib/tasks';
+import {SUGGESTED_KEYWORDS} from '../../lib/sample';
+import {HANDOFF_PATH,NO_FILTER,PLATFORM_LABELS,SCORE_LABELS,cardToDraft,filterCards,parseKeywords,rankedCards,storeHandoff,totalScore,type CardFilter,type CreatorProfile,type FeedResponse,type ScoreKey,type TopicCard} from '../../lib/studio';
 import {Sparkles,Spinner,RefreshCw,AlertCircle,Search} from '../Icons';
 
 type Tab='topics'|'breakdowns';
@@ -47,6 +50,7 @@ function Topics(){
   const [profile,setProfile]=useState<CreatorProfile|null>(null),[keywords,setKeywords]=useState(''),[auto,setAuto]=useState(false);
   const [data,setData]=useState<FeedResponse|null>(null),[day,setDay]=useState<string>('');
   const [busy,setBusy]=useState(''),[error,setError]=useState(''),[open,setOpen]=useState<number|null>(null),[research,setResearch]=useState(false);
+  const [filter,setFilter]=useState<CardFilter>(NO_FILTER),[compare,setCompare]=useState<number[]>([]),[comparing,setComparing]=useState(false);
   // Only the first load fills the keyword form: starring or switching days must not overwrite what is being typed.
   const loadFeed=async(chosen=day)=>setData(await request<FeedResponse>('/api/studio/topics'+(chosen?'?day='+chosen:'')));
   useEffect(()=>{void Promise.all([request<CreatorProfile>('/api/studio/profile'),loadFeed('')])
@@ -56,11 +60,15 @@ function Topics(){
   const parsed=parseKeywords(keywords),dirty=!!profile&&(parsed.join('|')!==profile.keywords.join('|')||auto!==profile.daily_auto);
   const save=()=>run('save',async()=>{const p=await request<CreatorProfile>('/api/studio/profile',{keywords:parsed,daily_auto:auto});setProfile(p);setKeywords(p.keywords.join('，'));toast('已保存领域关键词',{variant:'success'});});
   const refresh=()=>run('refresh',async()=>{
-    if(!await confirm({title:'刷新今日选题',message:`会采集热榜并按前 ${Math.min(3,profile?.keywords.length??0)} 个关键词检索（Tavily），再调用一次模型生成 5–8 张选题卡（计费，约一分钟）。今天还可手动刷新 ${data?.manual_left??0} 次。`,confirmText:'开始生成'}))return;
+    const hint=await costHint(request,['studio_topics']);
+    if(!await confirm({title:'刷新今日选题',message:`会采集热榜并按前 ${Math.min(3,profile?.keywords.length??0)} 个关键词检索（Tavily），再调用一次模型生成 5–8 张选题卡（计费，约一分钟）。今天还可手动刷新 ${data?.manual_left??0} 次。${hint?'\n\n'+hint:''}`,confirmText:'开始生成'}))return;
     const personas=loadPersonas(userId),active=personas.find(p=>p.id===loadActivePersonaId(userId));
     const persona=active?{name:active.name,audience_call:active.audience_call,tone:active.tone}:undefined;
     await request('/api/studio/topics/refresh',persona?{persona}:{});setDay('');await loadFeed('');toast('今日选题已生成',{variant:'success'});
   });
+  // Comparing belongs to one day's cards.
+  useEffect(()=>{setCompare([]);setFilter(NO_FILTER);},[data?.feed?.id]);
+  const toggleCompare=(index:number)=>setCompare(c=>c.includes(index)?c.filter(x=>x!==index):c.length>=3?(toast('最多对比 3 张',{variant:'info'}),c):[...c,index]);
   const star=(index:number,starred:boolean)=>run('star',async()=>{if(!data?.feed)return;await request('/api/studio/topics/'+data.feed.id+'/star',{index,starred});await loadFeed();});
   const handoff=(payload:Record<string,unknown>)=>{storeHandoff(payload);router.push(HANDOFF_PATH);};
   const feed=data?.feed,evidence=Object.fromEntries((feed?.evidence??[]).map(e=>[e.id,e]));
@@ -71,6 +79,8 @@ function Topics(){
       <label>领域关键词（用逗号分隔，最多 10 个；检索用前 3 个）
         <input value={keywords} maxLength={220} disabled={!profile} onChange={e=>setKeywords(e.target.value)} placeholder={profile?"例如：RAG，AI Agent，大模型应用":"正在读取…"}/>
       </label>
+      {profile&&!parsed.length&&<div className="keyword-suggest"><span className="hint">不知道填什么？点一下加入：</span>
+        {SUGGESTED_KEYWORDS.map(k=><button key={k} type="button" className="research-pill" onClick={()=>setKeywords(v=>parseKeywords(v+'，'+k).join('，'))}>{k}</button>)}</div>}
       <label className="review-toggle"><input type="checkbox" checked={auto} disabled={!profile} onChange={e=>setAuto(e.target.checked)}/>每天 7 点后自动生成一次（计费）</label>
       <button type="button" disabled={!dirty||!parsed.length||!!busy} onClick={()=>void save()}>{busy==='save'?'保存中…':'保存'}</button>
     </div>
@@ -88,9 +98,20 @@ function Topics(){
     {!feed?<p className="hint">还没有选题。填写领域关键词后点「刷新今日选题」，或用「自己检索热点」按关键词搜。</p>:<>
       {old&&<p className="hint review-stale">这是 {feed.day} 的选题，今天（{data?.today}）还没有生成{auto?'，开启了每日自动生成的话 7 点后会自动出现':''}。</p>}
       <p className="hint">{feed.day} · {feed.trigger==='daily'?'每日自动':'手动刷新'} · 关键词：{feed.keywords.join('、')} · 样本 {feed.evidence.length} 条</p>
+      <div className="topics-filter" aria-label="筛选选题">
+        <select aria-label="平台" value={filter.platform} onChange={e=>setFilter({...filter,platform:e.target.value})}>
+          <option value="">全部平台</option>{[...new Set(feed.cards.flatMap(c=>c.platforms))].map(p=><option key={p} value={p}>{PLATFORM_LABELS[p]??p}</option>)}</select>
+        <select aria-label="时效" value={filter.window} onChange={e=>setFilter({...filter,window:e.target.value})}>
+          <option value="">全部时效</option>{[...new Set(feed.cards.map(c=>c.window))].map(w=><option key={w} value={w}>{w}</option>)}</select>
+        <select aria-label="最低总分" value={filter.minScore} onChange={e=>setFilter({...filter,minScore:Number(e.target.value)})}>
+          {[0,12,14,16].map(n=><option key={n} value={n}>{n?`总分 ≥ ${n}`:'不限总分'}</option>)}</select>
+        <label className="review-toggle"><input type="checkbox" checked={filter.starred} onChange={e=>setFilter({...filter,starred:e.target.checked})}/>只看收藏</label>
+        {compare.length>0&&<button type="button" className="topics-compare" disabled={compare.length<2} onClick={()=>setComparing(true)}>{compare.length<2?'再选一张来对比':`对比 ${compare.length} 张`}</button>}
+      </div>
       {feed.findings.length>0&&<details className="topics-findings"><summary>样本里的发现（{feed.findings.length}）</summary><ul>{feed.findings.map((f,i)=><li key={i}>{f}</li>)}</ul></details>}
       <div className="topics-grid">
-        {rankedCards(feed.cards).map(({card,index})=><article key={index} className={`topic-card${card.starred?' starred':''}`}>
+        {(()=>{const shown=filterCards(rankedCards(feed.cards),filter);return shown.length?null:<p className="hint">没有符合筛选条件的选题。</p>;})()}
+        {filterCards(rankedCards(feed.cards),filter).map(({card,index})=><article key={index} className={`topic-card${card.starred?' starred':''}`}>
           <div className="topic-card-head">
             <b>{card.title}</b>
             <button type="button" className="topic-star" title={card.starred?'取消收藏':'收藏'} aria-label={card.starred?'取消收藏':'收藏'} disabled={!!busy} onClick={()=>void star(index,!card.starred)}>{card.starred?'★':'☆'}</button>
@@ -110,11 +131,22 @@ function Topics(){
           </>}
           <div className="idea-card-foot">
             <button type="button" className="link-button idea-toggle" onClick={()=>setOpen(o=>o===index?null:index)}>{open===index?'收起 ▴':'证据与评分理由 ▸'}</button>
+            <label className="topic-compare-pick"><input type="checkbox" checked={compare.includes(index)} onChange={()=>toggleCompare(index)}/>对比</label>
             <button type="button" className="idea-use" onClick={()=>handoff(cardToDraft(card,feed.evidence))}>用这个选题做视频</button>
           </div>
         </article>)}
       </div>
     </>}
+    {feed&&<Modal open={comparing} onClose={()=>setComparing(false)} title={`对比 ${compare.length} 张选题卡`} maxWidth="1080px"
+      footer={<button type="button" className="btn-modal-confirm primary" onClick={()=>setComparing(false)}>关闭</button>}>
+      <div className="topics-compare-table"><table><thead><tr><th/>{compare.map(i=><th key={i}>{feed.cards[i].title}</th>)}</tr></thead><tbody>
+        {([['判断',c=>c.judgement],['面向',c=>c.audience],['平台',c=>c.platforms.map(p=>PLATFORM_LABELS[p]??p).join('、')],['时效',c=>c.window],
+          ...(Object.keys(SCORE_LABELS) as ScoreKey[]).map(k=>[SCORE_LABELS[k],(c:TopicCard)=>`${c.scores[k].score} · ${c.scores[k].reason}`] as const),
+          ['总分',c=>`${totalScore(c)}/20`],['开场',c=>`「${c.hook}」`],['角度',c=>c.angle],['缺证据',c=>c.gaps],['风险',c=>c.risks]] as const satisfies readonly (readonly [string,(c:TopicCard)=>string])[])
+          .map(([label,value])=><tr key={label}><th>{label}</th>{compare.map(i=><td key={i}>{value(feed.cards[i])}</td>)}</tr>)}
+        <tr><th/>{compare.map(i=><td key={i}><button type="button" className="idea-use" onClick={()=>{setComparing(false);handoff(cardToDraft(feed.cards[i],feed.evidence));}}>用这个选题做视频</button></td>)}</tr>
+      </tbody></table></div>
+    </Modal>}
     <ResearchModal open={research} topic={parsed[0]??''} currentBrief={null} disabled={false} onClose={()=>setResearch(false)}
       onApplyBrief={(brief:ResearchBrief|null)=>{if(brief)handoff({research:brief});}}
       onApplyPitch={(pitch,brief)=>handoff({topic:pitch.title,title:pitch.title,duration_hint:pitch.duration_hint,teaching_style:pitch.teaching_style,

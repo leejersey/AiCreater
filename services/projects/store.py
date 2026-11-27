@@ -162,6 +162,7 @@ class Store:
                     SELECT 1 FROM jobs v WHERE v.scene_id=s.id AND v.kind='agent' AND v.state='succeeded'
                     AND v.result->'accepted'='true'::jsonb AND v.input->'scene'=s.scene)) AS confirmed_count,
                 a.kind AS active_job_kind, a.state AS active_job_state, a.kind IS NOT NULL AS active_jobs,
+                EXISTS(SELECT 1 FROM jobs e WHERE e.project_id=p.id AND e.kind='export' AND e.state='succeeded') AS exported,
                 t.id AS thumbnail_job, t.result->'frames' AS thumbnail_frames, p.config->>'theme_id' AS theme_id
                 FROM projects p LEFT JOIN LATERAL (
                     SELECT kind,state FROM jobs WHERE project_id=p.id AND state IN ('queued','running')

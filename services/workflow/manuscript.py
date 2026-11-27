@@ -8,6 +8,7 @@ import httpx
 from services.workflow.content_skills import call_json, skill
 from services.accounts.model_settings import DEEPSEEK_BASE_URL
 from services.workflow.destination import pinned_post
+from services.workflow import usage_log
 from services.workflow.providers import ProviderError, _status
 
 from services.workflow.manuscript_document import format_document, narration_text, parse_document
@@ -148,6 +149,7 @@ def _complete(llm, client, body, stage='manuscript'):
     _status(response, stage)
     if len(response.content) > 1024 * 1024:
         raise ProviderError(stage, 'response_limit', 'Response exceeds 1 MiB')
+    usage_log.record(llm, stage, response)
     choice = response.json()['choices'][0]
     if choice.get('finish_reason') == 'length':
         raise ProviderError(stage, 'output_limit', 'Generation reached token or context budget')
@@ -295,6 +297,7 @@ def generate_hooks(title, source_text, llm, client, *, research=None, persona=No
             _status(response, 'manuscript')
             if len(response.content) > 1024 * 1024:
                 raise ProviderError('manuscript', 'response_limit', 'Response exceeds 1 MiB')
+            usage_log.record(llm, 'manuscript', response)
             choice = response.json()['choices'][0]
             if choice.get('finish_reason') == 'content_filter':
                 raise ProviderError('manuscript', 'response_filtered', 'Generation was filtered')

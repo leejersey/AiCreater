@@ -39,6 +39,9 @@ def access(request:Request):
     if request.url.path in ('/api/auth/register','/api/auth/login'): return
     user=request.app.state.accounts.current(request.cookies.get(COOKIE))
     request.state.user=user
+    from services.workflow.usage_log import request_scope
+    scope=request_scope.get()
+    if scope is not None: scope['user_id']=user['id']  # content-model calls made for this request are counted as theirs
     request.app.state.accounts.authorize(user['id'],request.path_params)
 
 

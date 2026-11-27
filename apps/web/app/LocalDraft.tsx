@@ -6,16 +6,25 @@ import {DRAFT_EVENT, draftKey, listDrafts, readDraft, removeDraft, writeDraft, u
   type DraftData, type DraftKind, type DraftRecord, type DraftScope} from '../lib/drafts';
 
 function announce(key: string) {window.dispatchEvent(new CustomEvent(DRAFT_EVENT,{detail:{key}}));}
-export function useLocalDraft<K extends DraftKind>(scope: DraftScope & {kind: K}, revision: number, initial: DraftData[K], onRestore?: () => void) {
+/** autoRestore: a saved draft of the same revision fills the form straight away (with a way to discard it) instead of
+ *  locking the form until the person chooses. */
+export function useLocalDraft<K extends DraftKind>(scope: DraftScope & {kind: K}, revision: number, initial: DraftData[K], onRestore?: () => void, options?: {autoRestore?: boolean}) {
   const userId=useAccount().user?.id;
   const storage=()=>userId?userDraftStorage(window.localStorage,userId):window.localStorage;
   const key=draftKey(scope),eventKey=(userId?userDraftPrefix(userId):'')+key;
   const [value,setValue]=useState(initial), [ready,setReady]=useState(false);
   const current=useRef(initial), expected=useRef<string|null|undefined>(undefined), editedRef=useRef(false);
   const [pending,setPending]=useState<string|null>(null), [error,setError]=useState(''), [saved,setSaved]=useState(false), [edited,setEdited]=useState(false);
+  const [restoredAt,setRestoredAt]=useState<number|null>(null), [discarded,setDiscarded]=useState<DraftData[K]|null>(null);
   useEffect(()=>{
-    current.current=initial; setValue(initial); editedRef.current=false; setEdited(false); setReady(false); setSaved(false); setError('');
-    try {const raw=storage().getItem(key); expected.current=raw; setPending(raw);}
+    current.current=initial; setValue(initial); editedRef.current=false; setEdited(false); setReady(false); setSaved(false); setError(''); setRestoredAt(null); setDiscarded(null);
+    try {
+      const raw=storage().getItem(key); expected.current=raw;
+      const found=options?.autoRestore?readDraft(raw,scope):null;
+      // The draft is already in this browser, so restoring it neither saves nor risks anything: no lock, no prompt.
+      if(found&&found.revision===revision){current.current=found.data;setValue(found.data);setPending(null);setSaved(true);setRestoredAt(found.updatedAt||Date.now());}
+      else setPending(raw);
+    }
     catch {expected.current=undefined; setError('无法读取本机草稿，输入不会可靠暂存；请复制文本备份。');}
     setReady(true);
     const changed=(event:Event)=>{
@@ -48,6 +57,7 @@ export function useLocalDraft<K extends DraftKind>(scope: DraftScope & {kind: K}
     } catch(e){setError(e instanceof Error && /其他页面|过大|字段/.test(e.message)?e.message:'本机暂存失败（浏览器限制或空间不足）；当前输入保留，请复制备份。');}
   }
   function clear() {
+    setRestoredAt(null);setDiscarded(null);
     try {
       if(expected.current===undefined)throw new Error('本机草稿不可访问，无法确认清理；请重新打开检查。');
       removeDraft(storage(),scope,expected.current);expected.current=null;current.current=initial;setValue(initial);setPending(null);setSaved(false);setError('');editedRef.current=false;setEdited(false);announce(eventKey);
@@ -58,8 +68,11 @@ export function useLocalDraft<K extends DraftKind>(scope: DraftScope & {kind: K}
     if(!record || record.revision!==revision)return;
     current.current=record.data;setValue(record.data);setPending(null);editedRef.current=true;setEdited(true);setSaved(true);setError('');onRestore?.();
   }
+  /** Throw away an automatically restored draft, keeping it for one 「撤销」. */
+  function discardRestored() {const data=current.current;clear();setDiscarded(data);}
+  function undoDiscard() {if(discarded){const data=discarded;setDiscarded(null);change(data);}}
   return {value,change,clear,edited,blocked:!ready||pending!==null,
-    notice:{ready,pending,record,revision,error,saved,restore,discard:clear}};
+    notice:{ready,pending,record,revision,error,saved,restore,discard:clear,restoredAt,discarded:discarded!==null,discardRestored,undoDiscard}};
 }
 
 function draftSummary(record:DraftRecord|null):string{
@@ -77,8 +90,8 @@ function draftSummary(record:DraftRecord|null):string{
 }
 
 type NoticeProps={ready:boolean;pending:string|null;record:DraftRecord|null;revision:number;error:string;saved:boolean;
-  restore:()=>void;discard:()=>void;disabled?:boolean};
-export function DraftNotice({ready,pending,record,revision,error,saved,restore,discard,disabled}:NoticeProps) {
+  restore:()=>void;discard:()=>void;disabled?:boolean;restoredAt?:number|null;discarded?:boolean;discardRestored?:()=>void;undoDiscard?:()=>void};
+export function DraftNotice({ready,pending,record,revision,error,saved,restore,discard,disabled,restoredAt,discarded,discardRestored,undoDiscard}:NoticeProps) {
   const summary=draftSummary(record);
   return <div aria-label="本机草稿提示" className="draft-notice">
     {error&&<p role="alert" className="error-text">{error}</p>}
@@ -96,7 +109,10 @@ export function DraftNotice({ready,pending,record,revision,error,saved,restore,d
       </div>
       <details className="draft-raw"><summary>查看／复制草稿文本</summary><textarea aria-label="待恢复草稿文本" readOnly rows={8} value={record?JSON.stringify(record.data,null,2):pending}/></details>
     </div>}
-    {saved&&!error&&<p className="hint">已暂存到本机浏览器，尚非服务器保存；清理浏览器数据会丢失。</p>}
+    {restoredAt&&!error&&<p className="hint draft-restored">已恢复 {new Date(restoredAt).toLocaleString('zh-CN')} 暂存在本机的草稿（尚未保存到服务器）。
+      {discardRestored&&<button type="button" className="link-button" disabled={disabled} onClick={discardRestored}>丢弃，重新开始</button>}</p>}
+    {discarded&&<p className="hint draft-restored">已丢弃本机草稿。{undoDiscard&&<button type="button" className="link-button" disabled={disabled} onClick={undoDiscard}>撤销</button>}</p>}
+    {saved&&!error&&!restoredAt&&<p className="hint">已暂存到本机浏览器，尚非服务器保存；清理浏览器数据会丢失。</p>}
   </div>;
 }
 

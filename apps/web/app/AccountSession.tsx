@@ -6,6 +6,7 @@ import {API,request} from '../lib/editor';
 import {AUTH_REQUIRED,safeReturn,parseAccount,type Account} from '../lib/accounts';
 import {User,Key,LogOut,BookOpen,Spinner,AlertCircle,RefreshCw,Lock,Home, Zap} from './Icons';
 import {useConfirm} from './ConfirmContext';
+import {TaskTray} from './TaskTray';
 
 type Session={user:Account|null;ready:boolean;error:string;reload:()=>void;accept:(user:Account|null)=>void};
 const AccountContext=createContext<Session>({user:null,ready:false,error:'',reload:()=>{},accept:()=>{}});
@@ -69,6 +70,7 @@ export function AccountNav(){
       <Link href="/courses" className="account-nav-link"><BookOpen size={14} /> 我的视频</Link>
     </div>
     <div className="account-nav-right">
+      <TaskTray/>
       <span><User size={13} /> {user?.username}</span>
       <Link href="/account" className="account-nav-link"><Key size={13} /> 个人中心</Link>
       <button disabled={busy} onClick={async()=>{

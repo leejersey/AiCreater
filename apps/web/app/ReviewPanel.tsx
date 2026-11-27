@@ -3,9 +3,9 @@
 import {useState} from 'react';
 import {CLAIM_LABELS,KIND_LABELS,LEVEL_LABELS,SEVERITY_LABELS,orderedItems,type Evidence,type ReviewItem,type ReviewOverride,type ReviewResult} from '../lib/review';
 
-export function ReviewReport({result,overrides={},evidence=[],stale=false,disabled=false,onOverride}:{
+export function ReviewReport({result,overrides={},evidence=[],stale=false,disabled=false,onOverride,onJump}:{
   result:ReviewResult;overrides?:Record<string,ReviewOverride>;evidence?:Evidence[];stale?:boolean;disabled?:boolean;
-  onOverride?:(item:ReviewItem,note:string)=>void;
+  onOverride?:(item:ReviewItem,note:string)=>void;onJump?:(sectionId:string)=>void;
 }){
   const [notes,setNotes]=useState<Record<string,string>>({});
   const byId=Object.fromEntries(evidence.map(e=>[e.id,e]));
@@ -27,7 +27,7 @@ export function ReviewReport({result,overrides={},evidence=[],stale=false,disabl
           <div className="review-item-head">
             <span className={`review-tag review-${item.severity}`}>{done?'已确认':SEVERITY_LABELS[item.severity]}</span>
             <span className="review-kind">{KIND_LABELS[item.kind]??item.kind}</span>
-            <span className="review-section">{item.section}</span>
+            {onJump&&item.section_id?<button type="button" className="link-button review-section" title="在分镜卡片里查看这一段" onClick={()=>onJump(item.section_id)}>{item.section} ↗</button>:<span className="review-section">{item.section}</span>}
           </div>
           <p className="review-text">「{item.text}」</p>
           <p className="hint" style={{margin:0}}>{item.detail}</p>

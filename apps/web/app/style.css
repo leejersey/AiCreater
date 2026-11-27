@@ -3966,3 +3966,70 @@ a.more-settings-trigger { text-decoration: none; }
   .topics-grid { grid-template-columns: minmax(0, 1fr); }
   .topics-toolbar > button.topics-research { margin-left: 0; }
 }
+
+/* 新建页：工具分组、证据包、分镜卡片里的断言与依据（2026-11-26） */
+.tool-group-label { font-size: 11.5px; color: var(--text-secondary); margin-left: 4px; }
+.manuscript-tools .tool-more { width: auto; font-size: 12.5px; margin-left: auto; }
+.evidence-pack { border: 1px dashed var(--line); border-radius: var(--radius-md); padding: 8px 12px; font-size: 12.5px; }
+.evidence-pack summary { cursor: pointer; color: var(--text-secondary); }
+.evidence-pack ol { margin: 8px 0 0; padding-left: 0; list-style: none; display: flex; flex-direction: column; gap: 4px; color: var(--text-secondary); }
+.evidence-pack b { color: var(--accent); margin-right: 4px; }
+.sb-claims, .sb-cite { display: flex; align-items: center; flex-wrap: wrap; gap: 6px; margin: 6px 0; }
+.sb-claims .hint, .sb-cite .hint { margin: 0; font-size: 12px; }
+.sb-claims .review-tag { font-size: 11.5px; cursor: help; }
+.sb-cite-chip { width: auto; padding: 2px 8px; font-size: 11.5px; border-radius: 999px; }
+.sb-cite-chip.on { background: var(--accent-light); border-color: var(--line-accent); color: var(--accent); }
+.sb-card.sb-flash { border-color: var(--accent); box-shadow: 0 0 0 2px var(--accent-light); transition: box-shadow .3s; }
+.draft-restored .link-button { margin-left: 8px; }
+.review-item-head button.review-section { width: auto; padding: 0; font-size: inherit; }
+
+/* 课程进度条（工作台与作品库） */
+.course-steps { list-style: none; margin: 0 0 8px; padding: 0; display: flex; flex-wrap: wrap; gap: 4px; align-items: center; }
+.course-steps li { display: flex; align-items: center; }
+.course-steps li + li::before { content: ''; width: 14px; height: 1px; background: var(--line-strong); margin-right: 4px; }
+.course-steps button, .course-steps li > span { width: auto; display: inline-flex; align-items: center; gap: 6px; padding: 4px 10px; font-size: 12.5px; border-radius: 999px; border: 1px solid var(--line); background: transparent; color: var(--text-secondary); }
+.course-steps small { font-size: 11px; opacity: .8; }
+.course-step-dot { width: 18px; height: 18px; border-radius: 50%; display: inline-flex; align-items: center; justify-content: center; font-size: 11px; border: 1px solid var(--line-strong); }
+.course-steps li[data-state=done] .course-step-dot { background: var(--accent-light); border-color: var(--line-accent); color: var(--accent); }
+.course-steps li[data-state=current] button, .course-steps li[data-state=current] > span { border-color: var(--line-accent); color: var(--text-main); }
+.course-steps li[data-state=blocked] button, .course-steps li[data-state=blocked] > span { border-color: var(--warning-border); color: var(--text-main); }
+.course-card .course-steps { margin: 8px 0 0; }
+.course-card .course-steps li > span { padding: 2px 6px; font-size: 11.5px; }
+.course-card .course-steps li + li::before { width: 6px; }
+
+/* 任务托盘与用量（2026-11-26） */
+.task-tray { position: relative; }
+.task-tray-button { width: auto; padding: 6px 12px; font-size: 12.5px; display: inline-flex; align-items: center; gap: 6px; }
+.task-tray-button.busy { border-color: var(--line-accent); color: var(--accent); }
+.task-tray-panel { position: absolute; right: 0; top: calc(100% + 8px); width: 340px; max-height: 420px; overflow: auto; z-index: 50; padding: 10px; border: 1px solid var(--line); border-radius: var(--radius-md); background: var(--panel, #111); box-shadow: var(--shadow-sm); }
+.task-tray-panel ul { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 6px; }
+.task-tray-panel li { display: flex; justify-content: space-between; gap: 8px; align-items: center; padding: 6px 8px; border-radius: 8px; background: rgba(255,255,255,0.03); }
+.task-tray-panel li a { display: flex; flex-direction: column; min-width: 0; text-decoration: none; color: var(--text-main); font-size: 12.5px; }
+.task-tray-panel li a span { color: var(--text-secondary); font-size: 11.5px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.task-tray-panel li small { flex: none; font-size: 11.5px; color: var(--text-secondary); display: inline-flex; align-items: center; gap: 4px; }
+.task-tray-panel li[data-state=failed] small { color: var(--danger, #f87171); }
+.task-tray-panel li[data-state=succeeded] small { color: var(--accent); }
+.task-tray-foot { margin: 8px 0 0; font-size: 11.5px; }
+.usage-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 12px; }
+.usage-period h3 { font-size: 14px; margin: 0 0 6px; display: flex; justify-content: space-between; }
+.usage-total { color: var(--accent); font-size: 13px; }
+.usage-period dl { margin: 0; display: grid; grid-template-columns: auto 1fr; gap: 4px 12px; font-size: 12.5px; }
+.usage-period dt { color: var(--text-secondary); }
+.usage-period dd { margin: 0; }
+.keyword-suggest { grid-column: 1 / -1; display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
+.keyword-suggest .hint { margin: 0; font-size: 12px; }
+.keyword-suggest .research-pill { width: auto; }
+.empty-steps { text-align: left; max-width: 560px; margin: 12px auto; padding-left: 20px; display: flex; flex-direction: column; gap: 6px; font-size: 13.5px; color: var(--text-secondary); }
+.empty-steps b { color: var(--text-main); }
+.empty-actions { display: flex; flex-wrap: wrap; gap: 10px; justify-content: center; margin: 12px 0; }
+.empty-actions > * { width: auto; }
+.topics-filter { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+.topics-filter select { width: auto; margin: 0; min-width: 120px; }
+.topics-filter .topics-compare { width: auto; margin-left: auto; padding: 6px 12px; }
+.topic-compare-pick { display: inline-flex; align-items: center; gap: 4px; font-size: 12.5px; color: var(--text-secondary); margin-left: auto; margin-right: 8px; }
+.topic-compare-pick input { width: auto; margin: 0; }
+.topics-compare-table { overflow-x: auto; }
+.topics-compare-table table { width: 100%; border-collapse: collapse; font-size: 12.5px; }
+.topics-compare-table th, .topics-compare-table td { border-bottom: 1px solid var(--line); padding: 8px; text-align: left; vertical-align: top; }
+.topics-compare-table tbody th { color: var(--text-secondary); white-space: nowrap; font-weight: 500; }
+.topics-compare-table thead th { font-size: 13px; }

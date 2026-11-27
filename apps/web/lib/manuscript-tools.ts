@@ -278,3 +278,19 @@ export function auditManuscript(source: string, format: 'markdown' | 'plain'): A
   const score = Math.max(40, Math.min(100, 100 - warnCount * 12 - infoCount * 5));
   return { score, issues, passed };
 }
+
+/** Add or remove one evidence id on a section's 「依据：[E…]」 line (the last line of its materials, as the storyboard skill
+ *  writes it); ids stay in number order and an empty line is dropped. */
+export function toggleCitation(materials: string, id: string): string {
+  const lines = materials.replace(/\s+$/, '').split('\n');
+  const at = lines.findIndex(l => /^\s*依据[：:]\s*(\[E\d+\]\s*)*$/.test(l));
+  const ids = new Set(at >= 0 ? [...lines[at].matchAll(/\[(E\d+)\]/g)].map(m => m[1]) : []);
+  if (ids.has(id)) ids.delete(id); else ids.add(id);
+  const line = ids.size ? '依据：' + [...ids].sort((a, b) => Number(a.slice(1)) - Number(b.slice(1))).map(x => `[${x}]`).join('') : null;
+  if (at >= 0) { if (line) lines[at] = line; else lines.splice(at, 1); }
+  else if (line) lines.push(line);
+  return lines.join('\n').replace(/^\n+/, '');
+}
+
+/** The evidence ids a section's materials cite. */
+export const citedIds = (materials: string): string[] => [...materials.matchAll(/\[(E\d+)\]/g)].map(m => m[1]);

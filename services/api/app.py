@@ -270,7 +270,10 @@ def create_app(store=None, *, authentication=True):
         app.state.reviews = CourseReview(configured)
         app.state.topics = TopicFeeds(configured)
         app.state.breakdowns = Breakdowns(configured)
-        yield
+        from services.workflow import usage_log
+        usage_log.install(configured)
+        try: yield
+        finally: usage_log.uninstall()
 
     app = FastAPI(title='Teaching Projects', lifespan=lifespan, docs_url=None, redoc_url=None,
                   dependencies=[Depends(access)])
@@ -280,6 +283,8 @@ def create_app(store=None, *, authentication=True):
     app.add_middleware(CORSMiddleware, allow_origins=sorted(ORIGINS),
                        allow_methods=['GET', 'POST', 'PATCH'], allow_headers=['Content-Type'])
     app.add_middleware(LocalRequestsMiddleware)
+    from services.workflow.usage_log import RequestScope
+    app.add_middleware(RequestScope)
 
     @app.exception_handler(StoreError)
     async def store_error(request, error):
@@ -567,6 +572,23 @@ def create_app(store=None, *, authentication=True):
     @app.post('/api/projects/{project_id}/review/required')
     def project_review_required(project_id: str, body: ReviewRequired, request: Request):
         return request.app.state.reviews.set_required(project_id, body.required)
+
+    @app.get('/api/tasks')
+    def account_tasks(request: Request):
+        from services.projects.activity import tasks
+        return JSONResponse(tasks(request.app.state.store, getattr(request.state, 'user', {}).get('id')), headers={'Cache-Control': 'no-store'})
+
+    @app.get('/api/usage')
+    def account_usage(request: Request):
+        from services.projects.activity import usage
+        return JSONResponse(usage(request.app.state.store, getattr(request.state, 'user', {}).get('id')), headers={'Cache-Control': 'no-store'})
+
+    @app.get('/api/usage/estimate')
+    def account_usage_estimate(request: Request, kinds: str = ''):
+        from services.projects.activity import estimate
+        chosen = [k for k in kinds.split(',') if re.fullmatch(r'[a-z_]{1,40}', k)][:5]
+        if not chosen: raise StoreError('validation', 'kinds must name 1–5 call kinds')
+        return estimate(request.app.state.store, getattr(request.state, 'user', {}).get('id'), chosen)
 
     @app.get('/api/studio/profile')
     def studio_profile(request: Request):

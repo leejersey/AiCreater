@@ -240,3 +240,29 @@ export function momentNote(seconds:number,captions:{text:string;start_frame:numb
  const cue=(captions??[]).find(c=>frame>=c.start_frame&&frame<c.end_frame)??(captions??[]).filter(c=>c.start_frame<=frame).at(-1);
  return cue?`【${time}，口播「${cue.text.trim()}」处】`:`【${time} 处】`;
 }
+
+export type CourseStepKey='script'|'review'|'voice'|'picture'|'export';
+export type CourseStep={key:CourseStepKey;label:string;state:'done'|'current'|'todo'|'blocked';detail:string};
+/** Where a course is on the way to an exported video: 文稿 → 内容审核 → 配音 → 画面 → 导出. The first unfinished step is
+ *  current (blocked when the review stops it); review is left out where its state is unknown (the course list). */
+export function courseSteps({chapters,voiced,confirmed,exported,review}:{chapters:number;voiced:number;confirmed:number;exported:boolean;
+  review?:'off'|'pass'|'todo'|'block'}):CourseStep[]{
+ const steps:{key:CourseStepKey;label:string;done:boolean;detail:string;blocked?:boolean}[]=[
+  {key:'script',label:'文稿',done:chapters>0,detail:chapters?`${chapters} 章`:'待整理章节'},
+  ...(review?[{key:'review' as const,label:'内容审核',done:review==='off'||review==='pass',blocked:review==='block',
+    detail:review==='off'?'未要求':review==='pass'?'已通过':review==='block'?'有阻断项':'待审核'}]:[]),
+  {key:'voice',label:'配音',done:chapters>0&&voiced>=chapters,detail:`${voiced}/${chapters}`},
+  {key:'picture',label:'画面',done:chapters>0&&confirmed>=chapters,detail:`已确认 ${confirmed}/${chapters}`},
+  {key:'export',label:'导出',done:exported,detail:exported?'已导出':'未导出'},
+ ];
+ const first=steps.findIndex(s=>!s.done);
+ return steps.map((s,i)=>({key:s.key,label:s.label,detail:s.detail,state:s.done?'done':i===first?(s.blocked?'blocked':'current'):'todo'}));
+}
+
+/** "约 12 分钟" left of a course pipeline, from the time its finished chapters took on average; '' before the first. */
+export function pilotEta(startedAt:string,total:number,left:number,now=Date.now()):string{
+ const done=total-left,spent=(now-Date.parse(startedAt))/1000;
+ if(done<=0||left<=0||!Number.isFinite(spent)||spent<=0)return '';
+ const seconds=Math.round(spent/done*left);
+ return seconds<90?'约 1 分钟':`约 ${Math.round(seconds/60)} 分钟`;
+}

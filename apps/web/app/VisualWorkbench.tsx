@@ -5,7 +5,7 @@ import type {SceneRow} from '../lib/editor';
 import {request,parseJobs,parseSceneJob,type Project,type Job} from '../lib/editor';
 import {confirmEstimate} from '../lib/cost-estimates';
 import {currentVoiceJob} from '../lib/course';
-import {parseVisualJobs,visualFileUrl,measuredReady,reviewFrames,visualError,sceneAudioActions,videoTaskStatus,videoProgress,latestAgentJob,canAcceptAgent,exportedVersion,chapterStatus,agentBatchScenes,visualAgentBody,failureAction,momentNote,restyleOf,renderedTheme,sameLook,nextStep,type NextStep,AGENT_MAX_TURNS,estimatedSeconds,codePointOffset,AGENT_MAX_SECONDS,type VisualJob} from '../lib/visual-workbench';
+import {parseVisualJobs,visualFileUrl,measuredReady,reviewFrames,visualError,sceneAudioActions,videoTaskStatus,videoProgress,latestAgentJob,canAcceptAgent,exportedVersion,chapterStatus,agentBatchScenes,visualAgentBody,failureAction,momentNote,restyleOf,renderedTheme,sameLook,nextStep,courseSteps,pilotEta,type NextStep,AGENT_MAX_TURNS,estimatedSeconds,codePointOffset,AGENT_MAX_SECONDS,type VisualJob} from '../lib/visual-workbench';
 import {agentModelLabel,autopilotConfirmation,confirmVisualAction,type AutopilotPlan,visualAgentAction,visualAgentReviseAction,type AgentModel} from '../lib/visual-workbench-actions';
 import {parseModelSettings} from '../lib/model-settings';
 import {useConfirm} from './ConfirmContext';
@@ -15,6 +15,7 @@ import {VoiceSettings} from './VoiceSettings';
 import {ThemeSettings} from './ThemeSettings';
 import {PublishKitModal} from './courses/new/CreatorToolsModals';
 import {ReviewReport} from './ReviewPanel';
+import {CourseSteps} from './CourseSteps';
 import {reviewBlock,reviewSummary,type ReviewState} from '../lib/review';
 import {parseThemes,themeName,type ThemeSummary} from '../lib/themes';
 import {ArrowLeft,RefreshCw,Check,Film,Mic,X} from './Icons';
@@ -401,6 +402,15 @@ export default function VisualWorkbench({routeProjectId}:{routeProjectId:string}
   const stopAutopilot=()=>void act(async()=>{setProject(await request<Project>(base+'/visual/autopilot/stop',{}));});
   const pilot=project?.autopilot;
   const pilotLeft=pilot?.state==='running'?pilot.scene_ids.filter(id=>{const i=project!.scenes.findIndex(s=>s.id===id);return i>=0&&!['confirmed','review'].includes(statuses[i]?.key);}).length:0;
+  const pilotTime=pilot?.state==='running'?pilotEta(pilot.started_at,pilot.scene_ids.length,pilotLeft):'';
+  // When a pipeline the person watched finishes with chapters to look at, open the continuous review once.
+  const pilotSeen=useRef<string|null>(null);
+  useEffect(()=>{
+    if(!pilot)return;
+    const key=pilot.started_at;
+    if(pilot.state==='running'){pilotSeen.current=key;return;}
+    if(pilot.state==='done'&&pilotSeen.current===key&&reviewItems.length){pilotSeen.current=null;setReviewing(true);toast('整课自动生成已完成，开始连续审片',{variant:'success'});}
+  },[pilot?.state,pilot?.started_at,reviewItems.length]);
   const runStep=()=>{
     if(!step||!project)return;
     if(step.key==='review')setContentReviewOpen(true);else if(step.key==='voice')voiceChapter();else if(step.key==='retime')retime();else if(step.key==='generate')startAgent();
@@ -426,7 +436,7 @@ export default function VisualWorkbench({routeProjectId}:{routeProjectId:string}
     {error&&<p role="alert" className="vw-error">{error}</p>}
     {reviewing&&project&&<ReviewMode projectId={project.id} items={reviewItems} disabled={busy} onAccept={acceptInReview} onRevise={reviseInReview} onClose={()=>setReviewing(false)}/>}
     {pilot&&<div className={`vw-pilot vw-pilot-${pilot.state}`} role="status">
-      {pilot.state==='running'?<>整课自动生成中 · 还有 {pilotLeft} 章在配音或生成，完成的章节会出现在「连续审片」<button disabled={busy} onClick={stopAutopilot}>停止</button></>
+      {pilot.state==='running'?<>整课自动生成中 · 还有 {pilotLeft} 章在配音或生成{pilotTime?`（预计还要${pilotTime}）`:'（完成第一章后估算剩余时间）'}，完成的章节会出现在「连续审片」<button disabled={busy} onClick={stopAutopilot}>停止</button></>
        :pilot.state==='done'?<>整课自动生成已推进完所有章节{reviewItems.length?<>，{reviewItems.length} 章待确认 <button onClick={()=>setReviewing(true)}>连续审片</button></>:'。'}</>
        :pilot.reason==='llm_changed'?<>整课自动生成已停止：提交后修改了模型配置，请重新开始。</>:<>整课自动生成已停止。</>}
     </div>}
@@ -460,6 +470,16 @@ export default function VisualWorkbench({routeProjectId}:{routeProjectId:string}
       <div className="vw-course-bar vw-card">
         <div className="vw-course-bar-left">
           {!project.scenes.length&&<button className="vw-next-button" disabled={disabled||active} onClick={()=>void act(async()=>{setProject(await request<Project>(base+'/visual/prepare',{expected_revision:project.revision}));toast('已整理口播章节',{variant:'success'});})}>整理口播章节（免费）</button>}
+          {!!project.scenes.length&&<CourseSteps steps={courseSteps({chapters:project.scenes.length,
+            voiced:statuses.filter(st=>!['needs_voice','needs_timing'].includes(st.key)).length,confirmed:confirmedCount,exported:!!latestExport,
+            review:!contentReview?.required?'off':reviewBlock(contentReview)?(contentReview.result&&contentReview.current?'block':'todo'):'pass'})}
+            onPick={key=>{
+              const pick=(keys:string[])=>{const i=statuses.findIndex(st=>keys.includes(st.key));if(i>=0)setSelected(project.scenes[i].id);};
+              if(key==='review')setContentReviewOpen(true);
+              else if(key==='voice')pick(['needs_voice','needs_timing']);
+              else if(key==='picture'){if(reviewItems.length)setReviewing(true);else pick(['todo','review','running']);}
+              else if(key==='export'&&!missing.length)exportCourse();
+            }}/>}
           {!!project.scenes.length&&<div className="vw-progress-summary">
             <div className="vw-progress-text">
               <span className="vw-course-progress">已确认 <strong>{confirmedCount}/{project.scenes.length}</strong>{missing.length?` · 未确认：第 ${missing.join('、')} 章`:' · 全部章节已就绪'}</span>
@@ -572,3 +592,4 @@ export function VisualMedia({projectId,job,diagnostics=false,videoRef,compact=fa
     {zoomAt!==null&&<FrameLightbox images={stills} index={zoomAt} onSelect={setZoomAt} onClose={()=>setZoomAt(null)}/>}
   </>;
 }
+

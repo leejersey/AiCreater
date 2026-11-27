@@ -19,7 +19,7 @@ import {parseThemes,suggestTheme,type ThemeSummary} from '../../../lib/themes';
 import {ThemePicker} from '../../ThemePicker';
 import {Ideation} from './Ideation';
 import {StoryboardEditor} from './StoryboardEditor';
-import {ArticleConvertModal,CritiqueModal,PersonaModal,PublishKitModal} from './CreatorToolsModals';
+import {ArticleConvertModal,CritiqueModal,PersonaModal} from './CreatorToolsModals';
 import {emptyIdeation,toOrigin,toPlan} from '../../../lib/ideation';
 import {replaceFirstOpening,type ManuscriptHook} from '../../../lib/research';
 import {auditManuscript,loadActivePersonaId,loadPersonas,parseMarkdownSections,saveActivePersonaId,savePersonas,type PersonaProfile} from '../../../lib/manuscript-tools';
@@ -59,7 +59,7 @@ function formatDuration(sec:number){
 }
 
 export default function NewCourse(){
-  const draft=useLocalDraft({kind:'course',projectId:'',sceneId:'',label:'新建课程文稿'},0,initial);const router=useRouter();
+  const draft=useLocalDraft({kind:'course',projectId:'',sceneId:'',label:'新建课程文稿'},0,initial,undefined,{autoRestore:true});const router=useRouter();
   const confirmDialog=useConfirm();const toast=useToast();const userId=useAccount().user?.id;
   const [busy,setBusy]=useState(false),[generating,setGenerating]=useState(false),[error,setError]=useState('');
   const [focusPane,setFocusPane]=useState<'split'|'ideate'|'write'>('split');
@@ -74,8 +74,8 @@ export default function NewCourse(){
   const [activePersonaId,setActivePersonaId]=useState('');
   const [personaOpen,setPersonaOpen]=useState(false);
   const [critiqueOpen,setCritiqueOpen]=useState(false);
-  const [contentReview,setContentReview]=useState<ReviewResult|null>(null),[contentReviewing,setContentReviewing]=useState(false);
-  const [publishOpen,setPublishOpen]=useState(false);
+  const [contentReview,setContentReview]=useState<ReviewResult|null>(null),[contentReviewing,setContentReviewing]=useState(false),[contentReviewOpen,setContentReviewOpen]=useState(false);
+  const [reviewedSource,setReviewedSource]=useState(''),[focusSection,setFocusSection]=useState<{id:string;at:number}|null>(null);
   const [articleOpen,setArticleOpen]=useState(false);
   useEffect(()=>{
     setPersonas(loadPersonas(userId));
@@ -123,7 +123,8 @@ export default function NewCourse(){
   /** A free pre-review of the manuscript against the injected research (the same rules the course gate uses). */
   async function onContentReview(){
     setContentReviewing(true);setError('');
-    try{setContentReview(await request<ReviewResult>('/api/studio/review',{source_text:draft.value.source,manuscript_format:manuscriptFormat,...(draft.value.research?{research:draft.value.research}:{})}));}
+    const reviewed=draft.value.source;
+    try{setContentReview(await request<ReviewResult>('/api/studio/review',{source_text:reviewed,manuscript_format:manuscriptFormat,...(draft.value.research?{research:draft.value.research}:{})}));setReviewedSource(reviewed);setContentReviewOpen(true);}
     catch(e){setError(e instanceof Error?e.message:'内容审核失败，可稍后重试。');}
     finally{setContentReviewing(false);}
   }
@@ -218,6 +219,8 @@ export default function NewCourse(){
   const audit=auditManuscript(draft.value.source,manuscriptFormat);
   const auditWarnCount=audit.issues.filter(i=>i.severity==='warn').length;
   const stats=inspectManuscript(draft.value.source,manuscriptFormat);
+  // The evidence pack numbered as the course will number it (services/workflow/review.evidence_from_brief): E1, E2…
+  const evidence=(draft.value.research?.facts??[]).map((text,i)=>({id:`E${i+1}`,text}));
   const studioClass=`new-course-studio${ideation.batches.length?' ideating':''}${focusPane!=='split'?` focus-${focusPane}`:''}`;
   return <main className="new-course-container">
     <div className="studio-topbar">
@@ -292,12 +295,12 @@ export default function NewCourse(){
             {draft.value.research
               ?<div className="more-settings-trigger research-trigger active">
                 <span>已带入资料 · {draft.value.research.facts.length} 条事实{draft.value.research.hooks.length?` / ${draft.value.research.hooks.length} 个开场参考`:''}（文稿按它写，审核按它溯源）</span>
-                <button type="button" className="link-button" disabled={blocked} onClick={()=>draft.change({research:null})}>清除</button>
+                <button type="button" className="link-button" disabled={blocked} onClick={()=>{const prev=draft.value.research;draft.change({research:null});toast('已清除带入的资料',{variant:'info',duration:6000,action:{label:'撤销',onClick:()=>draft.change({research:prev})}});}}>清除</button>
               </div>
               :<a className="more-settings-trigger research-trigger" href="/studio"><span>找选题、拆解爆款、检索热点 → 去选题台</span><ChevronRight size={15}/></a>}
             {draft.value.formula&&<div className="more-settings-trigger research-trigger active">
               <span>已套用爆款公式「{draft.value.formula.name}」· {draft.value.formula.steps.length} 步（大纲与文稿按它的结构写）</span>
-              <button type="button" className="link-button" disabled={blocked} onClick={()=>draft.change({formula:null})}>清除</button>
+              <button type="button" className="link-button" disabled={blocked} onClick={()=>{const prev=draft.value.formula;draft.change({formula:null});toast('已取消套用公式',{variant:'info',duration:6000,action:{label:'撤销',onClick:()=>draft.change({formula:prev})}});}}>清除</button>
             </div>}
 
             <button
@@ -314,15 +317,15 @@ export default function NewCourse(){
               <ChevronRight size={15}/>
             </button>
 
-            <button
+            {!draft.value.source.trim()&&<button
               type="button"
               className="more-settings-trigger"
               disabled={blocked}
               onClick={()=>setArticleOpen(true)}
             >
-              <span>📄 长文 / 笔记转视频脚本 · 粘贴文章、链接或导入 .md/.txt</span>
+              <span>📄 已有文章或笔记？转成视频脚本 · 粘贴文章、链接或导入 .md/.txt</span>
               <ChevronRight size={15}/>
-            </button>
+            </button>}
 
             <Ideation state={ideation} title={courseTitle} disabled={blocked} generating={generating}
               context={{topic,notes:draft.value.notes??'',audience:draft.value.audience??'',duration_hint:draft.value.duration_hint??'',teaching_style:style,research:draft.value.research,persona:activePersona,formula:draft.value.formula}}
@@ -359,26 +362,34 @@ export default function NewCourse(){
                 <button type="button" className={editorMode==='cards'?'active':undefined} onClick={()=>setEditorMode('cards')}>分镜卡片 ({parsedSections.length})</button>
                 <button type="button" className={editorMode==='source'?'active':undefined} onClick={()=>setEditorMode('source')}>Markdown 源码</button>
               </div>}
+              <span className="tool-group-label">改写</span>
               <button type="button" className="research-mini-btn" disabled={blocked||hooksLoading||polishing} onClick={()=>void onGenerateHooks()}>
                 {hooksLoading?<><Spinner size={12} className="icon-spin"/> 生成钩子中…</>:'🪝 开场钩子 3 选 1'}
               </button>
               <button type="button" className="research-mini-btn" disabled={blocked||polishing||hooksLoading} onClick={()=>void onPolishDeAi()}>
                 {polishing?<><Spinner size={12} className="icon-spin"/> 去 AI 味润色中…</>:'✨ 一键去 AI 味'}
               </button>
+              <span className="tool-group-label">检查</span>
               <button type="button" className="research-mini-btn" title="事实溯源（对照带入的证据）+ 广告法、敏感说法、AI 套话；和配音前的审核门槛是同一套规则" disabled={blocked||contentReviewing||!draft.value.source.trim()} onClick={()=>void onContentReview()}>
                 {contentReviewing?'审核中…':'🔎 内容审核（免费）'}
               </button>
               <button type="button" className={`research-mini-btn${auditWarnCount>0?' audit-btn-warn':''}`} title="结构、节奏与口语化打分（本机计算），可让 AI 按建议改写" disabled={blocked} onClick={()=>setCritiqueOpen(true)}>
                 🩺 文稿体检 ({audit.score}分{auditWarnCount>0?` · ${auditWarnCount}预警`:''})
               </button>
-              <button type="button" className="research-mini-btn" disabled={blocked} onClick={()=>setPublishOpen(true)}>
-                📦 发布套件
-              </button>
+              <button type="button" className="link-button tool-more" disabled={blocked} title="用一篇文章或笔记重新生成文稿（会替换当前文稿，可撤销）" onClick={()=>setArticleOpen(true)}>长文转脚本</button>
             </div>}
 
+            {evidence.length>0&&draft.value.source.trim()&&<details className="evidence-pack">
+              <summary>证据包（{evidence.length} 条）· 用到事实的段落在卡片里点 E1、E2… 标注依据，审核按它溯源</summary>
+              <ol>{evidence.map(e=><li key={e.id}><b>{e.id}</b> {e.text}</li>)}</ol>
+            </details>}
             {editorMode==='cards'&&manuscriptFormat==='markdown'&&parsedSections&&parsedSections.length>0?(
               <StoryboardEditor
                 sections={parsedSections}
+                claims={contentReview?.claims}
+                claimsStale={!!contentReview&&reviewedSource!==draft.value.source}
+                evidence={evidence}
+                focus={focusSection}
                 disabled={blocked}
                 rewritingId={rewritingId}
                 onChangeSource={next=>draft.change({source:next})}
@@ -490,10 +501,11 @@ export default function NewCourse(){
       onSaveList={next=>{setPersonas(next);savePersonas(next,userId);}}
     />
 
-    <Modal open={!!contentReview} onClose={()=>setContentReview(null)} title="内容审核（预审）" maxWidth="760px"
-      footer={<button type="button" className="btn-modal-confirm primary" onClick={()=>setContentReview(null)}>关闭</button>}>
+    <Modal open={contentReviewOpen&&!!contentReview} onClose={()=>setContentReviewOpen(false)} title="内容审核（预审）" maxWidth="760px"
+      footer={<button type="button" className="btn-modal-confirm primary" onClick={()=>setContentReviewOpen(false)}>关闭</button>}>
       <p className="hint" style={{marginTop:0}}>{draft.value.research?'按带入的资料（证据包）溯源口播里的断言。创建课程后会保存证据包，配音前需要通过审核。':'当前没有带入资料，带数字或「研究显示」的断言都无法溯源。'}</p>
-      {contentReview&&<ReviewReport result={contentReview} evidence={contentReview.evidence??[]}/>}
+      {contentReview&&<ReviewReport result={contentReview} evidence={contentReview.evidence??[]}
+        onJump={manuscriptFormat==='markdown'&&parsedSections?.length?(id=>{setEditorMode('cards');setFocusSection({id,at:Date.now()});setContentReviewOpen(false);}):undefined}/>}
     </Modal>
 
     <CritiqueModal
@@ -509,12 +521,6 @@ export default function NewCourse(){
       onClose={()=>setCritiqueOpen(false)}
     />
 
-    <PublishKitModal
-      open={publishOpen}
-      title={courseTitle}
-      source={draft.value.source}
-      onClose={()=>setPublishOpen(false)}
-    />
 
     <ArticleConvertModal
       open={articleOpen}

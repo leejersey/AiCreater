@@ -96,3 +96,10 @@ export const breakdownError = (error:string) => /^[a-z_]+: [a-z_]+: /.test(error
 
 /** Card lines the source could not show (「资料里看不出…」) are gathered into one note instead of one line each. */
 export const unseen = (text:string) => /^资料里看不出/.test(text.trim());
+
+export type CardFilter = {platform:string;window:string;starred:boolean;minScore:number};
+export const NO_FILTER:CardFilter = {platform:'',window:'',starred:false,minScore:0};
+/** Ranked cards that pass the filter (platform key, time window as written on the card, starred only, lowest total). */
+export function filterCards(ranked:{card:TopicCard;index:number}[],f:CardFilter){
+  return ranked.filter(({card})=>(!f.platform||card.platforms.includes(f.platform))&&(!f.window||card.window===f.window)&&(!f.starred||card.starred)&&totalScore(card)>=f.minScore);
+}

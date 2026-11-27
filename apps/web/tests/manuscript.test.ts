@@ -28,3 +28,13 @@ test('pending local draft keeps restore/discard clickable while form stays locke
   assert.match(neu, /请先上方「恢复到表单」或「丢弃本机草稿」/);
   assert.match(neu, /fieldset disabled=\{blocked\}/);
 });
+
+test('citations toggle on the materials\' 「依据」 line, in number order',async()=>{
+ const {toggleCitation,citedIds}=await import('../lib/manuscript-tools');
+ assert.equal(toggleCitation('时间线','E2'),'时间线\n依据：[E2]');
+ assert.equal(toggleCitation('时间线\n依据：[E2]','E1'),'时间线\n依据：[E1][E2]');
+ assert.equal(toggleCitation('时间线\n依据：[E1][E2]','E1'),'时间线\n依据：[E2]');
+ assert.equal(toggleCitation('时间线\n依据：[E2]','E2'),'时间线');
+ assert.equal(toggleCitation('','E3'),'依据：[E3]');
+ assert.deepEqual(citedIds('图\n依据：[E1][E10]'),['E1','E10']);
+});

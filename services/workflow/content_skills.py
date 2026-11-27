@@ -18,6 +18,7 @@ import httpx
 
 from services.accounts.model_settings import DEEPSEEK_BASE_URL
 from services.workflow.destination import pinned_post
+from services.workflow import usage_log
 from services.workflow.providers import ProviderError, _status
 
 log = logging.getLogger(__name__)
@@ -98,6 +99,7 @@ def call_json(llm, client, system, user, check, kind, *, stage=None, max_tokens=
                                    headers={'Authorization': 'Bearer ' + llm.api_key}, json=body)
             _status(response, stage)
             if len(response.content) > 1024 * 1024: raise ProviderError(stage, 'response_limit', 'Response exceeds 1 MiB')
+            usage_log.record(llm, kind, response, user_id)
             choice = response.json()['choices'][0]
             if choice.get('finish_reason') == 'content_filter': raise ProviderError(stage, 'response_filtered', 'Generation was filtered')
             content = choice['message']['content'] if choice.get('finish_reason') == 'stop' else None

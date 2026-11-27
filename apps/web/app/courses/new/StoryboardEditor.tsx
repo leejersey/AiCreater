@@ -1,9 +1,12 @@
 'use client';
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import {
+  citedIds,
   serializeMarkdownSections,
+  toggleCitation,
   type MarkdownSection,
 } from '../../../lib/manuscript-tools';
+import { CLAIM_LABELS, type ReviewClaim } from '../../../lib/review';
 import { ChevronDown, ChevronUp, Plus, Sparkles, Spinner, X } from '../../Icons';
 
 const QUICK_REWRITES = [
@@ -15,12 +18,23 @@ const QUICK_REWRITES = [
 
 export function StoryboardEditor({
   sections,
+  claims,
+  claimsStale = false,
+  evidence = [],
+  focus,
   disabled,
   rewritingId,
   onChangeSource,
   onRewriteSection,
 }: {
   sections: MarkdownSection[];
+  /** The last content review's claims, shown on their sections; stale once the text changed after the review. */
+  claims?: ReviewClaim[];
+  claimsStale?: boolean;
+  /** The evidence pack (E1, E2…) the sections can cite. */
+  evidence?: { id: string; text: string }[];
+  /** A section to scroll to (from the review report). */
+  focus?: { id: string; at: number } | null;
   disabled: boolean;
   rewritingId: string | null;
   onChangeSource: (nextMarkdown: string) => void;
@@ -30,6 +44,15 @@ export function StoryboardEditor({
   const [customNote, setCustomNote] = useState('');
 
   const commit = (next: MarkdownSection[]) => onChangeSource(serializeMarkdownSections(next));
+  const [flash, setFlash] = useState<string | null>(null);
+  useEffect(() => {
+    if (!focus) return;
+    document.getElementById(`sb-${focus.id}`)?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    setFlash(focus.id);
+    const t = setTimeout(() => setFlash(null), 1800);
+    return () => clearTimeout(t);
+  }, [focus]);
+  const byId = Object.fromEntries(evidence.map(e => [e.id, e]));
 
   const update = (idx: number, patch: Partial<MarkdownSection>) =>
     commit(sections.map((s, i) => (i === idx ? { ...s, ...patch } : s)));
@@ -67,7 +90,7 @@ export function StoryboardEditor({
         const emptyMat = !sec.materials.trim() || sec.materials.trim() === '无';
         const isRewriting = rewritingId === sec.id;
         return (
-          <div key={sec.id} className={`sb-card${tooLong ? ' sb-warn' : ''}`}>
+          <div key={sec.id} id={`sb-${sec.id}`} className={`sb-card${tooLong ? ' sb-warn' : ''}${flash === sec.id ? ' sb-flash' : ''}`}>
             <div className="sb-card-head">
               <span className="idea-index">{idx + 1}</span>
               <input
@@ -141,6 +164,26 @@ export function StoryboardEditor({
                 onChange={e => update(idx, { narration: e.target.value })}
               />
             </label>
+
+            {(() => {
+              const own = (claims ?? []).filter(c => c.section_id === sec.id);
+              if (!own.length) return null;
+              return <div className="sb-claims" aria-label="本段断言">
+                <span className="hint">断言{claimsStale ? '（文稿已改，重新审核后更新）' : ''}</span>
+                {own.map(c => <span key={c.id} className={`review-tag review-${c.status === 'sourced' ? 'pass' : c.status === 'secondhand' ? 'warn' : 'block'}`}
+                  title={c.evidence_id && byId[c.evidence_id] ? `${c.evidence_id}：${byId[c.evidence_id].text}` : c.reason || CLAIM_LABELS[c.status]}>
+                  「{c.text}」{CLAIM_LABELS[c.status]}{c.evidence_id ? ` · ${c.evidence_id}` : ''}</span>)}
+              </div>;
+            })()}
+
+            {evidence.length > 0 && <div className="sb-cite" aria-label="依据">
+              <span className="hint">依据</span>
+              {evidence.map(e => {
+                const on = citedIds(sec.materials).includes(e.id);
+                return <button key={e.id} type="button" className={`sb-cite-chip${on ? ' on' : ''}`} disabled={disabled || isRewriting} title={e.text}
+                  aria-pressed={on} onClick={() => update(idx, { materials: toggleCitation(sec.materials, e.id) })}>{e.id}</button>;
+              })}
+            </div>}
 
             <div className="sb-visual-row">
               <label className="sb-field">

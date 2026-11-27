@@ -48,3 +48,16 @@ CREATE TABLE IF NOT EXISTS viral_formulas (
     updated_at timestamptz NOT NULL DEFAULT now()
 );
 CREATE INDEX IF NOT EXISTS viral_formulas_owner_idx ON viral_formulas(owner_id, created_at DESC);
+CREATE TABLE IF NOT EXISTS llm_usage (
+    id bigserial PRIMARY KEY,
+    owner_id uuid REFERENCES users(id) ON DELETE CASCADE,
+    kind text NOT NULL,
+    source text NOT NULL CHECK (source IN ('server', 'account')),
+    model text NOT NULL,
+    input integer NOT NULL CHECK (input >= 0),
+    cached_input integer NOT NULL CHECK (cached_input >= 0),
+    output integer NOT NULL CHECK (output >= 0),
+    created_at timestamptz NOT NULL DEFAULT now()
+);
+CREATE INDEX IF NOT EXISTS llm_usage_owner_idx ON llm_usage(owner_id, created_at DESC);
+CREATE INDEX IF NOT EXISTS llm_usage_kind_idx ON llm_usage(owner_id, kind, created_at DESC);

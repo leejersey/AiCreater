@@ -107,3 +107,23 @@ export function isIdeationDraft(v:unknown):v is IdeationDraft {
     Array.isArray(s.extras)&&s.extras.length<=20&&s.extras.every(isAngle)&&(s.chosen===null||isAngle(s.chosen))&&
     (s.outline===null||isOutline(s.outline))&&Array.isArray(s.history)&&s.history.length<=MAX_HISTORY&&s.history.every(isOutline);
 }
+
+/** A formula's structure as the outline follows it: each chapter's step (one per chapter when the counts match, otherwise the
+ *  step at the chapter's middle on the timeline), and what drifts far from the formula. */
+export function formulaFit(o:Outline,f:{name:string;steps:{role:string;seconds:number}[]}):{steps:string[];warnings:string[]}{
+  const total=totalSeconds(o),planned=f.steps.reduce((n,s)=>n+s.seconds,0);
+  let steps:string[];
+  if(o.sections.length===f.steps.length)steps=f.steps.map(s=>s.role);
+  else{
+    const ends=f.steps.reduce<number[]>((acc,s)=>[...acc,(acc[acc.length-1]??0)+s.seconds/planned],[]);
+    let at=0;
+    steps=o.sections.map(s=>{const mid=(at+(Number.isFinite(s.seconds)?s.seconds:0)/2)/(total||1);at+=Number.isFinite(s.seconds)?s.seconds:0;
+      return f.steps[Math.min(f.steps.length-1,ends.findIndex(e=>mid<=e+1e-9))]?.role??f.steps[f.steps.length-1].role;});
+  }
+  const warnings:string[]=[];
+  if(o.sections.length!==f.steps.length)warnings.push(`公式「${f.name}」有 ${f.steps.length} 步，大纲是 ${o.sections.length} 章：章节按时间位置对应到步骤`);
+  if(planned&&Math.abs(total-planned)>planned*0.3)warnings.push(`大纲合计约 ${total} 秒，公式约 ${planned} 秒，节奏可能和公式不同`);
+  const missing=[...new Set(f.steps.map(s=>s.role))].filter(r=>!steps.includes(r));
+  if(missing.length)warnings.push(`公式里的「${missing.join('、')}」没有对应的章节`);
+  return {steps,warnings};
+}

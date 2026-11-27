@@ -786,3 +786,49 @@ class VisualApiTests(unittest.TestCase):
         self.assertEqual(done['state'],'failed')
 
 if __name__=='__main__':unittest.main()
+
+
+@unittest.skipUnless(os.environ.get('TEST_DATABASE_URL'),'Requires disposable PostgreSQL')
+class ActivityApiTests(unittest.TestCase):
+    """The task tray and the usage page, with VisualApiTests' account and course."""
+    setUp=VisualApiTests.setUp
+    def test_tasks_list_running_and_recent_work_and_usage_adds_up(self):
+        from types import SimpleNamespace
+        from services.accounts.model_settings import LLM
+        from services.workflow import usage_log
+        from services.visual.costs import PRICE_KEYS
+        me=self.client.get('/api/auth/me').json()['id']
+        scene=self.client.get('/api/projects/'+self.pid).json()['scenes'][0]
+        with self.store.connection() as conn:
+            conn.execute("""INSERT INTO jobs(id,project_id,scene_id,kind,base_revision,input_hash,input,state,started_at)
+                VALUES (%s,%s,%s,'voice',1,%s,%s,'running',now())""",[uuid.uuid4(),self.pid,scene['id'],uuid.uuid4().hex*2,Jsonb({'scene':scene['scene']})])
+            conn.execute("""INSERT INTO jobs(id,project_id,scene_id,kind,base_revision,input_hash,input,state,started_at,ended_at)
+                VALUES (%s,%s,%s,'voice',1,%s,%s,'succeeded',now(),now())""",[uuid.uuid4(),self.pid,scene['id'],uuid.uuid4().hex*2,Jsonb({'scene':scene['scene']})])
+            queued=uuid.uuid4()
+            conn.execute("""INSERT INTO breakdowns(id,owner_id,state,source) VALUES (%s,%s,'queued',%s)""",[queued,me,Jsonb({'kind':'text','title':'对标','platform':'粘贴'})])
+        def forget():
+            with self.store.connection() as conn:conn.execute('DELETE FROM breakdowns WHERE id=%s',[queued])
+        self.addCleanup(forget)  # other tests run the breakdown queue
+        listed=self.client.get('/api/tasks').json()
+        self.assertEqual(listed['active'],2)
+        labels={(t['label'],t['state']) for t in listed['tasks']}
+        self.assertIn(('配音 · 第 1 章','running'),labels);self.assertIn(('配音 · 第 1 章','succeeded'),labels);self.assertIn(('拆解对标','queued'),labels)
+        self.assertEqual(next(t for t in listed['tasks'] if t['kind']=='breakdown')['href'],'/studio?tab=breakdowns')
+        # Content calls are counted per account; the server model is priced only with configured prices.
+        reply=lambda i,c,o:SimpleNamespace(json=lambda:{'usage':{'prompt_tokens':i,'prompt_cache_hit_tokens':c,'completion_tokens':o}})
+        server=LLM('https://api.deepseek.com','sk','deepseek-flash','env',None);own=LLM('https://x.example','sk','m','account','v')
+        usage_log.record(server,'studio_topics',reply(1000,200,500),me)
+        usage_log.record(server,'studio_topics',reply(3000,0,1500),me)
+        token=usage_log.request_scope.set({'user_id':me})
+        try:usage_log.record(own,'manuscript',reply(10,0,10))   # no user_id: taken from the request scope
+        finally:usage_log.request_scope.reset(token)
+        used=self.client.get('/api/usage').json()
+        self.assertEqual(used['today']['content']['server'],{'input':4000,'cached_input':200,'output':2000,'calls':2,'cny':None})
+        self.assertEqual(used['today']['content']['own_model']['calls'],1)
+        self.assertGreater(used['today']['voice']['characters'],0);self.assertIsNone(used['today']['total_cny'])
+        estimate=self.client.get('/api/usage/estimate?kinds=studio_topics,studio_frames').json()
+        self.assertEqual((estimate['samples'],estimate['tokens'],estimate['cny']),(2,3000,None))
+        with patch.dict(os.environ,{name:'1' for name in PRICE_KEYS.values()}):
+            self.assertEqual(self.client.get('/api/usage/estimate?kinds=studio_topics').json()['cny'],0.003)
+            self.assertIsNotNone(self.client.get('/api/usage').json()['month']['total_cny'])
+        self.assertEqual(self.client.get('/api/usage/estimate?kinds=').status_code,422)

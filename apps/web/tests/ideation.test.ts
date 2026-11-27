@@ -65,3 +65,14 @@ test('the ideation state survives the local draft, and malformed state is refuse
  assert.deepEqual(readDraft(raw,scope)!.data.ideation,s);
  assert.equal(readDraft(raw.replace('"scope":"single"','"scope":"series"'),scope),null);
 });
+
+test('each chapter shows its formula step; drift from the formula is pointed out',async()=>{
+ const {formulaFit}=await import('../lib/ideation');
+ const sec=(seconds:number)=>({title:'章',points:['点'],picture:'图',seconds});
+ const f={name:'三段式',steps:[{role:'钩子',seconds:5},{role:'机制',seconds:40},{role:'总结',seconds:10}]};
+ assert.deepEqual(formulaFit({sections:[sec(5),sec(40),sec(10)]},f),{steps:['钩子','机制','总结'],warnings:[]});
+ const four=formulaFit({sections:[sec(5),sec(20),sec(20),sec(10)]},f);
+ assert.deepEqual(four.steps,['钩子','机制','机制','总结']);assert.match(four.warnings[0],/3 步，大纲是 4 章/);
+ assert.ok(formulaFit({sections:[sec(50),sec(60),sec(60)]},f).warnings.some(w=>/节奏可能和公式不同/.test(w)));
+ assert.ok(formulaFit({sections:[sec(45),sec(10)]},f).warnings.some(w=>/没有对应的章节/.test(w)));
+});

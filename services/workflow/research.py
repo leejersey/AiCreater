@@ -16,6 +16,7 @@ import httpx
 from services.workflow.content_skills import skill
 from services.accounts.model_settings import DEEPSEEK_BASE_URL
 from services.workflow.destination import pinned_get, pinned_post
+from services.workflow import usage_log
 from services.workflow.providers import ProviderError, _status
 
 log = logging.getLogger(__name__)
@@ -382,6 +383,7 @@ def analyze_viral_brief(llm, client: httpx.Client, *, topic: str, sources: list[
             _status(response, 'research')
             if len(response.content) > 1024 * 1024:
                 raise ProviderError('research', 'response_limit', 'Response exceeds 1 MiB')
+            usage_log.record(llm, 'research', response)
             choice = response.json()['choices'][0]
             if choice.get('finish_reason') == 'content_filter':
                 raise ProviderError('research', 'response_filtered', 'Analysis was filtered')
@@ -476,6 +478,7 @@ def generate_platform_pitches(llm, client: httpx.Client, *, topic: str, brief: d
             _status(response, 'research')
             if len(response.content) > 1024 * 1024:
                 raise ProviderError('research', 'response_limit', 'Response exceeds 1 MiB')
+            usage_log.record(llm, 'research', response)
             choice = response.json()['choices'][0]
             if choice.get('finish_reason') == 'content_filter':
                 raise ProviderError('research', 'response_filtered', 'Pitch generation was filtered')

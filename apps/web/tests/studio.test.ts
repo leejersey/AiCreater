@@ -65,3 +65,19 @@ test('a confirmed formula survives the local draft and reaches the course origin
  assert.equal(toOrigin('RAG','',s,formula)!.formula,formula);
  assert.equal('formula' in toOrigin('RAG','',s)!,false);
 });
+
+test('topic cards filter by platform, window, starred and lowest total',async()=>{
+ const {filterCards,NO_FILTER}=await import('../lib/studio');
+ const s=(n:number)=>({heat:{score:n,reason:''},fit:{score:n,reason:''},visual:{score:n,reason:''},timeliness:{score:n,reason:''}});
+ const c=(title:string,platforms:string[],window:string,score:number,starred=false)=>({title,judgement:'',audience:'',platforms,window,hook:'',pain_point:'',angle:'',evidence:[],gaps:'',risks:'',scores:s(score),starred});
+ const ranked=[c('a',['bilibili'],'本周内',5,true),c('b',['douyin'],'长期有效',3),c('c',['bilibili','douyin'],'长期有效',2)].map((card,index)=>({card,index}));
+ const titles=(f:Partial<typeof NO_FILTER>)=>filterCards(ranked,{...NO_FILTER,...f}).map(x=>x.card.title).join('');
+ assert.equal(titles({}),'abc');assert.equal(titles({platform:'douyin'}),'bc');assert.equal(titles({window:'长期有效'}),'bc');
+ assert.equal(titles({starred:true}),'a');assert.equal(titles({minScore:12}),'ab');
+});
+
+test('the sample course is a valid storyboard',async()=>{
+ const {SAMPLE_SOURCE}=await import('../lib/sample');
+ const {parseMarkdownSections}=await import('../lib/manuscript-tools');
+ assert.equal(parseMarkdownSections(SAMPLE_SOURCE)?.length,3);
+});

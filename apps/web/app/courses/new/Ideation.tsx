@@ -3,7 +3,7 @@
 // docs/superpowers/specs/2026-11-09-topic-ideation-design.md). Every model call is a short paid call.
 import {useEffect,useState} from 'react';
 import {request} from '../../../lib/editor';
-import {addBatch,addExtra,addSection,angleTags,choose,moveSection,outlineProblems,outlineWarnings,removeSection,
+import {addBatch,addExtra,addSection,angleTags,choose,formulaFit,moveSection,outlineProblems,outlineWarnings,removeSection,
   sameAngle,setOutline,shownTitles,lastStructures,totalSeconds,undo,updateSection,type Angle,type IdeationDraft,type Outline} from '../../../lib/ideation';
 import type {Formula} from '../../../lib/studio';
 import type {ResearchBrief} from '../../../lib/research';
@@ -93,6 +93,7 @@ export function Ideation({state,context,title,disabled,generating,onChange,onTit
 
   const outline=state.outline;
   const problems=outline?outlineProblems(outline):[],warnings=outline?outlineWarnings(outline,context.duration_hint):[];
+  const fit=outline&&context.formula?formulaFit(outline,context.formula):null;
   const cards=<>
     <div className="idea-toolbar">
       <b>{latest.length} 个方向</b>
@@ -129,6 +130,7 @@ export function Ideation({state,context,title,disabled,generating,onChange,onTit
           {outline.sections.map((s,i)=><div key={i} className="idea-section">
             <div className="idea-section-head">
               <span className="idea-index">{i+1}</span>
+              {fit&&<span className="review-kind idea-step" title={`对应公式「${context.formula!.name}」的这一步`}>{fit.steps[i]}</span>}
               <input value={s.title} maxLength={24} disabled={locked} aria-label={`第 ${i+1} 章标题`} onChange={e=>onChange(setOutline(state,updateSection(outline,i,{title:e.target.value}),false))}/>
               <input type="number" min={10} max={110} value={s.seconds} disabled={locked} aria-label={`第 ${i+1} 章秒数`} className="idea-seconds"
                 onChange={e=>onChange(setOutline(state,updateSection(outline,i,{seconds:Math.round(Number(e.target.value))}),false))}/>
@@ -147,6 +149,7 @@ export function Ideation({state,context,title,disabled,generating,onChange,onTit
             <span className="hint">合计约 {totalSeconds(outline)} 秒 · {outline.sections.length} 章</span>
           </div>
           {warnings.map(w=><p key={w} className="hint idea-warning">{w}</p>)}
+          {fit?.warnings.map(w=><p key={w} className="hint idea-warning">{w}</p>)}
           <div className="idea-custom">
             <input maxLength={300} value={feedback} disabled={locked} onChange={e=>setFeedback(e.target.value)} placeholder="追问 / 调整，例如：第 3 章换成客服场景的例子"/>
             <button type="button" disabled={locked||!feedback.trim()} onClick={()=>void refine()}>{busy==='refine'?<Spinner size={12} className="icon-spin"/>:<Sparkles size={12}/>} 按意见调整</button>

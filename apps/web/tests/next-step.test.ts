@@ -106,3 +106,21 @@ test('a picture that follows the voice-over says so after re-voicing, and offers
  const [same]=parseVisualJobs({jobs:[{id:'a2',project_id:'p',scene_id:'s1',kind:'agent',current:true,input_summary:{model:'m',max_turns:25,theme_id:'blueprint',retimable:true,timing_current:true},...passed}]},'p');
  assert.equal(renderToStaticMarkup(createElement(ThemeNotice,{projectId:'p',job:same,themes,courseTheme:'blueprint',now:0,updatedAt:0,disabled:false,onRestyle(){},onRefresh(){},onCancel(){}} as never)),'');
 });
+
+test('the course steps: the first unfinished one is current, a failing review blocks',async()=>{
+ const {courseSteps}=await import('../lib/visual-workbench');
+ const states=(x:Parameters<typeof courseSteps>[0])=>courseSteps(x).map(s=>`${s.key}:${s.state}`).join(' ');
+ assert.equal(states({chapters:0,voiced:0,confirmed:0,exported:false}),'script:current voice:todo picture:todo export:todo');
+ assert.equal(states({chapters:3,voiced:1,confirmed:0,exported:false,review:'pass'}),'script:done review:done voice:current picture:todo export:todo');
+ assert.equal(states({chapters:3,voiced:0,confirmed:0,exported:false,review:'block'}),'script:done review:blocked voice:todo picture:todo export:todo');
+ assert.equal(states({chapters:3,voiced:3,confirmed:3,exported:true,review:'off'}),'script:done review:done voice:done picture:done export:done');
+});
+
+test('the course pipeline estimates what is left from the chapters it finished',async()=>{
+ const {pilotEta}=await import('../lib/visual-workbench');
+ const start=new Date(0).toISOString();
+ assert.equal(pilotEta(start,6,6,600_000),'');                 // nothing finished yet
+ assert.equal(pilotEta(start,6,4,600_000),'约 20 分钟');        // 2 chapters in 10 minutes: 5 each, 4 left
+ assert.equal(pilotEta(start,6,1,300_000),'约 1 分钟');
+ assert.equal(pilotEta(start,6,0,600_000),'');
+});

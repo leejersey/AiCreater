@@ -4,6 +4,7 @@ import { AccountGate, AccountNav, useAccount } from '../AccountSession';
 import { request } from '../../lib/editor';
 import { parseAccount } from '../../lib/accounts';
 import { ModelSettings } from './ModelSettings';
+import { UsageCard } from './UsageCard';
 import {
   User,
   Shield,
@@ -215,7 +216,7 @@ function PasswordSettings() {
 
 function AccountPanel() {
   const { user } = useAccount();
-  const [activeTab, setActiveTab] = useState<'all' | 'model' | 'security'>('all');
+  const [activeTab, setActiveTab] = useState<'all' | 'usage' | 'model' | 'security'>('all');
 
   const usernameInitial = user?.username ? user.username.charAt(0).toUpperCase() : 'U';
 
@@ -262,6 +263,15 @@ function AccountPanel() {
               <button
                 type="button"
                 role="tab"
+                aria-selected={activeTab === 'usage'}
+                className={`tab-pill-btn ${activeTab === 'usage' ? 'active' : ''}`}
+                onClick={() => setActiveTab('usage')}
+              >
+                用量
+              </button>
+              <button
+                type="button"
+                role="tab"
                 aria-selected={activeTab === 'model'}
                 className={`tab-pill-btn ${activeTab === 'model' ? 'active' : ''}`}
                 onClick={() => setActiveTab('model')}
@@ -282,6 +292,7 @@ function AccountPanel() {
 
           {/* 设置分区卡片列表 */}
           <div className="account-cards-container">
+            {(activeTab === 'all' || activeTab === 'usage') && <UsageCard />}
             {(activeTab === 'all' || activeTab === 'model') && <ModelSettings />}
             {(activeTab === 'all' || activeTab === 'security') && <PasswordSettings />}
           </div>
