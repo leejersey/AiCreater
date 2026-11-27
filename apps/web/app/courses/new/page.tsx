@@ -12,8 +12,8 @@ import {useAccount} from '../../AccountSession';
 import {Modal} from '../../Modal';
 import {ReviewReport} from '../../ReviewPanel';
 import type {ReviewResult} from '../../../lib/review';
-import {HANDOFF_KEY,isFormula} from '../../../lib/studio';
-import {isResearchBrief} from '../../../lib/research';
+import {HANDOFF_KEY,isFormula,type Formula} from '../../../lib/studio';
+import {isResearchBrief,type ResearchBrief} from '../../../lib/research';
 import {outlinePlaceholder, isTeachingStyle, type TeachingStyle} from '../../../lib/teaching-style';
 import {parseThemes,suggestTheme,type ThemeSummary} from '../../../lib/themes';
 import {ThemePicker} from '../../ThemePicker';
@@ -21,7 +21,7 @@ import {Ideation} from './Ideation';
 import {StoryboardEditor} from './StoryboardEditor';
 import {ArticleConvertModal,CritiqueModal,PersonaModal,PublishKitModal} from './CreatorToolsModals';
 import {emptyIdeation,toOrigin,toPlan} from '../../../lib/ideation';
-import {replaceFirstOpening,viralStyleLabel,type ManuscriptHook} from '../../../lib/research';
+import {replaceFirstOpening,type ManuscriptHook} from '../../../lib/research';
 import {auditManuscript,loadActivePersonaId,loadPersonas,parseMarkdownSections,saveActivePersonaId,savePersonas,type PersonaProfile} from '../../../lib/manuscript-tools';
 
 const initial = {title:'',source:'',topic:'',notes:'',audience:'',duration_hint:'',outline:'',teaching_style:'popular' as TeachingStyle,manuscript_format:'markdown' as 'markdown'|'plain'};
@@ -81,16 +81,28 @@ export default function NewCourse(){
     setPersonas(loadPersonas(userId));
     setActivePersonaId(loadActivePersonaId(userId));
   },[userId]);
-  // A topic card taken from 选题台: its title, notes and evidence (as a research brief) start this draft.
+  // What 选题台 hands over (a topic card, a research brief, a confirmed formula). Into an empty draft it goes straight in; over a
+  // draft with content the person chooses, so one topic's storyboard never ends up under another topic's evidence.
+  const [incoming,setIncoming]=useState<Handoff|null>(null),[waiting,setWaiting]=useState<Handoff|null>(null);
   useEffect(()=>{
-    if(draft.blocked)return;
     const raw=sessionStorage.getItem(HANDOFF_KEY);if(!raw)return;
-    sessionStorage.removeItem(HANDOFF_KEY);
-    try{const v=JSON.parse(raw) as {topic?:string;title?:string;notes?:string;research?:unknown;duration_hint?:string;teaching_style?:string;formula?:unknown};
-      const keep=(k:'topic'|'title'|'notes'|'duration_hint')=>typeof v[k]==='string'&&v[k]?{[k]:String(v[k]).slice(0,k==='notes'?300:80)}:{};
-      draft.change({...keep('topic'),...keep('title'),...keep('notes'),...keep('duration_hint'),...(isTeachingStyle(v.teaching_style)?{teaching_style:v.teaching_style}:{}),...(isResearchBrief(v.research)?{research:v.research}:{}),...(isFormula(v.formula)?{formula:v.formula}:{})});
-      toast('已带入选题与证据，可以发散方向或直接写稿',{variant:'success'});}catch{/* a broken handoff is ignored */}
+    let fields:Handoff;
+    try{fields=readHandoff(JSON.parse(raw));}catch{sessionStorage.removeItem(HANDOFF_KEY);return;/* a broken handoff is ignored */}
+    // A saved local draft locks the form until it is restored or discarded; the handoff waits for that.
+    if(draft.blocked){setWaiting(fields);return;}
+    sessionStorage.removeItem(HANDOFF_KEY);setWaiting(null);
+    if(!Object.keys(fields).length)return;
+    const v=draft.value;
+    if(v.source.trim()||v.title.trim()||v.topic?.trim()||v.notes?.trim()||v.ideation?.batches.length||v.research||v.formula)setIncoming(fields);
+    else takeHandoff(fields,'replace');
   },[draft.blocked]);
+  function takeHandoff(fields:Handoff,mode:'replace'|'merge'){
+    setIncoming(null);
+    if(mode==='merge'){draft.change({...(fields.research?{research:fields.research}:{}),...(fields.formula?{formula:fields.formula}:{})});toast('已把证据和公式补充到当前草稿',{variant:'success'});return;}
+    // A new draft: the topic-specific fields are cleared; audience, length, style, format and theme stay.
+    draft.change({topic:'',title:'',notes:'',source:'',outline:'',ideation:emptyIdeation(),research:null,formula:null,...fields});
+    toast(fields.formula&&!fields.topic?'已套用爆款公式，填写选题后发散方向或直接写稿':'已带入选题与证据，可以发散方向或直接写稿',{variant:'success'});
+  }
   const activePersona=personas.find(p=>p.id===activePersonaId)??null;
   const personaPayload=activePersona?{name:activePersona.name,audience_call:activePersona.audience_call,tone:activePersona.tone,catchphrases:activePersona.catchphrases,banned_words:activePersona.banned_words,ending_cta:activePersona.ending_cta,sample:activePersona.sample}:undefined;
   const blocked=busy||generating||draft.blocked;
@@ -235,6 +247,7 @@ export default function NewCourse(){
     {error && <p role="alert" className="error" style={{margin:'0 0 16px'}}><AlertCircle size={14}/> {error}</p>}
     <DraftNotice {...draft.notice} disabled={busy||generating}/>
     {draft.blocked && draft.notice.pending != null && <p className="hint" role="status">表单已暂时锁定。请先上方「恢复到表单」或「丢弃本机草稿」，再输入。</p>}
+    {draft.blocked && waiting && <p className="hint review-stale" role="status">选题台带来的{waiting.topic?`「${waiting.topic}」`:waiting.formula?`公式「${waiting.formula.name}」`:'资料'}会在你恢复或丢弃本机草稿后带入（恢复后可以选择换成新草稿或只补充证据）。</p>}
 
     <form id="new-course-form" onSubmit={async e=>{e.preventDefault();if(blocked)return;setBusy(true);setError('');
       try{const style=isTeachingStyle(draft.value.teaching_style)?draft.value.teaching_style:'popular';
@@ -278,7 +291,7 @@ export default function NewCourse(){
 
             {draft.value.research
               ?<div className="more-settings-trigger research-trigger active">
-                <span>已注入爆款参考 · {viralStyleLabel(draft.value.research.viral_style)}（{draft.value.research.facts.length} 事实 / {draft.value.research.hooks.length} 钩子）</span>
+                <span>已带入资料 · {draft.value.research.facts.length} 条事实{draft.value.research.hooks.length?` / ${draft.value.research.hooks.length} 个开场参考`:''}（文稿按它写，审核按它溯源）</span>
                 <button type="button" className="link-button" disabled={blocked} onClick={()=>draft.change({research:null})}>清除</button>
               </div>
               :<a className="more-settings-trigger research-trigger" href="/studio"><span>找选题、拆解爆款、检索热点 → 去选题台</span><ChevronRight size={15}/></a>}
@@ -352,10 +365,10 @@ export default function NewCourse(){
               <button type="button" className="research-mini-btn" disabled={blocked||polishing||hooksLoading} onClick={()=>void onPolishDeAi()}>
                 {polishing?<><Spinner size={12} className="icon-spin"/> 去 AI 味润色中…</>:'✨ 一键去 AI 味'}
               </button>
-              <button type="button" className="research-mini-btn" disabled={blocked||contentReviewing||!draft.value.source.trim()} onClick={()=>void onContentReview()}>
+              <button type="button" className="research-mini-btn" title="事实溯源（对照带入的证据）+ 广告法、敏感说法、AI 套话；和配音前的审核门槛是同一套规则" disabled={blocked||contentReviewing||!draft.value.source.trim()} onClick={()=>void onContentReview()}>
                 {contentReviewing?'审核中…':'🔎 内容审核（免费）'}
               </button>
-              <button type="button" className={`research-mini-btn${auditWarnCount>0?' audit-btn-warn':''}`} disabled={blocked} onClick={()=>setCritiqueOpen(true)}>
+              <button type="button" className={`research-mini-btn${auditWarnCount>0?' audit-btn-warn':''}`} title="结构、节奏与口语化打分（本机计算），可让 AI 按建议改写" disabled={blocked} onClick={()=>setCritiqueOpen(true)}>
                 🩺 文稿体检 ({audit.score}分{auditWarnCount>0?` · ${auditWarnCount}预警`:''})
               </button>
               <button type="button" className="research-mini-btn" disabled={blocked} onClick={()=>setPublishOpen(true)}>
@@ -455,6 +468,19 @@ export default function NewCourse(){
         </div>}
     </Modal>
 
+    <Modal open={!!incoming} onClose={()=>setIncoming(null)} title="从选题台带入" maxWidth="560px"
+      footer={<>
+        <button type="button" className="btn-modal-cancel" onClick={()=>setIncoming(null)}>取消</button>
+        {incoming&&(incoming.research||incoming.formula)&&<button type="button" className="btn-modal-cancel" onClick={()=>takeHandoff(incoming,'merge')}>保留当前草稿，只补充{incoming.research&&incoming.formula?'证据和公式':incoming.research?'证据':'公式'}</button>}
+        <button type="button" className="btn-modal-confirm primary" onClick={()=>incoming&&takeHandoff(incoming,'replace')}>换成新草稿</button>
+      </>}>
+      <p style={{marginTop:0}}>新建页里已经有一份草稿{draft.value.topic?.trim()?`（选题「${draft.value.topic.trim()}」）`:''}。</p>
+      <ul className="hint" style={{margin:0,paddingLeft:'18px'}}>
+        <li>换成新草稿：清空当前的选题、补充想法、构思和文稿，从带入的{incoming?.topic?`「${incoming.topic}」`:'内容'}开始；受众、时长、风格和画面主题保留。</li>
+        {incoming&&(incoming.research||incoming.formula)&&<li>只补充：当前选题和文稿不变，{incoming.research?`换上带入的证据（${incoming.research.facts.length} 条事实）`:''}{incoming.research&&incoming.formula?'，并':''}{incoming.formula?`套用公式「${incoming.formula.name}」`:''}。</li>}
+      </ul>
+    </Modal>
+
     <PersonaModal
       open={personaOpen}
       personas={personas}
@@ -466,7 +492,7 @@ export default function NewCourse(){
 
     <Modal open={!!contentReview} onClose={()=>setContentReview(null)} title="内容审核（预审）" maxWidth="760px"
       footer={<button type="button" className="btn-modal-confirm primary" onClick={()=>setContentReview(null)}>关闭</button>}>
-      <p className="hint" style={{marginTop:0}}>{draft.value.research?'按已注入的爆款参考（证据包）溯源口播里的断言。创建课程后会保存证据包，配音前需要通过审核。':'当前没有注入爆款参考，带数字或「研究显示」的断言都无法溯源。'}</p>
+      <p className="hint" style={{marginTop:0}}>{draft.value.research?'按带入的资料（证据包）溯源口播里的断言。创建课程后会保存证据包，配音前需要通过审核。':'当前没有带入资料，带数字或「研究显示」的断言都无法溯源。'}</p>
       {contentReview&&<ReviewReport result={contentReview} evidence={contentReview.evidence??[]}/>}
     </Modal>
 
@@ -512,4 +538,13 @@ export default function NewCourse(){
 function settingsSummary(v:{audience?:string;duration_hint?:string},theme?:string){
   const parts=[v.audience?.trim()&&`受众 ${v.audience.trim()}`,v.duration_hint?.trim(),theme].filter(Boolean);
   return parts.length?`：${parts.join(' · ')}`:'';
+}
+
+type Handoff={topic?:string;title?:string;notes?:string;duration_hint?:string;teaching_style?:TeachingStyle;research?:ResearchBrief;formula?:Formula};
+/** The handoff with every field checked (what reaches the draft is what the page itself would accept). */
+function readHandoff(value:unknown):Handoff{
+  const v=(value&&typeof value==='object'?value:{}) as Record<string,unknown>;
+  const text=(k:'topic'|'title'|'notes'|'duration_hint',max:number)=>typeof v[k]==='string'&&(v[k] as string).trim()?{[k]:(v[k] as string).slice(0,max)}:{};
+  return {...text('topic',80),...text('title',80),...text('notes',300),...text('duration_hint',40),
+    ...(isTeachingStyle(v.teaching_style)?{teaching_style:v.teaching_style}:{}),...(isResearchBrief(v.research)?{research:v.research}:{}),...(isFormula(v.formula)?{formula:v.formula}:{})};
 }

@@ -192,7 +192,7 @@ class VisualApiTests(unittest.TestCase):
             with patch.object(bd,'call_json',side_effect=ProviderError('studio_breakdown','invalid_response','模型返回的结果不符合要求')):
                 feeds.process_next(lambda owner:None)
             failed=self.client.get('/api/studio/breakdowns/'+link['id']).json()
-            self.assertEqual(failed['state'],'failed');self.assertIn('不符合要求',failed['error'])
+            self.assertEqual(failed['state'],'failed');self.assertIn('拆解结果不合格',failed['error']);self.assertNotIn('invalid_response',failed['error'])
             # A real (tiny) video: streamed upload, probed, keyframes taken here; transcription and the models are stubbed.
             video=work/'clip.mp4'
             subprocess.run(['ffmpeg','-v','error','-y','-f','lavfi','-i','testsrc=size=320x240:rate=10:duration=6','-f','lavfi','-i','sine=frequency=440:duration=6',
@@ -238,6 +238,20 @@ class VisualApiTests(unittest.TestCase):
             self.assertEqual(feeds.cleanup(),1);self.assertEqual(list((work/'uploads').iterdir()),[])
             after=self.client.get('/api/studio/breakdowns/'+up['id']).json()
             self.assertEqual((after['video_kept_until'],after['state']),(None,'succeeded'))
+            # A failed breakdown can be queued again; an upload whose video is gone cannot; finished ones are deleted with their files.
+            self.assertEqual(self.client.post('/api/studio/breakdowns/'+made.json()['id']+'/retry',json={}).json()['code'],'not_ready')
+            again=self.client.post('/api/studio/breakdowns/'+link['id']+'/retry',json={}).json()
+            self.assertEqual((again['state'],again['error']),('queued',None))
+            with self.store.connection() as conn:conn.execute("UPDATE breakdowns SET state='failed' WHERE id=%s",[up['id']])
+            self.assertIn('重新上传',self.client.post('/api/studio/breakdowns/'+up['id']+'/retry',json={}).json()['message'])
+            frames=work/'breakdowns'/up['id'];self.assertTrue(frames.is_dir())
+            self.assertEqual(self.client.post('/api/studio/breakdowns/'+up['id']+'/delete',json={}).json(),{'deleted':up['id']})
+            self.assertFalse(frames.exists());self.assertEqual(self.client.get('/api/studio/breakdowns/'+up['id']).status_code,404)
+            with self.store.connection() as conn:conn.execute("UPDATE breakdowns SET state='running',started_at=now() WHERE id=%s",[link['id']])
+            self.assertEqual(self.client.post('/api/studio/breakdowns/'+link['id']+'/delete',json={}).json()['code'],'not_ready')
+            self.assertEqual(self.client.post('/api/studio/formulas/'+f['id']+'/delete',json={}).json(),{'deleted':f['id']})
+            self.assertEqual(self.client.get('/api/studio/breakdowns').json()['formulas'],[])
+            self.assertEqual(self.client.post('/api/studio/formulas/'+f['id']+'/delete',json={}).status_code,404)
 
     def test_daily_topics_from_profile_to_feed_star_cap_and_the_daily_run(self):
         from datetime import date, datetime
@@ -258,6 +272,7 @@ class VisualApiTests(unittest.TestCase):
             self.assertEqual(made.call_args.args[2:4],(['RAG','Agent'],evidence));self.assertEqual(made.call_args.args[4],{'name':'老李'})
             got=self.client.get('/api/studio/topics').json()
             self.assertEqual((got['feed']['id'],got['days'],got['manual_left']),(feed['id'],[date.today().isoformat()],9))
+            self.assertEqual(got['today'],date.today().isoformat())
             starred=self.client.post('/api/studio/topics/'+feed['id']+'/star',json={'index':0,'starred':True}).json()
             self.assertTrue(starred['cards'][0]['starred']);self.assertTrue(self.client.get('/api/studio/topics').json()['feed']['cards'][0]['starred'])
             self.assertEqual(self.client.post('/api/studio/topics/'+str(uuid.uuid4())+'/star',json={'index':0,'starred':True}).status_code,404)

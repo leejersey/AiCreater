@@ -3,7 +3,7 @@ import Link from 'next/link';
 import {useAccount} from './AccountSession';
 import {
   Sparkles, Plus, BookOpen, User, AlertCircle, RefreshCw,
-  Code, Workflow, Mic, Film, ArrowLeft, ChevronRight
+  Code, Workflow, Mic, Film, ArrowLeft, ChevronRight, Zap
 } from './Icons';
 
 export default function Home(){
@@ -21,6 +21,9 @@ export default function Home(){
         </div>
         <nav className="home-nav-links">
           {user ? <>
+            <Link href="/studio" className="home-nav-link" style={{display:'inline-flex',alignItems:'center',gap:'6px'}}>
+              <Zap size={14} /> 选题台
+            </Link>
             <Link href="/courses" className="home-nav-link" style={{display:'inline-flex',alignItems:'center',gap:'6px'}}>
               <BookOpen size={14} /> 我的视频
             </Link>
@@ -56,6 +59,9 @@ export default function Home(){
           <Link className="home-primary-btn" href="/courses/new">
             <Plus size={18} /> 开始创作新视频
           </Link>
+          <Link className="home-secondary-btn" href="/studio">
+            <Zap size={16} /> 去选题台找选题
+          </Link>
           <Link className="home-secondary-btn" href="/courses">
             <BookOpen size={16} /> 进入我的作品库
           </Link>
@@ -67,8 +73,8 @@ export default function Home(){
               <span className="bento-index">01</span>
               <div className="bento-icon-wrapper"><Sparkles size={16} /></div>
             </div>
-            <h3>热点拆解与爆款分镜</h3>
-            <p>多平台热点检索、长文一键转脚本、分镜卡片与开场钩子 3 选 1，告别干瘪 AI 腔。</p>
+            <h3>选题台与爆款拆解</h3>
+            <p>每日选题卡带证据与评分，上传对标视频拆出钩子与节奏、提炼爆款公式，文案逐条溯源再配音。</p>
           </div>
 
           <div className="bento-card">

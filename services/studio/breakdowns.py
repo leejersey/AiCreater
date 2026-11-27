@@ -120,6 +120,17 @@ def material(source, transcript, frames):
     return '\n'.join(lines)
 
 
+def provider_failure(problem):
+    """What a person reads when the model step of a breakdown fails (not the provider's raw error)."""
+    if problem.code in ('missing_setting', 'invalid_auth', 'invalid_setting') or str(problem).endswith(('HTTP 401', 'HTTP 403')):
+        return '模型配置不可用（密钥缺失或被拒绝），请到个人中心检查模型配置后重试'
+    if problem.code == 'invalid_response':
+        return '模型返回的拆解结果不合格（已自动重试一次），可以点「重试」再试一次'
+    if problem.code in ('input_limit', 'output_limit'):
+        return '内容太长，模型处理不了；可以截取一段再拆解'
+    return '模型服务暂时不可用，请稍后点「重试」'
+
+
 class Breakdowns:
     def __init__(self, store):
         self.store = store
@@ -203,7 +214,9 @@ class Breakdowns:
             with httpx.Client(timeout=180, trust_env=False) as client:
                 result = self._process(row, resolve(owner), client, owner)
             fields = {'state': 'succeeded', 'error': None, **result}
-        except (media.MediaError, ProviderError, ValueError) as problem:
+        except ProviderError as problem:
+            fields = {'state': 'failed', 'error': provider_failure(problem)}
+        except (media.MediaError, ValueError) as problem:
             fields = {'state': 'failed', 'error': str(problem)[:300]}
         except Exception as problem:  # anything unexpected fails this breakdown, never the runner
             fields = {'state': 'failed', 'error': f'处理失败（{type(problem).__name__}）'}
@@ -233,6 +246,29 @@ class Breakdowns:
         stamps.append(skill('video-breakdown').stamp())
         return {'transcript': transcript, 'frames': frames, 'card': card, 'skill': stamps, 'source': source}
 
+    # Managing ------------------------------------------------------------------------------------------------------
+    def retry(self, owner_id, breakdown_id):
+        """Queue a failed breakdown again (a paid model call, confirmed by the person)."""
+        with self.store.connection() as conn:
+            row = self._own(conn, owner_id, breakdown_id, lock=True)
+            if row['state'] != 'failed': raise StoreError('not_ready', '只有失败的拆解可以重试')
+            if row['source']['kind'] == 'upload' and not (row['video_path'] and Path(row['video_path']).is_file()):
+                raise StoreError('not_ready', '原视频已过保留期或被清理，请重新上传')
+            row = conn.execute("UPDATE breakdowns SET state='queued', error=NULL, started_at=NULL, finished_at=NULL WHERE id=%s RETURNING *",
+                               [row['id']]).fetchone()
+        return self._public(row, full=False)
+
+    def delete(self, owner_id, breakdown_id):
+        """Delete a breakdown that is not running, with its uploaded video and keyframes."""
+        import shutil
+        with self.store.connection() as conn:
+            row = self._own(conn, owner_id, breakdown_id, lock=True)
+            if row['state'] == 'running': raise StoreError('not_ready', '正在拆解，完成后再删除')
+            conn.execute('DELETE FROM breakdowns WHERE id=%s', [row['id']])
+        if row['video_path']: Path(row['video_path']).unlink(missing_ok=True)
+        shutil.rmtree(WORK / 'breakdowns' / str(row['id']), ignore_errors=True)
+        return {'deleted': str(row['id'])}
+
     def cleanup(self):
         """Delete uploaded videos past their keep date (the transcript, keyframes and card stay)."""
         with self.store.connection() as conn:
@@ -261,6 +297,13 @@ class Breakdowns:
             row = conn.execute('''INSERT INTO viral_formulas(id, owner_id, breakdown_ids, formula, skill) VALUES (%s,%s,%s,%s,%s) RETURNING *''',
                                [uuid.uuid4(), owner_id, Jsonb([str(r['id']) for r in rows]), Jsonb(formula), Jsonb(skill('viral-formula').stamp())]).fetchone()
         return self._formula(row)
+
+    def delete_formula(self, owner_id, formula_id):
+        with self.store.connection() as conn:
+            row = conn.execute('SELECT * FROM viral_formulas WHERE id=%s FOR UPDATE', [formula_id]).fetchone()
+            if not row or (row['owner_id'] and str(row['owner_id']) != str(owner_id)) or (not row['owner_id'] and owner_id): raise StoreError('not_found', '公式不存在')
+            conn.execute('DELETE FROM viral_formulas WHERE id=%s', [formula_id])
+        return {'deleted': str(formula_id)}
 
     def confirm_formula(self, owner_id, formula_id, formula):
         try: formula = check_formula(formula)

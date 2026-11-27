@@ -8,6 +8,13 @@ const agent=(extra:Record<string,unknown>)=>parseVisualJobs({jobs:[{id:'a1',proj
 const passed={state:'succeeded',result:{status:'passed',turns:5,requests_dispatched:5,finish_by:'model',usage:{outputTokens:1},sha256:'a'.repeat(64),video:'video.mp4',srt:'video.srt',frames:['stills/frame-1.png']}};
 const opts={isLast:false,allConfirmed:false,projectBusy:false};
 
+test('a required content review that has not passed comes before voicing',()=>{
+ const blocked=nextStep(scene('needs_voice'),[],[],{...opts,reviewBlock:'先审核'});
+ assert.deepEqual([blocked.key,blocked.hint],['review','先审核']);
+ assert.equal(nextStep(scene('needs_voice'),[],[],{...opts,reviewBlock:null}).key,'voice');
+ assert.equal(nextStep(scene('needs_timing'),[],[],{...opts,reviewBlock:'先审核'}).key,'retime');  // aligning is not gated
+});
+
 test('each chapter state has exactly one next step',()=>{
  assert.equal(nextStep(scene('needs_voice'),[],[],opts).key,'voice');
  assert.equal(nextStep(scene('needs_timing'),[],[],opts).key,'retime');

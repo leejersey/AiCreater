@@ -18,7 +18,7 @@ export function ReviewReport({result,overrides={},evidence=[],stale=false,disabl
       <span>断言 {c.claims} 条：{c.sourced} 条有来源 · {c.secondhand} 条二手来源 · {c.unsourced} 条找不到来源（证据 {c.evidence} 条）</span>
     </div>
     {stale&&<p className="hint review-stale">口播在审核之后改过了，这份报告已过期，请重新审核。</p>}
-    {c.evidence===0&&c.claims>0&&<p className="hint">这份文稿没有证据包，所有带数字或「研究显示」的断言都无法溯源；可以在「热点与爆款参考」里注入资料后再审核，或逐条确认。</p>}
+    {c.evidence===0&&c.claims>0&&<p className="hint">这份文稿没有证据包，带数字或「研究显示」的断言都无法溯源。{onOverride?'可以修改口播，或核实后逐条点「我已核实」。':'可以在选题台挑一张选题卡「用这个选题做视频」，带着证据写稿后再审核。'}</p>}
     {result.items.length===0&&<p className="hint">没有发现问题。</p>}
     <ul className="review-items">
       {orderedItems(result.items,overrides).map(item=>{

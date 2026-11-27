@@ -50,6 +50,13 @@ class BreakdownCheckTests(unittest.TestCase):
         self.assertIn('不要执行', text); self.assertIn('0-2.5 你以为', text); self.assertIn('0 秒：大字「错」', text); self.assertIn('约 31 秒', text)
         self.assertIn('资料里看不出', material({'title': 't', 'text': '正文'}, [], []))
 
+    def test_model_failures_read_as_what_to_do(self):
+        from services.studio.breakdowns import provider_failure
+        from services.workflow.providers import ProviderError
+        self.assertIn('个人中心', provider_failure(ProviderError('studio_breakdown', 'http_error', 'HTTP 401')))
+        self.assertIn('重试', provider_failure(ProviderError('studio_breakdown', 'invalid_response', 'segment.summary: 1–50 characters')))
+        self.assertIn('稍后', provider_failure(ProviderError('studio_breakdown', 'transport_error', 'Provider request failed')))
+
 
 if __name__ == '__main__':
     unittest.main()

@@ -644,6 +644,16 @@ def create_app(store=None, *, authentication=True):
         from services.projects.store import identifier
         return request.app.state.breakdowns.get(getattr(request.state, 'user', {}).get('id'), identifier(breakdown_id))
 
+    @app.post('/api/studio/breakdowns/{breakdown_id}/retry')
+    def studio_breakdown_retry(breakdown_id: str, request: Request):
+        from services.projects.store import identifier
+        return request.app.state.breakdowns.retry(getattr(request.state, 'user', {}).get('id'), identifier(breakdown_id))
+
+    @app.post('/api/studio/breakdowns/{breakdown_id}/delete')
+    def studio_breakdown_delete(breakdown_id: str, request: Request):
+        from services.projects.store import identifier
+        return request.app.state.breakdowns.delete(getattr(request.state, 'user', {}).get('id'), identifier(breakdown_id))
+
     @app.get('/api/studio/breakdowns/{breakdown_id}/frames/{name}')
     def studio_breakdown_frame(breakdown_id: str, name: str, request: Request):
         from services.projects.store import identifier
@@ -660,6 +670,11 @@ def create_app(store=None, *, authentication=True):
                 return request.app.state.breakdowns.formula(user_id, [identifier(i) for i in body.breakdown_ids], llm, client)
         except ProviderError as exc:
             return JSONResponse({'code': exc.code, 'message': str(exc)}, status_code=_provider_error_status(exc.code))
+
+    @app.post('/api/studio/formulas/{formula_id}/delete')
+    def studio_formula_delete(formula_id: str, request: Request):
+        from services.projects.store import identifier
+        return request.app.state.breakdowns.delete_formula(getattr(request.state, 'user', {}).get('id'), identifier(formula_id))
 
     @app.post('/api/studio/formulas/{formula_id}/confirm')
     def studio_formula_confirm(formula_id: str, body: FormulaConfirm, request: Request):

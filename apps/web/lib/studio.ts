@@ -9,7 +9,7 @@ export type ScoreKey = keyof typeof SCORE_LABELS;
 export type TopicCard = {title:string;judgement:string;audience:string;platforms:string[];window:string;hook:string;pain_point:string;angle:string;
   evidence:string[];gaps:string;risks:string;scores:Record<ScoreKey,{score:number;reason:string}>;starred:boolean};
 export type TopicFeed = {id:string;day:string;trigger:'manual'|'daily';keywords:string[];cards:TopicCard[];findings:string[];evidence:Evidence[];created_at:string};
-export type FeedResponse = {feed:TopicFeed|null;days:string[];manual_left:number};
+export type FeedResponse = {feed:TopicFeed|null;days:string[];manual_left:number;today?:string};
 export type CreatorProfile = {keywords:string[];daily_auto:boolean};
 
 /** 「RAG, Agent，向量库 」→ ['RAG','Agent','向量库']: commas (either width), 、 or new lines; duplicates and blanks dropped. */
@@ -40,6 +40,9 @@ export function cardToDraft(card:TopicCard,evidence:Evidence[]){
 }
 
 export const HANDOFF_KEY = 'aicreater:studio:handoff:v1';
+/** Keep what the new-video page should start from; it reads (and asks before replacing a draft) on /courses/new?from=studio. */
+export function storeHandoff(payload:Record<string,unknown>){sessionStorage.setItem(HANDOFF_KEY,JSON.stringify(payload));}
+export const HANDOFF_PATH = '/courses/new?from=studio';
 
 // 拆解库 (services/studio/breakdowns.py) ----------------------------------------------------------------------------
 export type BreakdownSegment = {start:number|null;end:number|null;role:string;summary:string};
@@ -65,11 +68,6 @@ export const BREAKDOWN_STATE = {queued:'排队中',running:'拆解中',succeeded
 export const pending = (list:Breakdown[]) => list.some(b=>b.state==='queued'||b.state==='running');
 export const formulaSeconds = (f:Formula) => f.steps.reduce((n,s)=>n+s.seconds,0);
 
-/** The confirmed formula as the new-video page's notes (≤300): structure and rules, no content of the reference videos. */
-export function formulaToNotes(f:Formula):string {
-  const steps=f.steps.map((s,i)=>`${i+1}.${s.role}${s.seconds}秒：${s.does}（${s.technique}）`).join('；');
-  return cut(`按爆款公式「${f.name}」写：开场句式「${f.hook_pattern}」；${steps}；节奏：${f.rhythm}；结尾：${f.ending}`,300);
-}
 
 /** Where each segment sits on the video's timeline, in percent; segments without times are left out. */
 export function segmentBars(segments:BreakdownSegment[],duration?:number){
@@ -78,10 +76,23 @@ export function segmentBars(segments:BreakdownSegment[],duration?:number){
   return segments.filter(s=>s.start!==null&&s.end!==null&&s.end>s.start).map(s=>({...s,left:(s.start!/end)*100,width:((s.end!-s.start!)/end)*100}));
 }
 
-/** Upload a video as the raw body (the route streams it to disk). */
-export async function uploadVideo(file:File):Promise<Breakdown>{
-  const response=await fetch('/api/studio/breakdowns/upload',{method:'POST',body:file,headers:{'Content-Type':file.type||'application/octet-stream','X-Filename':encodeURIComponent(file.name)}});
-  const value=await response.json();
-  if(!response.ok)throw new Error(value.message||'上传失败',{cause:response.status});
-  return value as Breakdown;
+/** Upload a video as the raw body (the route streams it to disk), reporting progress 0–1 as it goes. */
+export function uploadVideo(file:File,onProgress?:(share:number)=>void):Promise<Breakdown>{
+  return new Promise((resolve,reject)=>{
+    const xhr=new XMLHttpRequest();
+    xhr.open('POST','/api/studio/breakdowns/upload');
+    xhr.setRequestHeader('Content-Type',file.type||'application/octet-stream');
+    xhr.setRequestHeader('X-Filename',encodeURIComponent(file.name));
+    xhr.upload.onprogress=e=>{if(e.lengthComputable)onProgress?.(e.loaded/e.total);};
+    xhr.onload=()=>{let value:{message?:string}={};try{value=JSON.parse(xhr.responseText);}catch{/* not JSON */}
+      if(xhr.status>=200&&xhr.status<300)resolve(value as Breakdown);else reject(new Error(value.message||'上传失败',{cause:xhr.status}));};
+    xhr.onerror=()=>reject(new Error('上传中断，请检查网络后重试'));
+    xhr.send(file);
+  });
 }
+
+/** A failure as a person reads it: breakdowns failed before the friendly messages still carry the provider's code prefix. */
+export const breakdownError = (error:string) => /^[a-z_]+: [a-z_]+: /.test(error)?'模型返回的结果不合格，可以点「重试」再试一次':error;
+
+/** Card lines the source could not show (「资料里看不出…」) are gathered into one note instead of one line each. */
+export const unseen = (text:string) => /^资料里看不出/.test(text.trim());

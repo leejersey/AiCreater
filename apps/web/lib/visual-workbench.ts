@@ -131,6 +131,7 @@ export function reviewFrames(frames:string[]):string[] {
 export function visualError(error:unknown):string {
   const cause=error instanceof Error?error.cause:undefined;
   if(cause===401)return '登录已失效，请重新登录。';
+  if(cause==='review_required'&&error instanceof Error)return error.message;
   if(cause===409)return '版本冲突或产物已失效，请刷新并重新核对；不要重复提交。';
   return '操作未完成，请刷新项目与任务状态；不要重复提交。';
 }
@@ -189,9 +190,15 @@ export function codePointOffset(text:string,utf16Index:number):number{
  return Array.from(text.slice(0,utf16Index)).length;
 }
 
-export type NextStep={key:'wait'|'voice'|'retime'|'generate'|'confirm'|'next'|'export'|'done';label:string;hint:string;paid?:boolean};
+export type NextStep={key:'wait'|'review'|'voice'|'retime'|'generate'|'confirm'|'next'|'export'|'done';label:string;hint:string;paid?:boolean};
 /** The one thing to do next on a chapter, from its state and jobs: the workbench shows it as the chapter's main button. */
-export function nextStep(row:SceneRow,jobs:VisualJob[],voiceJobs:Job[],{isLast,allConfirmed,projectBusy}:{isLast:boolean;allConfirmed:boolean;projectBusy:boolean}):NextStep{
+export function nextStep(row:SceneRow,jobs:VisualJob[],voiceJobs:Job[],options:{isLast:boolean;allConfirmed:boolean;projectBusy:boolean;reviewBlock?:string|null}):NextStep{
+ const step=chapterStep(row,jobs,voiceJobs,options);
+ // Voicing and drawing wait for a required content review (services/visual/course_review.gate): say so before the click.
+ return options.reviewBlock&&(step.key==='voice'||step.key==='generate')?{key:'review',label:'先通过内容审核',hint:options.reviewBlock}:step;
+}
+
+function chapterStep(row:SceneRow,jobs:VisualJob[],voiceJobs:Job[],{isLast,allConfirmed,projectBusy}:{isLast:boolean;allConfirmed:boolean;projectBusy:boolean}):NextStep{
  const own=jobs.filter(j=>j.scene_id===row.id&&j.current!==false);
  const audio=sceneAudioActions(row,voiceJobs);
  if(own.some(j=>['queued','running'].includes(j.state))||voiceJobs.some(j=>j.scene_id===row.id&&['queued','running'].includes(j.state)))

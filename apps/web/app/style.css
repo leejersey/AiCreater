@@ -446,7 +446,7 @@ button:disabled {
 .primary, .primary-link {
   background: var(--primary-bg) !important;
   border-color: rgba(56, 189, 248, 0.5) !important;
-  color: #ffffff !important;
+  color: #09090b !important;  /* --primary-bg is near-white: white text was unreadable (继续制作, 下载整课 MP4) */
   font-weight: 600;
   box-shadow: 0 2px 12px rgba(56, 189, 248, 0.3), inset 0 1px 0 rgba(255, 255, 255, 0.2);
   text-decoration: none !important;
@@ -3943,3 +3943,26 @@ input:focus, textarea:focus, select:focus {
 a.more-settings-trigger { text-decoration: none; }
 .bd-row button.bd-title { background: none; border: 0; box-shadow: none; align-items: flex-start; text-align: left; color: var(--text-main); padding: 2px 0; }
 .bd-row button.bd-title:hover { background: none; }
+
+/* 选题台：下一步入口、检索、拆解库操作（2026-11-26） */
+.studio-next { width: auto; text-decoration: none; }
+.topics-toolbar > button.topics-research { margin-left: auto; display: inline-flex; align-items: center; gap: 6px; padding: 8px 12px; }
+.bd-add-col .bd-add-action { margin-top: auto; width: 100%; }
+.bd-progress { margin-top: auto; position: relative; height: 38px; border: 1px solid var(--line-accent); border-radius: var(--radius-md); overflow: hidden; display: flex; align-items: center; justify-content: center; font-size: 13px; }
+.bd-progress i { position: absolute; inset: 0 auto 0 0; background: var(--accent-light); transition: width .2s ease; }
+.bd-progress span { position: relative; }
+.bd-list-head { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; margin-top: 4px; }
+.bd-list-head .hint { margin: 0; font-size: 12.5px; }
+.bd-list-head .bd-formula-btn { width: auto; display: inline-flex; align-items: center; gap: 6px; padding: 6px 12px; }
+.bd-list-head .bd-reload { width: auto; margin-left: auto; padding: 6px 10px; }
+.bd-row button.bd-row-action, .bd-formula-item button.bd-row-action { width: auto; flex: none; padding: 4px 10px; font-size: 12px; display: inline-flex; align-items: center; gap: 4px; }
+.bd-row button.bd-title:disabled { cursor: default; opacity: 1; }
+.bd-formula-item { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
+.bd-formula-item button.bd-row-action { margin-left: auto; }
+@media (max-width: 760px) {
+  .topics-profile { grid-template-columns: minmax(0, 1fr); align-items: stretch; }
+  .topics-profile > button { width: 100%; }
+  .bd-add { grid-template-columns: minmax(0, 1fr); }
+  .topics-grid { grid-template-columns: minmax(0, 1fr); }
+  .topics-toolbar > button.topics-research { margin-left: 0; }
+}

@@ -23,6 +23,15 @@ export function orderedItems(items:ReviewItem[],overrides:Record<string,ReviewOv
 
 export const openBlocks = (s:Pick<ReviewState,'result'|'overrides'>) => (s.result?.items??[]).filter(i=>i.severity==='block'&&!s.overrides[i.id]).length;
 
+/** Why a course may not be voiced or drawn yet (the gate in services/visual/course_review.py), or null when it may. */
+export function reviewBlock(s:ReviewState|null):string|null {
+  if(!s?.required)return null;
+  if(!s.result)return '这门课带了证据包，需要先通过内容审核才能配音或生成画面。';
+  if(!s.current)return '口播改过了，重新运行内容审核后才能配音或生成画面。';
+  const blocks=openBlocks(s);
+  return blocks?`内容审核还有 ${blocks} 条阻断项：修改口播，或核实后逐条确认。`:null;
+}
+
 /** One line for the review button / status: what stands between the course and voicing. */
 export function reviewSummary(s:ReviewState|null):{label:string;tone:'ok'|'warn'|'block'|'idle'} {
   if(!s||!s.required&&!s.result)return {label:'内容审核',tone:'idle'};

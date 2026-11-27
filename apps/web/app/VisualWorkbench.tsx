@@ -15,7 +15,7 @@ import {VoiceSettings} from './VoiceSettings';
 import {ThemeSettings} from './ThemeSettings';
 import {PublishKitModal} from './courses/new/CreatorToolsModals';
 import {ReviewReport} from './ReviewPanel';
-import {reviewSummary,type ReviewState} from '../lib/review';
+import {reviewBlock,reviewSummary,type ReviewState} from '../lib/review';
 import {parseThemes,themeName,type ThemeSummary} from '../lib/themes';
 import {ArrowLeft,RefreshCw,Check,Film,Mic,X} from './Icons';
 
@@ -328,7 +328,7 @@ export default function VisualWorkbench({routeProjectId}:{routeProjectId:string}
     request<ReviewState>(base+'/review').then(s=>{if(live)setContentReview(s);}).catch(()=>{});return()=>{live=false;};},[narrationKey,base]);
   async function act(fn:()=>Promise<unknown>){
     if(lock.current)return;lock.current=true;setBusy(true);setError('');
-    try{await fn();await refresh();}catch(e){if(alive.current)setError(visualError(e));}
+    try{await fn();await refresh();}catch(e){if(alive.current){setError(visualError(e));if(e instanceof Error&&e.cause==='review_required')setContentReviewOpen(true);}}
     finally{lock.current=false;if(alive.current)setBusy(false);}
   }
   async function submit(path:string,body:unknown){
@@ -381,7 +381,7 @@ export default function VisualWorkbench({routeProjectId}:{routeProjectId:string}
   const exportCourse=()=>void act(async()=>{if(!project)return;
     if(await confirm({title:'整课导出',message:`导出全部 ${project.scenes.length} 章。每章使用最新确认的 Agent 版本；在本机渲染，不调用模型或配音。`,confirmText:'确认导出'}))await submit('/export',{expected_revision:project.revision,confirmed:true});});
   const index=row&&project?project.scenes.findIndex(s=>s.id===row.id):-1;
-  const step:NextStep|undefined=row&&project?nextStep(row,jobs,voiceJobs,{isLast:index===project.scenes.length-1,allConfirmed:missing.length===0,projectBusy:!!activeJob&&activeJob.scene_id!==row.id}):undefined;
+  const step:NextStep|undefined=row&&project?nextStep(row,jobs,voiceJobs,{isLast:index===project.scenes.length-1,allConfirmed:missing.length===0,projectBusy:!!activeJob&&activeJob.scene_id!==row.id,reviewBlock:reviewBlock(contentReview)}):undefined;
   const reviewItems:ReviewItem[]=(project?.scenes??[]).flatMap((scene,i)=>{
     if(statuses[i]?.key!=='review')return [];
     const job=latestAgentJob(jobs.filter(j=>j.scene_id===scene.id));
@@ -403,7 +403,7 @@ export default function VisualWorkbench({routeProjectId}:{routeProjectId:string}
   const pilotLeft=pilot?.state==='running'?pilot.scene_ids.filter(id=>{const i=project!.scenes.findIndex(s=>s.id===id);return i>=0&&!['confirmed','review'].includes(statuses[i]?.key);}).length:0;
   const runStep=()=>{
     if(!step||!project)return;
-    if(step.key==='voice')voiceChapter();else if(step.key==='retime')retime();else if(step.key==='generate')startAgent();
+    if(step.key==='review')setContentReviewOpen(true);else if(step.key==='voice')voiceChapter();else if(step.key==='retime')retime();else if(step.key==='generate')startAgent();
     else if(step.key==='confirm')acceptAgent();else if(step.key==='export')exportCourse();
     else if(step.key==='next'){const following=project.scenes.slice(index+1).find((_,k)=>statuses[index+1+k].key!=='confirmed')??project.scenes[index+1];if(following)setSelected(following.id);}
   };

@@ -82,6 +82,8 @@ export async function request<T>(path: string, body?: unknown, method = 'POST', 
   if(response.status===401&&!path.startsWith('/api/auth/')&&typeof window!=='undefined')window.dispatchEvent(new Event(AUTH_REQUIRED));
   const value = await response.json();
   if (!response.ok) {
+    // The content-review gate explains itself; other conflicts get the generic advice.
+    if (response.status === 409 && value.code === 'review_required') throw new Error(value.message || '需要先通过内容审核', {cause: 'review_required'});
     if (response.status === 409) throw new Error('版本冲突或内容尚未就绪。你的输入已保留，请检查任务和场景状态；不要覆盖其他修改。', {cause: response.status});
     const fields = value.validation_errors?.map((e: {path: string}) => e.path).join('、');
     throw new Error((value.message || '请求失败') + (fields ? '：' + fields : ''), {cause: response.status});

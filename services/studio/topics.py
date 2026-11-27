@@ -154,7 +154,8 @@ class TopicFeeds:
                                args + ([day] if day else [])).fetchone()
             days = [r['day'].isoformat() for r in conn.execute(f'SELECT DISTINCT day FROM topic_feeds WHERE {owner} ORDER BY day DESC LIMIT 30', args).fetchall()]
             used = conn.execute(f"SELECT count(*) AS n FROM topic_feeds WHERE {owner} AND day=%s AND trigger='manual'", args + [date.today()]).fetchone()['n']
-        return {'feed': self._public(row) if row else None, 'days': days, 'manual_left': max(0, MANUAL_PER_DAY - used)}
+        return {'feed': self._public(row) if row else None, 'days': days, 'manual_left': max(0, MANUAL_PER_DAY - used),
+                'today': date.today().isoformat()}
 
     def refresh(self, owner_id, llm, client, *, persona=None, trigger='manual', env=None):
         keywords = self.profile(owner_id)['keywords']

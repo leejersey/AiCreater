@@ -21,3 +21,20 @@ test('the review button says what stands between the course and voicing',()=>{
  assert.deepEqual(reviewSummary(state({result:result([item('b','block')]),overrides:{b:{note:'ok',at:''}},level:'warn'})),{label:'内容审核 · 有提醒',tone:'warn'});
  assert.deepEqual(reviewSummary(state({result:result([]),level:'pass'})),{label:'内容审核 · 通过',tone:'ok'});
 });
+
+test('the gate reason: only for a required review that is missing, stale or still blocked',async()=>{
+ const {reviewBlock}=await import('../lib/review');
+ assert.equal(reviewBlock(null),null);assert.equal(reviewBlock(state({required:false})),null);
+ assert.match(reviewBlock(state({}))!,/先通过内容审核/);
+ assert.match(reviewBlock(state({result:result([]),current:false}))!,/口播改过了/);
+ assert.match(reviewBlock(state({result:result([item('b','block')])}))!,/1 条阻断/);
+ assert.equal(reviewBlock(state({result:result([item('b','block')]),overrides:{b:{note:'ok',at:''}}})),null);
+});
+
+test('a review_required conflict keeps the server message instead of the generic conflict advice',async()=>{
+ const {request}=await import('../lib/editor');
+ const original=globalThis.fetch;
+ globalThis.fetch=(async()=>new Response(JSON.stringify({code:'review_required',message:'内容审核还有 2 条阻断项'}),{status:409})) as typeof fetch;
+ try{await assert.rejects(request('/api/scenes/s/voice',{}),(e:Error)=>e.message==='内容审核还有 2 条阻断项'&&e.cause==='review_required');}
+ finally{globalThis.fetch=original;}
+});

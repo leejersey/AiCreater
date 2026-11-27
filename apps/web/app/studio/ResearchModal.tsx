@@ -1,6 +1,6 @@
 'use client';
 import { useEffect, useState } from 'react';
-import { request } from '../../../lib/editor';
+import { request } from '../../lib/editor';
 import {
   PLATFORM_OPTIONS,
   TREND_OPTIONS,
@@ -10,10 +10,10 @@ import {
   type ResearchItem,
   type ResearchStatus,
   type ViralStyle,
-} from '../../../lib/research';
-import { Modal } from '../../Modal';
-import { useToast } from '../../ToastContext';
-import { AlertCircle, Check, Plus, RefreshCw, Search, Sparkles, Spinner, Trash2 } from '../../Icons';
+} from '../../lib/research';
+import { Modal } from '../Modal';
+import { useToast } from '../ToastContext';
+import { AlertCircle, Check, Plus, RefreshCw, Search, Sparkles, Spinner, Trash2 } from '../Icons';
 
 type Tab = 'search' | 'trends' | 'import' | 'brief';
 
